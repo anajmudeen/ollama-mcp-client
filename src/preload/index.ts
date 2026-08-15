@@ -1,0 +1,72 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import type {
+  AppConfig,
+  ChatEvent,
+  ChatSendPayload,
+  ChatSession,
+  McpServerConfig,
+  McpToolInfo,
+  OllamaModel,
+  OllamaStatus,
+  SessionsState
+} from '../shared/types'
+
+export type ServerWithStatus = McpServerConfig & { connected: boolean }
+
+const api = {
+  getConfig: (): Promise<AppConfig> => ipcRenderer.invoke('config:get'),
+
+  ollama: {
+    getStatus: (): Promise<OllamaStatus> => ipcRenderer.invoke('ollama:getStatus'),
+    listModels: (): Promise<OllamaModel[]> => ipcRenderer.invoke('ollama:listModels'),
+    setBaseUrl: (url: string): Promise<string> =>
+      ipcRenderer.invoke('ollama:setBaseUrl', url),
+    getSelectedModel: (): Promise<string | null> =>
+      ipcRenderer.invoke('ollama:getSelectedModel'),
+    setSelectedModel: (model: string | null): Promise<void> =>
+      ipcRenderer.invoke('ollama:setSelectedModel', model)
+  },
+
+  mcp: {
+    listServers: (): Promise<ServerWithStatus[]> => ipcRenderer.invoke('mcp:listServers'),
+    upsertServer: (server: McpServerConfig): Promise<McpServerConfig[]> =>
+      ipcRenderer.invoke('mcp:upsertServer', server),
+    removeServer: (id: string): Promise<McpServerConfig[]> =>
+      ipcRenderer.invoke('mcp:removeServer', id),
+    connect: (id: string): Promise<McpToolInfo[]> => ipcRenderer.invoke('mcp:connect', id),
+    disconnect: (id: string): Promise<void> => ipcRenderer.invoke('mcp:disconnect', id),
+    listTools: (): Promise<McpToolInfo[]> => ipcRenderer.invoke('mcp:listTools')
+  },
+
+  sessions: {
+    list: (): Promise<SessionsState> => ipcRenderer.invoke('sessions:list'),
+    create: (): Promise<SessionsState> => ipcRenderer.invoke('sessions:create'),
+    setActive: (id: string): Promise<SessionsState> =>
+      ipcRenderer.invoke('sessions:setActive', id),
+    update: (
+      id: string,
+      patch: Partial<Pick<ChatSession, 'title' | 'uiMessages' | 'history'>>
+    ): Promise<SessionsState> => ipcRenderer.invoke('sessions:update', id, patch),
+    delete: (id: string): Promise<SessionsState> =>
+      ipcRenderer.invoke('sessions:delete', id)
+  },
+
+  chat: {
+    send: (payload: ChatSendPayload): Promise<void> =>
+      ipcRenderer.invoke('chat:send', payload),
+    abort: (): Promise<void> => ipcRenderer.invoke('chat:abort'),
+    onEvent: (callback: (event: ChatEvent) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, event: ChatEvent): void => {
+        callback(event)
+      }
+      ipcRenderer.on('chat:event', handler)
+      return () => {
+        ipcRenderer.removeListener('chat:event', handler)
+      }
+    }
+  }
+}
+
+contextBridge.exposeInMainWorld('api', api)
+
+export type Api = typeof api
