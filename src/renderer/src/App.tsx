@@ -710,7 +710,8 @@ export default function App(): React.JSX.Element {
         >
           <McpCatalogPage
             servers={servers}
-            onServerAdded={() => refreshServers()}
+            tools={tools}
+            onRefreshServers={() => refreshServers()}
           />
         </div>
       ) : null}
@@ -735,13 +736,10 @@ export default function App(): React.JSX.Element {
       <Settings
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        servers={servers}
-        tools={tools}
         ollamaOk={ollamaOk}
         ollamaError={ollamaError}
         baseUrl={baseUrl}
         showThinking={showThinking}
-        onRefreshServers={() => void refreshServers()}
         onRefreshOllama={() => void refreshOllama()}
         onSetBaseUrl={(u) => void handleSetBaseUrl(u)}
         onSetShowThinking={(v) => void handleSetShowThinking(v)}
