@@ -27,6 +27,87 @@ export interface OllamaModel {
   quantization?: string
 }
 
+export interface OllamaModelDetails {
+  name: string
+  modelfile?: string
+  parameters?: string
+  template?: string
+  system?: string
+  details?: {
+    family?: string
+    families?: string[]
+    parameter_size?: string
+    quantization_level?: string
+    format?: string
+    parent_model?: string
+  }
+  capabilities?: string[]
+  model_info?: Record<string, unknown>
+  size?: number
+  modifiedAt?: string
+}
+
+export interface PullProgressEvent {
+  model: string
+  status: string
+  digest?: string
+  total?: number
+  completed?: number
+  error?: string
+  done?: boolean
+}
+
+export type LibraryCapability =
+  | 'tools'
+  | 'vision'
+  | 'embedding'
+  | 'thinking'
+  | 'cloud'
+
+export interface LibraryModelSummary {
+  name: string
+  description: string
+  capabilities: LibraryCapability[]
+  pulls?: string
+  tagCount?: string
+  updated?: string
+  /** Parameter-size badges from search (e.g. 1b, 3b). */
+  sizes?: string[]
+  /** Smallest available size label for list cards (param or disk). */
+  minSize?: string
+}
+
+export interface LibraryModelTag {
+  name: string
+  size?: string
+  context?: string
+  input?: string
+  digest?: string
+  updated?: string
+}
+
+export interface LibraryModelDetail {
+  name: string
+  description: string
+  capabilities: LibraryCapability[]
+  pulls?: string
+  tags: LibraryModelTag[]
+  readme?: string
+}
+
+export interface LibrarySearchParams {
+  q?: string
+  category?: LibraryCapability | null
+  order?: 'popular' | 'newest'
+  page?: number
+}
+
+export interface LibrarySearchResult {
+  models: LibraryModelSummary[]
+  page: number
+  hasMore: boolean
+}
+
 export interface OllamaStatus {
   ok: boolean
   baseUrl: string

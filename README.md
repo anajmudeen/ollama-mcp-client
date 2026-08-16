@@ -24,9 +24,17 @@ npm run dev
 ## Usage
 
 1. Confirm the sidebar shows **Ollama → Connected** (default `http://127.0.0.1:11434`).
-2. Select a model.
+2. Select a model (chat picker, or **Models** in the sidebar).
 3. **Add** an MCP server (command + args), then **Connect**.
 4. Chat — tool calls and results appear inline.
+
+### Models
+
+Open **Models** in the sidebar to:
+
+- Browse **Installed** models (filter, details, delete, use in chat)
+- Search the remote **Library** on ollama.com (capability filters, pagination)
+- Download (pull) models with progress, inspect tags, and remove local copies
 
 ### Example: filesystem MCP server
 

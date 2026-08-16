@@ -3,9 +3,11 @@ import type { ChatSession } from '../../../shared/types'
 interface SidebarProps {
   sessions: ChatSession[]
   activeSessionId: string | null
+  view: 'chat' | 'models'
   onNewSession: () => void
   onSelectSession: (id: string) => void
   onDeleteSession: (id: string) => void
+  onOpenModels: () => void
   onOpenSettings: () => void
 }
 
@@ -26,9 +28,11 @@ function formatRelativeTime(iso: string): string {
 export function Sidebar({
   sessions,
   activeSessionId,
+  view,
   onNewSession,
   onSelectSession,
   onDeleteSession,
+  onOpenModels,
   onOpenSettings
 }: SidebarProps): React.JSX.Element {
   return (
@@ -52,6 +56,17 @@ export function Sidebar({
             />
           </svg>
           New chat
+        </button>
+        <button
+          type="button"
+          onClick={onOpenModels}
+          className={`mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+            view === 'models'
+              ? 'border-[#2d6cb5]/50 bg-[#1a3050] text-[#9ec5f0]'
+              : 'border-[#2a3a4d] bg-[#0f1419] text-[#e7ecf1] hover:bg-[#1a2430]'
+          }`}
+        >
+          Models
         </button>
       </div>
 

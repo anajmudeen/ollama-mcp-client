@@ -1,4 +1,10 @@
-import type { ChatMessage, OllamaModel, OllamaStatus } from '../shared/types'
+import type {
+  ChatMessage,
+  OllamaModel,
+  OllamaModelDetails,
+  OllamaStatus,
+  PullProgressEvent
+} from '../shared/types'
 import { getOllamaBaseUrl } from './config-store'
 
 export interface OllamaTool {
@@ -380,4 +386,205 @@ export function toOllamaMessages(messages: ChatMessage[]): OllamaChatMessage[] {
     }
     return out
   })
+}
+
+export async function showModel(model: string): Promise<OllamaModelDetails> {
+  const baseUrl = getOllamaBaseUrl()
+  const res = await fetch(`${baseUrl}/api/show`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model })
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(
+      `Failed to show model: HTTP ${res.status}${text ? ` — ${text}` : ''}`
+    )
+  }
+  const data = (await res.json()) as {
+    modelfile?: string
+    parameters?: string
+    template?: string
+    system?: string
+    details?: OllamaModelDetails['details']
+    capabilities?: string[]
+    model_info?: Record<string, unknown>
+  }
+
+  let size: number | undefined
+  let modifiedAt: string | undefined
+  try {
+    const tagsRes = await fetch(`${baseUrl}/api/tags`)
+    if (tagsRes.ok) {
+      const tags = (await tagsRes.json()) as {
+        models?: Array<{ name: string; size: number; modified_at: string }>
+      }
+      const match = tags.models?.find((m) => m.name === model)
+      if (match) {
+        size = match.size
+        modifiedAt = match.modified_at
+      }
+    }
+  } catch {
+    // optional enrichment
+  }
+
+  return {
+    name: model,
+    modelfile: data.modelfile,
+    parameters: data.parameters,
+    template: data.template,
+    system: data.system,
+    details: data.details,
+    capabilities: data.capabilities,
+    model_info: data.model_info,
+    size,
+    modifiedAt
+  }
+}
+
+export async function deleteModel(model: string): Promise<void> {
+  const baseUrl = getOllamaBaseUrl()
+  const res = await fetch(`${baseUrl}/api/delete`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model })
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(
+      `Failed to delete model: HTTP ${res.status}${text ? ` — ${text}` : ''}`
+    )
+  }
+}
+
+let pullAbort: AbortController | null = null
+
+export function abortPull(): void {
+  if (pullAbort) {
+    pullAbort.abort()
+    pullAbort = null
+  }
+}
+
+export async function pullModel(
+  model: string,
+  onProgress: (event: PullProgressEvent) => void
+): Promise<void> {
+  abortPull()
+  const abort = new AbortController()
+  pullAbort = abort
+  const baseUrl = getOllamaBaseUrl()
+
+  try {
+    const res = await fetch(`${baseUrl}/api/pull`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // `name` kept for older Ollama builds; `model` is the current field.
+      body: JSON.stringify({ model, name: model, stream: true }),
+      signal: abort.signal
+    })
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(
+        `Failed to pull model: HTTP ${res.status}${text ? ` — ${text}` : ''}`
+      )
+    }
+    if (!res.body) {
+      throw new Error('Ollama pull returned no body')
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        let chunk: {
+          status?: string
+          digest?: string
+          total?: number
+          completed?: number
+          error?: string
+        }
+        try {
+          chunk = JSON.parse(trimmed) as typeof chunk
+        } catch {
+          continue
+        }
+        if (chunk.error) {
+          const message =
+            /file does not exist/i.test(chunk.error) &&
+            (/:cloud$|-cloud$/i.test(model) || /cloud/i.test(model))
+              ? `"${model}" is a cloud tag and cannot be pulled as a local model. Choose a local tag with a size.`
+              : /file does not exist/i.test(chunk.error)
+                ? `Model "${model}" was not found in the registry. Pick a specific local tag from the model details.`
+                : chunk.error
+          onProgress({
+            model,
+            status: 'error',
+            error: message,
+            done: true
+          })
+          throw new Error(message)
+        }
+        onProgress({
+          model,
+          status: chunk.status ?? 'pulling',
+          digest: chunk.digest,
+          total: chunk.total,
+          completed: chunk.completed,
+          done: chunk.status === 'success'
+        })
+      }
+    }
+
+    if (buffer.trim()) {
+      try {
+        const chunk = JSON.parse(buffer.trim()) as {
+          status?: string
+          digest?: string
+          total?: number
+          completed?: number
+          error?: string
+        }
+        if (chunk.error) throw new Error(chunk.error)
+        onProgress({
+          model,
+          status: chunk.status ?? 'success',
+          digest: chunk.digest,
+          total: chunk.total,
+          completed: chunk.completed,
+          done: true
+        })
+      } catch (err) {
+        if (err instanceof SyntaxError) {
+          // ignore trailing partial
+        } else {
+          throw err
+        }
+      }
+    }
+
+    onProgress({ model, status: 'success', done: true })
+  } catch (err) {
+    if (abort.signal.aborted) {
+      onProgress({ model, status: 'aborted', error: 'Aborted', done: true })
+      return
+    }
+    const message = err instanceof Error ? err.message : String(err)
+    onProgress({ model, status: 'error', error: message, done: true })
+    throw err
+  } finally {
+    if (pullAbort === abort) pullAbort = null
+  }
 }

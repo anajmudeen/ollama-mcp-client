@@ -11,6 +11,7 @@ import type {
 import type { ServerWithStatus } from '../../preload/index'
 import type { ActivityState } from './components/ActivityIndicator'
 import { Chat } from './components/Chat'
+import { ModelsPage } from './components/ModelsPage'
 import { Settings } from './components/Settings'
 import { Sidebar } from './components/Sidebar'
 
@@ -45,6 +46,7 @@ export default function App(): React.JSX.Element {
   const [activity, setActivity] = useState<ActivityState>(IDLE_ACTIVITY)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showThinking, setShowThinking] = useState(false)
+  const [view, setView] = useState<'chat' | 'models'>('chat')
 
   const historyRef = useRef<ChatMessage[]>([])
   const messagesRef = useRef<UiMessage[]>([])
@@ -556,12 +558,14 @@ export default function App(): React.JSX.Element {
   }, [bumpChatEpoch, flushActiveSession])
 
   const handleNewSession = async (): Promise<void> => {
+    setView('chat')
     await leaveCurrentSession()
     const state = await window.api.sessions.create()
     applySessionsState(state)
   }
 
   const handleSelectSession = async (id: string): Promise<void> => {
+    setView('chat')
     if (id === activeSessionIdRef.current) return
     await leaveCurrentSession()
     const state = await window.api.sessions.setActive(id)
@@ -581,6 +585,11 @@ export default function App(): React.JSX.Element {
     await window.api.ollama.setSelectedModel(model)
   }
 
+  const handleUseModelInChat = async (model: string): Promise<void> => {
+    await handleSelectModel(model)
+    setView('chat')
+  }
+
   const handleSetBaseUrl = async (url: string): Promise<void> => {
     const saved = await window.api.ollama.setBaseUrl(url)
     setBaseUrl(saved)
@@ -598,26 +607,42 @@ export default function App(): React.JSX.Element {
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
+        view={view}
         onNewSession={() => void handleNewSession()}
         onSelectSession={(id) => void handleSelectSession(id)}
         onDeleteSession={(id) => void handleDeleteSession(id)}
+        onOpenModels={() => setView('models')}
         onOpenSettings={() => setSettingsOpen(true)}
       />
-      <Chat
-        messages={messages}
-        busy={busy}
-        activity={activity}
-        showThinking={showThinking}
-        canSend={Boolean(selectedModel) && ollamaOk}
-        ollamaOk={ollamaOk}
-        models={models}
-        selectedModel={selectedModel}
-        onSelectModel={(m) => void handleSelectModel(m)}
-        onSend={(payload) => void handleSend(payload)}
-        onAbort={() => void handleAbort()}
-        onClear={handleClear}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
+      {view === 'models' ? (
+        <ModelsPage
+          models={models}
+          ollamaOk={ollamaOk}
+          selectedModel={selectedModel}
+          onRefreshModels={async () => {
+            await refreshOllama()
+            const selected = await window.api.ollama.getSelectedModel()
+            setSelectedModel(selected)
+          }}
+          onUseInChat={(m) => void handleUseModelInChat(m)}
+        />
+      ) : (
+        <Chat
+          messages={messages}
+          busy={busy}
+          activity={activity}
+          showThinking={showThinking}
+          canSend={Boolean(selectedModel) && ollamaOk}
+          ollamaOk={ollamaOk}
+          models={models}
+          selectedModel={selectedModel}
+          onSelectModel={(m) => void handleSelectModel(m)}
+          onSend={(payload) => void handleSend(payload)}
+          onAbort={() => void handleAbort()}
+          onClear={handleClear}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+      )}
       <Settings
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

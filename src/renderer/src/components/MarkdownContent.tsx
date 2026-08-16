@@ -119,7 +119,7 @@ export function MarkdownContent({
   content,
   streaming
 }: MarkdownContentProps): React.JSX.Element {
-  const rootRef = useRef<HTMLElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
     syncStreamCaret(rootRef.current, streaming)
@@ -127,9 +127,9 @@ export function MarkdownContent({
 
   if (!content) {
     return (
-      <span ref={rootRef} className="text-[#8b9aab]">
+      <div ref={rootRef} className="inline text-[#8b9aab]">
         {/* caret attached in layout effect */}
-      </span>
+      </div>
     )
   }
 

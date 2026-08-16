@@ -4,10 +4,15 @@ import type {
   ChatEvent,
   ChatSendPayload,
   ChatSession,
+  LibraryModelDetail,
+  LibrarySearchParams,
+  LibrarySearchResult,
   McpServerConfig,
   McpToolInfo,
   OllamaModel,
+  OllamaModelDetails,
   OllamaStatus,
+  PullProgressEvent,
   SessionsState
 } from '../shared/types'
 
@@ -21,12 +26,37 @@ const api = {
   ollama: {
     getStatus: (): Promise<OllamaStatus> => ipcRenderer.invoke('ollama:getStatus'),
     listModels: (): Promise<OllamaModel[]> => ipcRenderer.invoke('ollama:listModels'),
+    showModel: (model: string): Promise<OllamaModelDetails> =>
+      ipcRenderer.invoke('ollama:showModel', model),
+    deleteModel: (model: string): Promise<void> =>
+      ipcRenderer.invoke('ollama:deleteModel', model),
+    pullModel: (model: string): Promise<void> =>
+      ipcRenderer.invoke('ollama:pullModel', model),
+    abortPull: (): Promise<void> => ipcRenderer.invoke('ollama:abortPull'),
+    searchLibrary: (params: LibrarySearchParams): Promise<LibrarySearchResult> =>
+      ipcRenderer.invoke('ollama:searchLibrary', params),
+    getLibraryModel: (name: string): Promise<LibraryModelDetail> =>
+      ipcRenderer.invoke('ollama:getLibraryModel', name),
     setBaseUrl: (url: string): Promise<string> =>
       ipcRenderer.invoke('ollama:setBaseUrl', url),
     getSelectedModel: (): Promise<string | null> =>
       ipcRenderer.invoke('ollama:getSelectedModel'),
     setSelectedModel: (model: string | null): Promise<void> =>
-      ipcRenderer.invoke('ollama:setSelectedModel', model)
+      ipcRenderer.invoke('ollama:setSelectedModel', model),
+    onPullProgress: (
+      callback: (event: PullProgressEvent) => void
+    ): (() => void) => {
+      const handler = (
+        _: Electron.IpcRendererEvent,
+        event: PullProgressEvent
+      ): void => {
+        callback(event)
+      }
+      ipcRenderer.on('models:pullProgress', handler)
+      return () => {
+        ipcRenderer.removeListener('models:pullProgress', handler)
+      }
+    }
   },
 
   mcp: {

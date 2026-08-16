@@ -1,5 +1,11 @@
-import type { IpcMain } from 'electron'
-import type { ChatSendPayload, ChatSession, McpServerConfig } from '../shared/types'
+import { BrowserWindow, type IpcMain } from 'electron'
+import type {
+  ChatSendPayload,
+  ChatSession,
+  LibrarySearchParams,
+  McpServerConfig,
+  PullProgressEvent
+} from '../shared/types'
 import { abortChat, runAgentTurn } from './agent'
 import {
   createSession,
@@ -19,7 +25,21 @@ import {
   upsertServer
 } from './config-store'
 import { mcpManager } from './mcp-manager'
-import { getOllamaStatus, listModels } from './ollama'
+import { getLibraryModel, searchLibrary } from './ollama-library'
+import {
+  abortPull,
+  deleteModel,
+  getOllamaStatus,
+  listModels,
+  pullModel,
+  showModel
+} from './ollama'
+
+function emitPullProgress(event: PullProgressEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('models:pullProgress', event)
+  }
+}
 
 export async function restoreMcpConnections(): Promise<void> {
   const servers = listServers().filter((s) => s.enabled)
@@ -42,6 +62,26 @@ export function registerIpc(ipcMain: IpcMain): void {
 
   ipcMain.handle('ollama:getStatus', () => getOllamaStatus())
   ipcMain.handle('ollama:listModels', () => listModels())
+  ipcMain.handle('ollama:showModel', (_e, model: string) => showModel(model))
+  ipcMain.handle('ollama:deleteModel', async (_e, model: string) => {
+    await deleteModel(model)
+    const selected = getSelectedModel()
+    if (selected === model) {
+      setSelectedModel(null)
+    }
+  })
+  ipcMain.handle('ollama:pullModel', async (_e, model: string) => {
+    await pullModel(model, emitPullProgress)
+  })
+  ipcMain.handle('ollama:abortPull', () => {
+    abortPull()
+  })
+  ipcMain.handle('ollama:searchLibrary', (_e, params: LibrarySearchParams) =>
+    searchLibrary(params ?? {})
+  )
+  ipcMain.handle('ollama:getLibraryModel', (_e, name: string) =>
+    getLibraryModel(name)
+  )
   ipcMain.handle('ollama:setBaseUrl', (_e, url: string) => setOllamaBaseUrl(url))
   ipcMain.handle('ollama:getSelectedModel', () => getSelectedModel())
   ipcMain.handle('ollama:setSelectedModel', (_e, model: string | null) => {
