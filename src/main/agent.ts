@@ -12,6 +12,8 @@ import {
 } from './ollama'
 
 const MAX_TOOL_ITERATIONS = 8
+/** Cap tool payloads sent back to the model; UI still gets the full result. */
+const MAX_TOOL_RESULT_CHARS = 24_000
 
 let activeAbort: AbortController | null = null
 let activeTurnId: string | null = null
@@ -20,6 +22,41 @@ function emit(event: ChatEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('chat:event', event)
   }
+}
+
+function ms(startedAt: number, endedAt = Date.now()): string {
+  const n = Math.max(0, endedAt - startedAt)
+  if (n < 1000) return `${n}ms`
+  const sec = n / 1000
+  if (sec < 60) return `${sec.toFixed(1)}s`
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec % 60)
+  return `${m}m ${s}s`
+}
+
+function approxChars(messages: OllamaChatMessage[]): number {
+  return messages.reduce((sum, m) => {
+    let n = m.content?.length ?? 0
+    if (m.tool_calls?.length) {
+      n += JSON.stringify(m.tool_calls).length
+    }
+    if (m.images?.length) {
+      n += m.images.reduce((a, img) => a + img.length, 0)
+    }
+    return sum + n
+  }, 0)
+}
+
+function shortTurnId(turnId?: string): string {
+  return turnId ? turnId.slice(0, 8) : '—'
+}
+
+function truncateForModel(result: string): string {
+  if (result.length <= MAX_TOOL_RESULT_CHARS) return result
+  const kept = result.slice(0, MAX_TOOL_RESULT_CHARS)
+  return (
+    `${kept}\n\n…[truncated ${result.length - MAX_TOOL_RESULT_CHARS} of ${result.length} chars for the model; full result is shown in the UI. Prefer a narrower query or summarize from this sample.]`
+  )
 }
 
 function toolsFromMcp(): OllamaTool[] {
@@ -61,6 +98,12 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
   const tools = toolsFromMcp()
   const messages: OllamaChatMessage[] = toOllamaMessages(payload.messages)
+  const turnStartedAt = Date.now()
+  const tid = shortTurnId(turnId)
+
+  console.log(
+    `[agent] turn start id=${tid} model=${payload.model} messages=${messages.length} chars≈${approxChars(messages)} tools=${tools.length}`
+  )
 
   const imageStats = messages
     .filter((m) => m.images?.length)
@@ -70,7 +113,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       bytes: m.images!.map((img) => img.length)
     }))
   if (imageStats.length) {
-    console.log('[chat] image payloads', imageStats)
+    console.log('[agent] image payloads', imageStats)
     const info = await getModelInfo(payload.model).catch(() => null)
     const support = detectVisionSupport(payload.model, info)
     if (support === 'no') {
@@ -95,13 +138,20 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
   try {
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
       if (abort.signal.aborted || activeTurnId !== turnId) {
+        console.log(`[agent] aborted before iter=${iteration} id=${tid}`)
         emitTurn({ type: 'error', message: 'Aborted' })
         return
       }
 
+      const phase = iteration === 0 ? 'thinking' : 'synthesizing'
+      const iterStartedAt = Date.now()
+      console.log(
+        `[agent] iter=${iteration} phase=${phase} id=${tid} promptMessages=${messages.length} chars≈${approxChars(messages)} (+${ms(turnStartedAt)} since turn)`
+      )
+
       emitTurn({
         type: 'status',
-        phase: iteration === 0 ? 'thinking' : 'synthesizing',
+        phase,
         detail:
           iteration === 0
             ? 'Waiting for the model…'
@@ -111,6 +161,9 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       let streamedContent = ''
       let sawContent = false
       let sawThinking = false
+      let firstThinkingAt: number | null = null
+      let firstContentAt: number | null = null
+      let firstToolCallAt: number | null = null
 
       const { content, toolCalls } = await chatStream({
         model: payload.model,
@@ -124,6 +177,10 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
           if (thinking) {
             if (!sawThinking) {
               sawThinking = true
+              firstThinkingAt = Date.now()
+              console.log(
+                `[agent] iter=${iteration} first-thinking +${ms(iterStartedAt)} id=${tid}`
+              )
               emitTurn({
                 type: 'status',
                 phase: 'thinking',
@@ -137,6 +194,10 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
           if (text) {
             if (!sawContent) {
               sawContent = true
+              firstContentAt = Date.now()
+              console.log(
+                `[agent] iter=${iteration} first-content +${ms(iterStartedAt)} id=${tid}`
+              )
               emitTurn({
                 type: 'status',
                 phase: 'generating',
@@ -148,6 +209,12 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
           }
 
           if (chunk.message?.tool_calls?.length && !sawContent) {
+            if (firstToolCallAt == null) {
+              firstToolCallAt = Date.now()
+              console.log(
+                `[agent] iter=${iteration} first-tool-call +${ms(iterStartedAt)} id=${tid}`
+              )
+            }
             emitTurn({
               type: 'status',
               phase: 'tool',
@@ -158,15 +225,31 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       })
 
       if (abort.signal.aborted || activeTurnId !== turnId) {
+        console.log(`[agent] aborted after stream iter=${iteration} id=${tid}`)
         emitTurn({ type: 'error', message: 'Aborted' })
         return
       }
 
       const finalContent = content || streamedContent
+      console.log(
+        `[agent] iter=${iteration} stream-done +${ms(iterStartedAt)} id=${tid} contentChars=${finalContent.length} tools=${toolCalls.length}` +
+          (firstThinkingAt != null
+            ? ` ttf-thinking=${ms(iterStartedAt, firstThinkingAt)}`
+            : '') +
+          (firstContentAt != null
+            ? ` ttf-content=${ms(iterStartedAt, firstContentAt)}`
+            : '') +
+          (firstToolCallAt != null
+            ? ` ttf-tool=${ms(iterStartedAt, firstToolCallAt)}`
+            : '')
+      )
 
       if (toolCalls.length === 0) {
         // Always complete the turn so the UI leaves thinking/synthesizing,
         // even when the model returns an empty final message after tools.
+        console.log(
+          `[agent] turn done id=${tid} total=${ms(turnStartedAt)} iterations=${iteration + 1}`
+        )
         emitTurn({ type: 'assistant_done', content: finalContent })
         return
       }
@@ -197,7 +280,16 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
           arguments: tc.arguments
         })
 
+        console.log(`[agent] tool start id=${tid} name=${tc.name}`)
+        const toolStartedAt = Date.now()
         const { ok, result } = await mcpManager.callTool(tc.name, tc.arguments)
+        const modelResult = truncateForModel(result)
+        console.log(
+          `[agent] tool end id=${tid} name=${tc.name} ok=${ok} +${ms(toolStartedAt)} resultChars=${result.length}` +
+            (modelResult.length !== result.length
+              ? ` modelChars=${modelResult.length}`
+              : '')
+        )
         emitTurn({
           type: 'tool_result',
           id,
@@ -208,21 +300,26 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
         messages.push({
           role: 'tool',
-          content: result,
+          content: modelResult,
           tool_name: tc.name
         })
       }
     }
 
+    console.log(
+      `[agent] turn stopped id=${tid} total=${ms(turnStartedAt)} maxIterations=${MAX_TOOL_ITERATIONS}`
+    )
     emitTurn({
       type: 'error',
       message: `Stopped after ${MAX_TOOL_ITERATIONS} tool iterations`
     })
   } catch (err) {
     if (abort.signal.aborted || activeTurnId !== turnId) {
+      console.log(`[agent] aborted id=${tid} total=${ms(turnStartedAt)}`)
       emitTurn({ type: 'error', message: 'Aborted' })
     } else {
       const raw = err instanceof Error ? err.message : String(err)
+      console.log(`[agent] error id=${tid} total=${ms(turnStartedAt)}: ${raw}`)
       emitTurn({
         type: 'error',
         message: raw

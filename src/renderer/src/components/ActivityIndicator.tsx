@@ -1,5 +1,6 @@
-import { useEffect, useState, type CSSProperties, type JSX } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type JSX } from 'react'
 import type { ActivityPhase } from '../../../shared/types'
+import { MarkdownContent } from './MarkdownContent'
 
 export interface ActivityState {
   phase: ActivityPhase
@@ -11,6 +12,8 @@ export interface ActivityState {
 interface ActivityIndicatorProps {
   activity: ActivityState
   visible: boolean
+  /** When false, hide the live reasoning stream (still show phase). */
+  showThinking?: boolean
 }
 
 const PHASE_META: Record<
@@ -48,10 +51,12 @@ function formatElapsed(ms: number): string {
 
 export function ActivityIndicator({
   activity,
-  visible
+  visible,
+  showThinking = false
 }: ActivityIndicatorProps): JSX.Element | null {
   const [elapsed, setElapsed] = useState(0)
   const [thinkingOpen, setThinkingOpen] = useState(true)
+  const thinkingStreamRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!visible || !activity.startedAt) {
@@ -70,12 +75,29 @@ export function ActivityIndicator({
     if (activity.thinking) setThinkingOpen(true)
   }, [activity.thinking])
 
+  useEffect(() => {
+    if (!thinkingOpen) return
+    const el = thinkingStreamRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [activity.thinking, thinkingOpen])
+
   if (!visible || activity.phase === 'idle' || activity.phase === 'generating') {
     return null
   }
 
+  // Transcript ThinkingCard owns thinking once stream text exists.
+  if (
+    showThinking &&
+    activity.phase === 'thinking' &&
+    Boolean(activity.thinking?.trim())
+  ) {
+    return null
+  }
+
   const meta = PHASE_META[activity.phase]
-  const hasThinking = Boolean(activity.thinking?.trim())
+  const hasThinking =
+    Boolean(activity.thinking?.trim()) && activity.phase === 'thinking'
   const style = {
     '--activity-accent': meta.accent,
     '--activity-ring': meta.ring
@@ -83,7 +105,7 @@ export function ActivityIndicator({
 
   return (
     <div
-      className="activity-enter mx-auto w-full max-w-2xl overflow-hidden rounded-xl border border-[#2a3a4d] bg-[#121820]"
+      className="activity-enter mr-auto w-full min-w-[16rem] max-w-[min(100%,42rem)] overflow-hidden rounded-xl border border-[#2a3a4d] bg-[#121820]"
       style={style}
     >
       <div className="activity-shimmer relative px-3.5 py-3">
@@ -132,10 +154,11 @@ export function ActivityIndicator({
             </span>
           </button>
           {thinkingOpen ? (
-            <div className="thinking-stream max-h-36 overflow-y-auto px-3.5 pb-3">
-              <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[#9aa8b8]">
-                {activity.thinking}
-              </pre>
+            <div
+              ref={thinkingStreamRef}
+              className="thinking-stream max-h-36 overflow-y-auto px-3.5 pb-3 text-[12px] leading-relaxed text-[#9aa8b8] [&_.markdown-body]:text-[#9aa8b8]"
+            >
+              <MarkdownContent content={activity.thinking ?? ''} />
             </div>
           ) : null}
         </div>

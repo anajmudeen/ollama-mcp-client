@@ -14,6 +14,7 @@ import {
   setOllamaBaseUrl,
   setSelectedModel,
   setServerEnabled,
+  setShowThinking,
   updateSession,
   upsertServer
 } from './config-store'
@@ -35,6 +36,9 @@ export async function restoreMcpConnections(): Promise<void> {
 
 export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('config:get', () => getConfig())
+  ipcMain.handle('config:setShowThinking', (_e, enabled: boolean) =>
+    setShowThinking(enabled)
+  )
 
   ipcMain.handle('ollama:getStatus', () => getOllamaStatus())
   ipcMain.handle('ollama:listModels', () => listModels())

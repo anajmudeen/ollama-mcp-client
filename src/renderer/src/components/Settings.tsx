@@ -11,9 +11,11 @@ interface SettingsProps {
   ollamaOk: boolean
   ollamaError?: string
   baseUrl: string
+  showThinking: boolean
   onRefreshServers: () => void
   onRefreshOllama: () => void
   onSetBaseUrl: (url: string) => void
+  onSetShowThinking: (enabled: boolean) => void
 }
 
 interface ToolTooltipState {
@@ -31,9 +33,11 @@ export function Settings({
   ollamaOk,
   ollamaError,
   baseUrl,
+  showThinking,
   onRefreshServers,
   onRefreshOllama,
-  onSetBaseUrl
+  onSetBaseUrl,
+  onSetShowThinking
 }: SettingsProps): React.JSX.Element | null {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<McpServerConfig | null>(null)
@@ -211,6 +215,27 @@ export function Settings({
                 Save
               </button>
             </div>
+          </section>
+
+          <section className="mb-6">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#8b9aab]">
+              Chat
+            </h3>
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={Boolean(showThinking)}
+                onChange={(e) => onSetShowThinking(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#2a3a4d] bg-[#161d27] text-[#2d6cb5] focus:ring-[#2d6cb5]/40"
+              />
+              <span>
+                <span className="block text-sm text-[#e7ecf1]">Show model thinking</span>
+                <span className="mt-0.5 block text-xs text-[#6b7a8c]">
+                  Keep reasoning traces in the chat (for models that emit thinking).
+                  Off by default so you only see replies and tool calls.
+                </span>
+              </span>
+            </label>
           </section>
 
           <section>

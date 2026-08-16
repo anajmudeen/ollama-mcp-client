@@ -18,6 +18,10 @@ function uid(): string {
   return crypto.randomUUID()
 }
 
+function nowIso(): string {
+  return new Date().toISOString()
+}
+
 const IDLE_ACTIVITY: ActivityState = { phase: 'idle' }
 
 function titleFromPrompt(text: string): string {
@@ -40,6 +44,7 @@ export default function App(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [activity, setActivity] = useState<ActivityState>(IDLE_ACTIVITY)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [showThinking, setShowThinking] = useState(false)
 
   const historyRef = useRef<ChatMessage[]>([])
   const messagesRef = useRef<UiMessage[]>([])
@@ -49,6 +54,8 @@ export default function App(): React.JSX.Element {
   /** Bumped on switch/new/abort so late stream events never touch another session. */
   const chatEpochRef = useRef(0)
   const activeTurnIdRef = useRef<string | null>(null)
+  const turnStartedAtRef = useRef<number | null>(null)
+  const showThinkingRef = useRef(false)
   const persistSessionRef = useRef<
     (
       id: string,
@@ -135,6 +142,10 @@ export default function App(): React.JSX.Element {
     persistSessionRef.current = persistSession
   }, [persistSession])
 
+  useEffect(() => {
+    showThinkingRef.current = showThinking
+  }, [showThinking])
+
   const flushActiveSession = useCallback(async (): Promise<void> => {
     if (persistTimer.current !== null) {
       window.clearTimeout(persistTimer.current)
@@ -193,6 +204,8 @@ export default function App(): React.JSX.Element {
       const config = await window.api.getConfig()
       setBaseUrl(config.ollamaBaseUrl)
       setSelectedModel(config.selectedModel)
+      setShowThinking(Boolean(config.showThinking))
+      showThinkingRef.current = Boolean(config.showThinking)
       const sessionState = await window.api.sessions.list()
       applySessionsState(sessionState)
       await refreshServers()
@@ -240,6 +253,28 @@ export default function App(): React.JSX.Element {
           thinking: (prev.thinking ?? '') + event.content,
           startedAt: prev.startedAt ?? Date.now()
         }))
+        if (!showThinkingRef.current) return
+        setMessages((prev) => {
+          if (!stillCurrent()) return prev
+          const next = [...prev]
+          const last = next[next.length - 1]
+          if (last?.kind === 'thinking' && last.streaming) {
+            next[next.length - 1] = {
+              ...last,
+              content: last.content + event.content
+            }
+          } else {
+            next.push({
+              kind: 'thinking',
+              id: uid(),
+              content: event.content,
+              createdAt: nowIso(),
+              streaming: true
+            })
+          }
+          messagesRef.current = next
+          return next
+        })
       } else if (event.type === 'chunk') {
         if (!stillCurrent()) return
         setActivity((prev) =>
@@ -254,7 +289,10 @@ export default function App(): React.JSX.Element {
         )
         setMessages((prev) => {
           if (!stillCurrent()) return prev
-          const next = [...prev]
+          let next = prev.map((m) =>
+            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
+          )
+          next = [...next]
           const last = next[next.length - 1]
           if (last?.kind === 'assistant' && last.streaming) {
             next[next.length - 1] = {
@@ -266,6 +304,7 @@ export default function App(): React.JSX.Element {
               kind: 'assistant',
               id: uid(),
               content: event.content,
+              createdAt: nowIso(),
               streaming: true
             })
           }
@@ -282,22 +321,33 @@ export default function App(): React.JSX.Element {
           ]
         }
         const historySnapshot = historyRef.current
+        const responseMs =
+          turnStartedAtRef.current != null
+            ? Date.now() - turnStartedAtRef.current
+            : undefined
+        const finishedAt = nowIso()
         setMessages((prev) => {
           if (sessionId !== activeSessionIdRef.current) return prev
-          const next = [...prev]
+          const next = [...prev].map((m) =>
+            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
+          )
           const last = next[next.length - 1]
           if (last?.kind === 'assistant' && last.streaming) {
             next[next.length - 1] = {
               ...last,
               content: event.content || last.content,
-              streaming: false
+              streaming: false,
+              createdAt: finishedAt,
+              responseMs
             }
           } else if (event.content) {
             next.push({
               kind: 'assistant',
               id: uid(),
               content: event.content,
-              streaming: false
+              createdAt: finishedAt,
+              streaming: false,
+              responseMs
             })
           }
           messagesRef.current = next
@@ -314,21 +364,37 @@ export default function App(): React.JSX.Element {
         }))
         setMessages((prev) => {
           if (!stillCurrent()) return prev
-          const next = [...prev]
+          const next = prev.map((m) =>
+            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
+          )
           const last = next[next.length - 1]
-          if (last?.kind === 'assistant' && last.streaming) {
-            next[next.length - 1] = { ...last, streaming: false }
-          }
-          next.push({
+          const responseMs =
+            turnStartedAtRef.current != null
+              ? Date.now() - turnStartedAtRef.current
+              : undefined
+          const withClosed =
+            last?.kind === 'assistant' && last.streaming
+              ? [
+                  ...next.slice(0, -1),
+                  {
+                    ...last,
+                    streaming: false,
+                    createdAt: nowIso(),
+                    responseMs: last.responseMs ?? responseMs
+                  }
+                ]
+              : [...next]
+          withClosed.push({
             kind: 'tool',
             id: event.id,
             name: event.name,
             arguments: event.arguments,
-            status: 'running'
+            status: 'running',
+            createdAt: nowIso()
           })
-          messagesRef.current = next
-          persistSessionRef.current(sessionId, next, historyRef.current)
-          return next
+          messagesRef.current = withClosed
+          persistSessionRef.current(sessionId, withClosed, historyRef.current)
+          return withClosed
         })
       } else if (event.type === 'tool_result') {
         if (!stillCurrent()) return
@@ -355,7 +421,12 @@ export default function App(): React.JSX.Element {
           if (sessionId !== activeSessionIdRef.current) return prev
           const next = [
             ...prev,
-            { kind: 'error' as const, id: uid(), content: event.message }
+            {
+              kind: 'error' as const,
+              id: uid(),
+              content: event.message,
+              createdAt: nowIso()
+            }
           ]
           messagesRef.current = next
           persistSessionRef.current(sessionId, next, historyRef.current)
@@ -364,10 +435,22 @@ export default function App(): React.JSX.Element {
       } else if (event.type === 'done') {
         if (!stillCurrent()) return
         endBusy()
+        const responseMs =
+          turnStartedAtRef.current != null
+            ? Date.now() - turnStartedAtRef.current
+            : undefined
+        const finishedAt = nowIso()
         setMessages((prev) => {
           if (sessionId !== activeSessionIdRef.current) return prev
           const next = prev.map((m) =>
-            m.kind === 'assistant' && m.streaming ? { ...m, streaming: false } : m
+            m.kind === 'assistant' && m.streaming
+              ? {
+                  ...m,
+                  streaming: false,
+                  createdAt: finishedAt,
+                  responseMs: m.responseMs ?? responseMs
+                }
+              : m
           )
           messagesRef.current = next
           persistSessionRef.current(sessionId, next, historyRef.current)
@@ -390,6 +473,7 @@ export default function App(): React.JSX.Element {
 
     const turnId = uid()
     activeTurnIdRef.current = turnId
+    turnStartedAtRef.current = Date.now()
 
     const userMsg: ChatMessage = {
       role: 'user',
@@ -415,6 +499,7 @@ export default function App(): React.JSX.Element {
         kind: 'user',
         id: uid(),
         content: uiContent,
+        createdAt: nowIso(),
         attachmentLabels: payload.attachmentLabels
       }
     ]
@@ -502,6 +587,12 @@ export default function App(): React.JSX.Element {
     await refreshOllama()
   }
 
+  const handleSetShowThinking = async (enabled: boolean): Promise<void> => {
+    setShowThinking(enabled)
+    showThinkingRef.current = enabled
+    await window.api.setShowThinking(enabled)
+  }
+
   return (
     <div className="flex h-full overflow-hidden bg-[#0f1419] text-[#e7ecf1]">
       <Sidebar
@@ -516,6 +607,7 @@ export default function App(): React.JSX.Element {
         messages={messages}
         busy={busy}
         activity={activity}
+        showThinking={showThinking}
         canSend={Boolean(selectedModel) && ollamaOk}
         ollamaOk={ollamaOk}
         models={models}
@@ -534,9 +626,11 @@ export default function App(): React.JSX.Element {
         ollamaOk={ollamaOk}
         ollamaError={ollamaError}
         baseUrl={baseUrl}
+        showThinking={showThinking}
         onRefreshServers={() => void refreshServers()}
         onRefreshOllama={() => void refreshOllama()}
         onSetBaseUrl={(u) => void handleSetBaseUrl(u)}
+        onSetShowThinking={(v) => void handleSetShowThinking(v)}
       />
     </div>
   )

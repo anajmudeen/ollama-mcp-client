@@ -15,6 +15,8 @@ export type ServerWithStatus = McpServerConfig & { connected: boolean }
 
 const api = {
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke('config:get'),
+  setShowThinking: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('config:setShowThinking', enabled),
 
   ollama: {
     getStatus: (): Promise<OllamaStatus> => ipcRenderer.invoke('ollama:getStatus'),

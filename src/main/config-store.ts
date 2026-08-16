@@ -11,7 +11,8 @@ import type {
 const DEFAULT_CONFIG: AppConfig = {
   ollamaBaseUrl: 'http://127.0.0.1:11434',
   selectedModel: null,
-  servers: []
+  servers: [],
+  showThinking: false
 }
 
 interface StoreSchema extends AppConfig, SessionsState {}
@@ -29,7 +30,8 @@ export function getConfig(): AppConfig {
   return {
     ollamaBaseUrl: store.get('ollamaBaseUrl', DEFAULT_CONFIG.ollamaBaseUrl),
     selectedModel: store.get('selectedModel', DEFAULT_CONFIG.selectedModel),
-    servers: store.get('servers', DEFAULT_CONFIG.servers)
+    servers: store.get('servers', DEFAULT_CONFIG.servers),
+    showThinking: store.get('showThinking', DEFAULT_CONFIG.showThinking)
   }
 }
 
@@ -49,6 +51,15 @@ export function getSelectedModel(): string | null {
 
 export function setSelectedModel(model: string | null): void {
   store.set('selectedModel', model)
+}
+
+export function getShowThinking(): boolean {
+  return store.get('showThinking', DEFAULT_CONFIG.showThinking)
+}
+
+export function setShowThinking(enabled: boolean): boolean {
+  store.set('showThinking', enabled)
+  return enabled
 }
 
 export function listServers(): McpServerConfig[] {

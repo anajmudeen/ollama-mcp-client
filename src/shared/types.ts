@@ -11,6 +11,8 @@ export interface AppConfig {
   ollamaBaseUrl: string
   selectedModel: string | null
   servers: McpServerConfig[]
+  /** When true, model reasoning/thinking is shown in the chat transcript. */
+  showThinking: boolean
 }
 
 export interface OllamaModel {
@@ -105,18 +107,35 @@ export type UiMessage =
       kind: 'user'
       id: string
       content: string
+      createdAt: string
       attachmentLabels?: string[]
     }
-  | { kind: 'assistant'; id: string; content: string; streaming?: boolean }
+  | {
+      kind: 'assistant'
+      id: string
+      content: string
+      createdAt: string
+      streaming?: boolean
+      /** Wall-clock duration from user send to this reply finishing. */
+      responseMs?: number
+    }
+  | {
+      kind: 'thinking'
+      id: string
+      content: string
+      createdAt: string
+      streaming?: boolean
+    }
   | {
       kind: 'tool'
       id: string
       name: string
       arguments: Record<string, unknown>
       status: 'running' | 'done' | 'error'
+      createdAt: string
       result?: string
     }
-  | { kind: 'error'; id: string; content: string }
+  | { kind: 'error'; id: string; content: string; createdAt: string }
 
 export interface ChatSession {
   id: string

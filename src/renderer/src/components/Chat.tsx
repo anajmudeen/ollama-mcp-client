@@ -3,7 +3,10 @@ import type { OllamaModel } from '../../../shared/types'
 import type { UiMessage } from '../../../shared/types'
 import type { ActivityState } from './ActivityIndicator'
 import { ActivityIndicator } from './ActivityIndicator'
+import { CopyButton } from './CopyButton'
 import { MarkdownContent } from './MarkdownContent'
+import { MessageMeta } from './MessageMeta'
+import { ThinkingCard } from './ThinkingCard'
 import { ToolCallCard } from './ToolCallCard'
 import {
   type ChatAttachment,
@@ -16,6 +19,7 @@ interface ChatProps {
   messages: UiMessage[]
   busy: boolean
   activity: ActivityState
+  showThinking: boolean
   canSend: boolean
   ollamaOk: boolean
   models: OllamaModel[]
@@ -35,6 +39,7 @@ export function Chat({
   messages,
   busy,
   activity,
+  showThinking,
   canSend,
   ollamaOk,
   models,
@@ -50,12 +55,22 @@ export function Chat({
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
   const modelMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    if (!stickToBottomRef.current) return
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, activity.phase, activity.detail, activity.thinking])
+
+  const onMessagesScroll = (): void => {
+    const el = scrollRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceFromBottom < 80
+  }
 
   useEffect(() => {
     if (!modelOpen) return
@@ -90,6 +105,7 @@ export function Chat({
     if (!hasDraft || !canCompose) return
     const built = buildMessageFromAttachments(draft, attachments)
     if (!built.content && !built.images?.length) return
+    stickToBottomRef.current = true
     onSend({
       content: built.content,
       images: built.images,
@@ -178,7 +194,11 @@ export function Chat({
         </div>
       </header>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+      <div
+        ref={scrollRef}
+        onScroll={onMessagesScroll}
+        className="flex-1 space-y-3 overflow-y-auto px-5 py-4"
+      >
         {messages.length === 0 && !busy && (
           <div className="mx-auto mt-16 max-w-md text-center text-sm text-[#6b7a8c]">
             <p className="mb-2 text-[#8b9aab]">Ready when you are.</p>
@@ -193,31 +213,58 @@ export function Chat({
           if (m.kind === 'user') {
             return (
               <div key={m.id} className="msg-enter flex justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-br-md bg-[#1e3a5f] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1]">
-                  {m.attachmentLabels && m.attachmentLabels.length > 0 && (
-                    <div className="mb-2 flex flex-wrap gap-1">
-                      {m.attachmentLabels.map((label) => (
-                        <span
-                          key={label}
-                          className="rounded-full bg-[#152842] px-2 py-0.5 text-[11px] text-[#9ec5f0]"
-                        >
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="whitespace-pre-wrap">{m.content}</div>
+                <div className="max-w-[80%]">
+                  <div className="rounded-2xl rounded-br-md bg-[#1e3a5f] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1]">
+                    {m.attachmentLabels && m.attachmentLabels.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-1">
+                        {m.attachmentLabels.map((label) => (
+                          <span
+                            key={label}
+                            className="rounded-full bg-[#152842] px-2 py-0.5 text-[11px] text-[#9ec5f0]"
+                          >
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="whitespace-pre-wrap">{m.content}</div>
+                  </div>
+                  <MessageMeta createdAt={m.createdAt} align="right" />
                 </div>
               </div>
             )
           }
           if (m.kind === 'assistant') {
             return (
-              <div key={m.id} className="msg-enter flex justify-start">
-                <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-[#2a3a4d] bg-[#161d27] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1]">
-                  <MarkdownContent content={m.content} streaming={m.streaming} />
+              <div key={m.id} className="msg-enter group/assistant flex justify-start">
+                <div className="max-w-[85%]">
+                  <div className="relative rounded-2xl rounded-bl-md border border-[#2a3a4d] bg-[#161d27] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1]">
+                    <MarkdownContent content={m.content} streaming={m.streaming} />
+                    {!m.streaming && m.content.trim() ? (
+                      <div className="mt-2 flex justify-end opacity-70 transition group-hover/assistant:opacity-100">
+                        <CopyButton text={m.content} />
+                      </div>
+                    ) : null}
+                  </div>
+                  <MessageMeta
+                    createdAt={m.createdAt}
+                    responseMs={m.streaming ? undefined : m.responseMs}
+                    align="left"
+                  />
                 </div>
               </div>
+            )
+          }
+          if (m.kind === 'thinking') {
+            if (!showThinking) return null
+            return (
+              <ThinkingCard
+                key={m.id}
+                content={m.content}
+                streaming={m.streaming}
+                createdAt={m.createdAt}
+                startedAt={m.streaming ? activity.startedAt : undefined}
+              />
             )
           }
           if (m.kind === 'tool') {
@@ -228,20 +275,25 @@ export function Chat({
                 arguments={m.arguments}
                 status={m.status}
                 result={m.result}
+                createdAt={m.createdAt}
               />
             )
           }
           return (
-            <div
-              key={m.id}
-              className="msg-enter rounded border border-rose-900/40 bg-rose-950/30 px-3 py-2 text-sm text-rose-200"
-            >
-              {m.content}
+            <div key={m.id} className="msg-enter max-w-[85%]">
+              <div className="rounded border border-rose-900/40 bg-rose-950/30 px-3 py-2 text-sm text-rose-200">
+                {m.content}
+              </div>
+              <MessageMeta createdAt={m.createdAt} align="left" />
             </div>
           )
         })}
 
-        <ActivityIndicator activity={activity} visible={busy} />
+        <ActivityIndicator
+          activity={activity}
+          visible={busy}
+          showThinking={showThinking}
+        />
         <div ref={bottomRef} />
       </div>
 
