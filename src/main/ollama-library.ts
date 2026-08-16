@@ -25,6 +25,8 @@ const CAPABILITIES: LibraryCapability[] = [
 const UA =
   'Mozilla/5.0 (compatible; ollama-mcp-client/0.1; +https://github.com/ollama/ollama)'
 
+const OLLAMA_ORIGIN = 'https://ollama.com'
+
 const DISK_SIZE_RE = /([\d.]+)\s*([KMGT]B)\b/i
 const PARAM_SIZE_RE = /^(\d+(?:\.\d+)?)([bmk])$/i
 const MOE_SIZE_RE = /^(\d+)x(\d+(?:\.\d+)?)b$/i
@@ -44,6 +46,35 @@ async function fetchHtml(
     throw new Error(`Library fetch failed: HTTP ${res.status} (${url})`)
   }
   return res.text()
+}
+
+async function fetchHtmlOrNull(url: string): Promise<string | null> {
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': UA,
+      Accept: 'text/html,application/xhtml+xml'
+    }
+  })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    throw new Error(`Library fetch failed: HTTP ${res.status} (${url})`)
+  }
+  return res.text()
+}
+
+/** Keep `/` as path separators. Official models use /library/…; namespaced use /x/…. */
+function modelPagePath(modelName: string): string {
+  const path = modelName
+    .split('/')
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join('/')
+  if (modelName.includes('/')) return `/${path}`
+  return `/library/${path}`
+}
+
+function modelPageUrl(modelName: string): string {
+  return `${OLLAMA_ORIGIN}${modelPagePath(modelName)}`
 }
 
 function parseCapabilities(text: string): LibraryCapability[] {
@@ -234,12 +265,11 @@ async function enrichMinDiskSize(
   if (models.length === 0) return models
   return mapPool(models, 6, async (model) => {
     try {
-      const html = await fetchHtml(
-        `https://ollama.com/library/${encodeURIComponent(model.name)}/tags`
-      )
+      const html = await fetchHtml(`${modelPageUrl(model.name)}/tags`)
       const $ = cheerio.load(html)
       const diskSizes: string[] = []
-      $(`a[href^="/library/${model.name}:"]`).each((_, el) => {
+      const hrefPrefix = `${modelPagePath(model.name)}:`
+      $(`a[href^="${hrefPrefix}"]`).each((_, el) => {
         const label = parseDiskSizeLabel($(el).text().replace(/\s+/g, ' '))
         if (label) diskSizes.push(label)
       })
@@ -254,6 +284,14 @@ async function enrichMinDiskSize(
   })
 }
 
+function tagNameFromHref(href: string): string | null {
+  const raw = href.trim()
+  if (!raw.includes(':')) return null
+  if (raw.startsWith('/library/')) return raw.slice('/library/'.length)
+  if (raw.startsWith('/')) return raw.slice(1)
+  return raw
+}
+
 function parseTagRow(
   $: cheerio.CheerioAPI,
   el: any,
@@ -261,8 +299,8 @@ function parseTagRow(
 ): LibraryModelTag | null {
   const a = $(el)
   const href = a.attr('href') ?? ''
-  const full = href.replace(/^\/library\//, '').trim()
-  if (!full.includes(':')) return null
+  const full = tagNameFromHref(href)
+  if (!full?.includes(':')) return null
   const text = a.text().replace(/\s+/g, ' ').trim()
   if (text.length < full.length + 5 && a.children().length === 0) {
     return null
@@ -297,6 +335,7 @@ function parseTagRowsFromPage(
 ): LibraryModelTag[] {
   const tags: LibraryModelTag[] = []
   const seen = new Set<string>()
+  const hrefPrefix = `${modelPagePath(modelName)}:`
 
   const pushTag = (tag: LibraryModelTag): void => {
     const existing = tags.find((t) => t.name === tag.name)
@@ -315,12 +354,10 @@ function parseTagRowsFromPage(
   if (rows.length > 0) {
     rows.each((_, row) => {
       const $row = $(row)
-      const link = $row
-        .find(`a[href^="/library/${modelName}:"]`)
-        .first()
+      const link = $row.find(`a[href^="${hrefPrefix}"]`).first()
       const href = link.attr('href') ?? ''
-      const full = href.replace(/^\/library\//, '').trim()
-      if (!full.includes(':')) return
+      const full = tagNameFromHref(href)
+      if (!full?.includes(':')) return
 
       const text = $row.text().replace(/\s+/g, ' ').trim()
       const size = parseDiskSizeLabel(text)
@@ -348,7 +385,7 @@ function parseTagRowsFromPage(
 
   // Fallback: individual links (older markup)
   if (tags.length === 0) {
-    $(`a[href^="/library/${modelName}:"]`).each((_, el) => {
+    $(`a[href^="${hrefPrefix}"]`).each((_, el) => {
       const tag = parseTagRow($, el, modelName)
       if (tag) pushTag(tag)
     })
@@ -357,17 +394,15 @@ function parseTagRowsFromPage(
   return tags
 }
 
-const OLLAMA_ORIGIN = 'https://ollama.com'
-
 /** Make relative /assets and /library links work outside ollama.com. */
 export function absolutizeLibraryUrls(markdown: string): string {
   return markdown
     .replace(
-      /(\]\()(\/(?:assets|library)\/[^)\s]+)(\))/g,
+      /(\]\()(\/(?:assets|library|x)\/[^)\s]+)(\))/g,
       (_m, a, path, b) => `${a}${OLLAMA_ORIGIN}${path}${b}`
     )
     .replace(
-      /(src=["'])(\/(?:assets|library)\/[^"']+)(["'])/gi,
+      /(src=["'])(\/(?:assets|library|x)\/[^"']+)(["'])/gi,
       (_m, a, path, b) => `${a}${OLLAMA_ORIGIN}${path}${b}`
     )
 }
@@ -396,23 +431,36 @@ function libraryModelName(name: string): string {
   return name.replace(/^library\//, '').split(':')[0] ?? name
 }
 
+const readmeCache = new Map<string, string | null>()
+
 export async function getLibraryReadme(name: string): Promise<string | undefined> {
-  const modelName = libraryModelName(name)
-  const pageHtml = await fetchHtml(
-    `${OLLAMA_ORIGIN}/library/${encodeURIComponent(modelName)}`
-  )
-  return extractReadmeMarkdown(cheerio.load(pageHtml))
+  const candidate = libraryModelName(name)
+  if (readmeCache.has(candidate)) {
+    return readmeCache.get(candidate) ?? undefined
+  }
+  try {
+    const pageHtml = await fetchHtmlOrNull(modelPageUrl(candidate))
+    if (!pageHtml) {
+      readmeCache.set(candidate, null)
+      return undefined
+    }
+    const md = extractReadmeMarkdown(cheerio.load(pageHtml))
+    readmeCache.set(candidate, md ?? null)
+    return md
+  } catch {
+    readmeCache.set(candidate, null)
+    return undefined
+  }
 }
 
 export async function getLibraryModel(
   name: string
 ): Promise<LibraryModelDetail> {
   const modelName = libraryModelName(name)
+  const baseUrl = modelPageUrl(modelName)
   const [pageHtml, tagsHtml] = await Promise.all([
-    fetchHtml(`${OLLAMA_ORIGIN}/library/${encodeURIComponent(modelName)}`),
-    fetchHtml(
-      `${OLLAMA_ORIGIN}/library/${encodeURIComponent(modelName)}/tags`
-    )
+    fetchHtml(baseUrl),
+    fetchHtml(`${baseUrl}/tags`)
   ])
 
   const $page = cheerio.load(pageHtml)
@@ -446,12 +494,15 @@ export async function getLibraryModel(
     return aBytes - bBytes
   })
 
+  const readme = extractReadmeMarkdown($page)
+  if (readme) readmeCache.set(modelName, readme)
+
   return {
     name: modelName,
     description,
     capabilities,
     pulls: pullsMatch?.[1],
     tags,
-    readme: extractReadmeMarkdown($page)
+    readme
   }
 }

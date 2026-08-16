@@ -201,8 +201,11 @@ export function ModelsPage({
   const [localDetail, setLocalDetail] = useState<OllamaModelDetails | null>(null)
   const [remoteDetail, setRemoteDetail] = useState<LibraryModelDetail | null>(null)
   const [readmeMd, setReadmeMd] = useState<string | null>(null)
+  const [readmeLoading, setReadmeLoading] = useState(false)
+  const [readmeMissing, setReadmeMissing] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const detailRequestRef = useRef(0)
 
   const [pulling, setPulling] = useState<string | null>(null)
   const [pullProgress, setPullProgress] = useState<PullProgressEvent | null>(null)
@@ -377,52 +380,75 @@ export function ModelsPage({
   }, [installedQuery, installedCap, installedSort])
 
   const openLocalDetail = async (name: string): Promise<void> => {
+    const requestId = ++detailRequestRef.current
     setDetailKind('local')
     setDetailName(name)
     setRemoteDetail(null)
     setReadmeMd(null)
+    setReadmeMissing(false)
+    setReadmeLoading(true)
     setDetailLoading(true)
     setDetailError(null)
     try {
-      const detail = await window.api.ollama.showModel(name)
+      const [detail, readme] = await Promise.all([
+        window.api.ollama.showModel(name),
+        window.api.ollama.getLibraryReadme(localBaseName(name)).catch(() => undefined)
+      ])
+      if (requestId !== detailRequestRef.current) return
       setLocalDetail(detail)
-      void window.api.ollama
-        .getLibraryReadme(localBaseName(name))
-        .then((md) => setReadmeMd(md ?? null))
-        .catch(() => setReadmeMd(null))
+      setReadmeMd(readme ?? null)
+      setReadmeMissing(!readme)
     } catch (err) {
+      if (requestId !== detailRequestRef.current) return
       setLocalDetail(null)
       setDetailError(err instanceof Error ? err.message : String(err))
+      setReadmeMissing(true)
     } finally {
-      setDetailLoading(false)
+      if (requestId === detailRequestRef.current) {
+        setDetailLoading(false)
+        setReadmeLoading(false)
+      }
     }
   }
 
   const openRemoteDetail = async (name: string): Promise<void> => {
+    const requestId = ++detailRequestRef.current
     setDetailKind('remote')
     setDetailName(name)
     setLocalDetail(null)
     setReadmeMd(null)
+    setReadmeMissing(false)
+    setReadmeLoading(true)
     setDetailLoading(true)
     setDetailError(null)
     try {
       const detail = await window.api.ollama.getLibraryModel(name)
+      if (requestId !== detailRequestRef.current) return
       setRemoteDetail(detail)
       setReadmeMd(detail.readme ?? null)
+      setReadmeMissing(!detail.readme)
     } catch (err) {
+      if (requestId !== detailRequestRef.current) return
       setRemoteDetail(null)
       setDetailError(err instanceof Error ? err.message : String(err))
+      setReadmeMissing(true)
     } finally {
-      setDetailLoading(false)
+      if (requestId === detailRequestRef.current) {
+        setDetailLoading(false)
+        setReadmeLoading(false)
+      }
     }
   }
 
   const closeDetail = (): void => {
+    detailRequestRef.current += 1
     setDetailKind(null)
     setDetailName(null)
     setLocalDetail(null)
     setRemoteDetail(null)
     setReadmeMd(null)
+    setReadmeLoading(false)
+    setReadmeMissing(false)
     setDetailError(null)
   }
 
@@ -930,6 +956,22 @@ export function ModelsPage({
                       )}
                     </dl>
                   )}
+                  <div>
+                    <h4 className="mb-2 text-[10px] uppercase tracking-wider text-[#6b7a8c]">
+                      README
+                    </h4>
+                    {readmeLoading ? (
+                      <p className="text-xs text-[#6b7a8c]">Loading README…</p>
+                    ) : readmeMd ? (
+                      <div className="rounded-lg bg-[#0f1419] px-3 py-2 text-[12px] leading-relaxed text-[#c5d0dc] [&_.markdown-body]:text-[#c5d0dc] [&_.markdown-body_h1]:text-sm [&_.markdown-body_h2]:text-sm [&_.markdown-body_h3]:text-[13px]">
+                        <MarkdownContent content={readmeMd} allowHtml />
+                      </div>
+                    ) : readmeMissing ? (
+                      <p className="text-xs text-[#6b7a8c]">
+                        No README found on the Ollama library for this model.
+                      </p>
+                    ) : null}
+                  </div>
                   {localDetail.system && (
                     <div>
                       <h4 className="mb-1 text-[10px] uppercase text-[#6b7a8c]">System</h4>
@@ -978,16 +1020,6 @@ export function ModelsPage({
                       Delete
                     </button>
                   </div>
-                  {readmeMd ? (
-                    <div>
-                      <h4 className="mb-2 text-[10px] uppercase tracking-wider text-[#6b7a8c]">
-                        README
-                      </h4>
-                      <div className="rounded-lg bg-[#0f1419] px-3 py-2 text-[12px] leading-relaxed text-[#c5d0dc] [&_.markdown-body]:text-[#c5d0dc] [&_.markdown-body_h1]:text-sm [&_.markdown-body_h2]:text-sm [&_.markdown-body_h3]:text-[13px]">
-                        <MarkdownContent content={readmeMd} allowHtml />
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               )}
 
@@ -1085,14 +1117,22 @@ export function ModelsPage({
                       })}
                     </ul>
                   </div>
-                  {readmeMd ? (
+                  {readmeLoading || readmeMd || readmeMissing ? (
                     <div>
                       <h4 className="mb-2 text-[10px] uppercase tracking-wider text-[#6b7a8c]">
                         README
                       </h4>
-                      <div className="rounded-lg bg-[#0f1419] px-3 py-2 text-[12px] leading-relaxed text-[#c5d0dc] [&_.markdown-body]:text-[#c5d0dc] [&_.markdown-body_h1]:text-sm [&_.markdown-body_h2]:text-sm [&_.markdown-body_h3]:text-[13px]">
-                        <MarkdownContent content={readmeMd} allowHtml />
-                      </div>
+                      {readmeLoading ? (
+                        <p className="text-xs text-[#6b7a8c]">Loading README…</p>
+                      ) : readmeMd ? (
+                        <div className="rounded-lg bg-[#0f1419] px-3 py-2 text-[12px] leading-relaxed text-[#c5d0dc] [&_.markdown-body]:text-[#c5d0dc] [&_.markdown-body_h1]:text-sm [&_.markdown-body_h2]:text-sm [&_.markdown-body_h3]:text-[13px]">
+                          <MarkdownContent content={readmeMd} allowHtml />
+                        </div>
+                      ) : (
+                        <p className="text-xs text-[#6b7a8c]">
+                          No README found on the Ollama library for this model.
+                        </p>
+                      )}
                     </div>
                   ) : null}
                 </div>
