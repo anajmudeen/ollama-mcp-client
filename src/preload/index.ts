@@ -37,6 +37,8 @@ const api = {
       ipcRenderer.invoke('ollama:searchLibrary', params),
     getLibraryModel: (name: string): Promise<LibraryModelDetail> =>
       ipcRenderer.invoke('ollama:getLibraryModel', name),
+    getLibraryReadme: (name: string): Promise<string | undefined> =>
+      ipcRenderer.invoke('ollama:getLibraryReadme', name),
     setBaseUrl: (url: string): Promise<string> =>
       ipcRenderer.invoke('ollama:setBaseUrl', url),
     getSelectedModel: (): Promise<string | null> =>

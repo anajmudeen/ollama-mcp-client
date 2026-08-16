@@ -7,6 +7,12 @@ import type {
   LibrarySearchParams,
   LibrarySearchResult
 } from '../shared/types'
+import {
+  getCachedLibrarySearch,
+  getInflightLibrarySearch,
+  setCachedLibrarySearch,
+  setInflightLibrarySearch
+} from './library-cache'
 
 const CAPABILITIES: LibraryCapability[] = [
   'tools',
@@ -23,11 +29,15 @@ const DISK_SIZE_RE = /([\d.]+)\s*([KMGT]B)\b/i
 const PARAM_SIZE_RE = /^(\d+(?:\.\d+)?)([bmk])$/i
 const MOE_SIZE_RE = /^(\d+)x(\d+(?:\.\d+)?)b$/i
 
-async function fetchHtml(url: string): Promise<string> {
+async function fetchHtml(
+  url: string,
+  extraHeaders: Record<string, string> = {}
+): Promise<string> {
   const res = await fetch(url, {
     headers: {
       'User-Agent': UA,
-      Accept: 'text/html,application/xhtml+xml'
+      Accept: 'text/html,application/xhtml+xml',
+      ...extraHeaders
     }
   })
   if (!res.ok) {
@@ -133,6 +143,20 @@ function parseSearchItem($: cheerio.CheerioAPI, li: any): LibraryModelSummary | 
 export async function searchLibrary(
   params: LibrarySearchParams = {}
 ): Promise<LibrarySearchResult> {
+  const cached = getCachedLibrarySearch(params)
+  if (cached) return cached
+
+  const pending = getInflightLibrarySearch(params)
+  if (pending) return pending
+
+  const promise = fetchLibrarySearch(params)
+  setInflightLibrarySearch(params, promise)
+  return promise
+}
+
+async function fetchLibrarySearch(
+  params: LibrarySearchParams
+): Promise<LibrarySearchResult> {
   const page = Math.max(1, params.page ?? 1)
   const url = new URL('https://ollama.com/search')
   if (params.q?.trim()) url.searchParams.set('q', params.q.trim())
@@ -140,7 +164,23 @@ export async function searchLibrary(
   if (params.order === 'newest') url.searchParams.set('o', 'newest')
   if (page > 1) url.searchParams.set('page', String(page))
 
-  const html = await fetchHtml(url.toString())
+  // ollama.com serves later pages only via HTMX; a normal GET with ?page=
+  // returns page 1 again.
+  const currentUrl = new URL('https://ollama.com/search')
+  if (params.q?.trim()) currentUrl.searchParams.set('q', params.q.trim())
+  if (params.category) currentUrl.searchParams.set('c', params.category)
+  if (params.order === 'newest') currentUrl.searchParams.set('o', 'newest')
+
+  const html = await fetchHtml(
+    url.toString(),
+    page > 1
+      ? {
+          'HX-Request': 'true',
+          'HX-Current-URL': currentUrl.toString(),
+          Accept: 'text/html'
+        }
+      : {}
+  )
   const $ = cheerio.load(html)
 
   const models: LibraryModelSummary[] = []
@@ -153,13 +193,17 @@ export async function searchLibrary(
     models.push(item)
   })
 
+  const nextPage = page + 1
   const hasMore =
-    $(`a[href*="page=${page + 1}"]`).length > 0 ||
-    $(`[hx-get*="page=${page + 1}"]`).length > 0 ||
-    html.includes(`page=${page + 1}`)
+    models.length > 0 &&
+    ($(`[hx-get*="page=${nextPage}"]`).length > 0 ||
+      $(`a[href*="page=${nextPage}"]`).length > 0 ||
+      html.includes(`page=${nextPage}`))
 
   const enriched = await enrichMinDiskSize(models)
-  return { models: enriched, page, hasMore }
+  const result: LibrarySearchResult = { models: enriched, page, hasMore }
+  setCachedLibrarySearch(params, result)
+  return result
 }
 
 async function mapPool<T, R>(
@@ -313,14 +357,61 @@ function parseTagRowsFromPage(
   return tags
 }
 
+const OLLAMA_ORIGIN = 'https://ollama.com'
+
+/** Make relative /assets and /library links work outside ollama.com. */
+export function absolutizeLibraryUrls(markdown: string): string {
+  return markdown
+    .replace(
+      /(\]\()(\/(?:assets|library)\/[^)\s]+)(\))/g,
+      (_m, a, path, b) => `${a}${OLLAMA_ORIGIN}${path}${b}`
+    )
+    .replace(
+      /(src=["'])(\/(?:assets|library)\/[^"']+)(["'])/gi,
+      (_m, a, path, b) => `${a}${OLLAMA_ORIGIN}${path}${b}`
+    )
+}
+
+/** Prefer raw README.md from the editor textarea; fall back to prose text. */
+export function extractReadmeMarkdown($: cheerio.CheerioAPI): string | undefined {
+  const raw =
+    $('#readme textarea#editor, textarea#editor, #readme textarea')
+      .first()
+      .val()
+      ?.toString()
+      .trim() ||
+    $('#readme .prose, #readme .markdown-body')
+      .first()
+      .text()
+      .replace(/\n{3,}/g, '\n\n')
+      .trim() ||
+    ''
+
+  if (!raw) return undefined
+
+  return absolutizeLibraryUrls(raw)
+}
+
+function libraryModelName(name: string): string {
+  return name.replace(/^library\//, '').split(':')[0] ?? name
+}
+
+export async function getLibraryReadme(name: string): Promise<string | undefined> {
+  const modelName = libraryModelName(name)
+  const pageHtml = await fetchHtml(
+    `${OLLAMA_ORIGIN}/library/${encodeURIComponent(modelName)}`
+  )
+  return extractReadmeMarkdown(cheerio.load(pageHtml))
+}
+
 export async function getLibraryModel(
   name: string
 ): Promise<LibraryModelDetail> {
-  const modelName = name.replace(/^library\//, '').split(':')[0]
+  const modelName = libraryModelName(name)
   const [pageHtml, tagsHtml] = await Promise.all([
-    fetchHtml(`https://ollama.com/library/${encodeURIComponent(modelName)}`),
+    fetchHtml(`${OLLAMA_ORIGIN}/library/${encodeURIComponent(modelName)}`),
     fetchHtml(
-      `https://ollama.com/library/${encodeURIComponent(modelName)}/tags`
+      `${OLLAMA_ORIGIN}/library/${encodeURIComponent(modelName)}/tags`
     )
   ])
 
@@ -355,20 +446,12 @@ export async function getLibraryModel(
     return aBytes - bBytes
   })
 
-  const readme =
-    $page('#readme, .readme, article')
-      .first()
-      .text()
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 4000) || undefined
-
   return {
     name: modelName,
     description,
     capabilities,
     pulls: pullsMatch?.[1],
     tags,
-    readme
+    readme: extractReadmeMarkdown($page)
   }
 }

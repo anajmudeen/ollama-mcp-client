@@ -3,12 +3,36 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import 'katex/dist/katex.min.css'
 import { normalizeMarkdown } from '../lib/normalizeMarkdown'
+import { prepareLibraryReadme } from '../lib/prepareLibraryReadme'
 
 interface MarkdownContentProps {
   content: string
   streaming?: boolean
+  /** Allow limited HTML (library README). Off for chat streams. */
+  allowHtml?: boolean
+}
+
+const readmeSanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), 'div', 'span', 'center'],
+  attributes: {
+    ...defaultSchema.attributes,
+    div: [...(defaultSchema.attributes?.div ?? []), 'className', 'class', 'align'],
+    span: [...(defaultSchema.attributes?.span ?? []), 'className', 'class'],
+    img: [
+      ...(defaultSchema.attributes?.img ?? []),
+      'src',
+      'alt',
+      'title',
+      'width',
+      'height'
+    ],
+    a: [...(defaultSchema.attributes?.a ?? []), 'href', 'title', 'target', 'rel']
+  }
 }
 
 function isElement(node: Node): node is HTMLElement {
@@ -117,7 +141,8 @@ function syncStreamCaret(
 
 export function MarkdownContent({
   content,
-  streaming
+  streaming,
+  allowHtml
 }: MarkdownContentProps): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -135,22 +160,38 @@ export function MarkdownContent({
 
   // Trailing newlines create empty <p>s that park the caret on a blank line.
   const forRender = streaming ? content.replace(/\n+$/, '') : content
-  const normalized = normalizeMarkdown(forRender)
+  const prepared = allowHtml ? prepareLibraryReadme(forRender) : forRender
+  const normalized = normalizeMarkdown(prepared)
 
   return (
     <div ref={rootRef} className="markdown-body">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[
-          [
-            rehypeKatex,
-            {
-              throwOnError: false,
-              strict: 'ignore',
-              errorColor: '#c5d0dc'
-            }
-          ]
-        ]}
+        rehypePlugins={
+          allowHtml
+            ? [
+                rehypeRaw,
+                [rehypeSanitize, readmeSanitizeSchema],
+                [
+                  rehypeKatex,
+                  {
+                    throwOnError: false,
+                    strict: 'ignore',
+                    errorColor: '#c5d0dc'
+                  }
+                ]
+              ]
+            : [
+                [
+                  rehypeKatex,
+                  {
+                    throwOnError: false,
+                    strict: 'ignore',
+                    errorColor: '#c5d0dc'
+                  }
+                ]
+              ]
+        }
       >
         {normalized}
       </ReactMarkdown>

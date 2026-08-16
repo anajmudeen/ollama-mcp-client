@@ -47,6 +47,7 @@ export default function App(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showThinking, setShowThinking] = useState(false)
   const [view, setView] = useState<'chat' | 'models'>('chat')
+  const [modelsVisited, setModelsVisited] = useState(false)
 
   const historyRef = useRef<ChatMessage[]>([])
   const messagesRef = useRef<UiMessage[]>([])
@@ -619,22 +620,35 @@ export default function App(): React.JSX.Element {
         onNewSession={() => void handleNewSession()}
         onSelectSession={(id) => void handleSelectSession(id)}
         onDeleteSession={(id) => void handleDeleteSession(id)}
-        onOpenModels={() => setView('models')}
+        onOpenModels={() => {
+          setModelsVisited(true)
+          setView('models')
+          // Warm the default library list cache while Models opens.
+          void window.api.ollama.searchLibrary({ page: 1 }).catch(() => {})
+        }}
         onOpenSettings={() => setSettingsOpen(true)}
       />
-      {view === 'models' ? (
-        <ModelsPage
-          models={models}
-          ollamaOk={ollamaOk}
-          selectedModel={selectedModel}
-          onRefreshModels={async () => {
-            await refreshOllama()
-            const selected = await window.api.ollama.getSelectedModel()
-            setSelectedModel(selected)
-          }}
-          onUseInChat={(m) => void handleUseModelInChat(m)}
-        />
-      ) : (
+      {modelsVisited ? (
+        <div
+          className={
+            view === 'models' ? 'flex min-h-0 min-w-0 flex-1' : 'hidden'
+          }
+        >
+          <ModelsPage
+            models={models}
+            ollamaOk={ollamaOk}
+            selectedModel={selectedModel}
+            active={view === 'models'}
+            onRefreshModels={async () => {
+              await refreshOllama()
+              const selected = await window.api.ollama.getSelectedModel()
+              setSelectedModel(selected)
+            }}
+            onUseInChat={(m) => void handleUseModelInChat(m)}
+          />
+        </div>
+      ) : null}
+      {view === 'chat' ? (
         <Chat
           messages={messages}
           busy={busy}
@@ -650,7 +664,7 @@ export default function App(): React.JSX.Element {
           onClear={handleClear}
           onOpenSettings={() => setSettingsOpen(true)}
         />
-      )}
+      ) : null}
       <Settings
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

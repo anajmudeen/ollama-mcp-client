@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   LibraryCapability,
   LibraryModelDetail,
@@ -7,6 +7,7 @@ import type {
   OllamaModelDetails,
   PullProgressEvent
 } from '../../../shared/types'
+import { MarkdownContent } from './MarkdownContent'
 
 type ModelsTab = 'installed' | 'library'
 type LibrarySort = 'popular' | 'newest' | 'smallest' | 'largest'
@@ -16,6 +17,7 @@ interface ModelsPageProps {
   models: OllamaModel[]
   ollamaOk: boolean
   selectedModel: string | null
+  active?: boolean
   onRefreshModels: () => Promise<void>
   onUseInChat: (model: string) => void
 }
@@ -170,6 +172,7 @@ export function ModelsPage({
   models,
   ollamaOk,
   selectedModel,
+  active = true,
   onRefreshModels,
   onUseInChat
 }: ModelsPageProps): React.JSX.Element {
@@ -183,16 +186,21 @@ export function ModelsPage({
   const [libraryDraft, setLibraryDraft] = useState('')
   const [libraryCap, setLibraryCap] = useState<LibraryCapability | null>(null)
   const [libraryOrder, setLibraryOrder] = useState<LibrarySort>('popular')
-  const [libraryPage, setLibraryPage] = useState(1)
+  const [libraryPage, setLibraryPage] = useState(0)
   const [libraryModels, setLibraryModels] = useState<LibraryModelSummary[]>([])
   const [libraryHasMore, setLibraryHasMore] = useState(false)
   const [libraryLoading, setLibraryLoading] = useState(false)
+  const [libraryLoadingMore, setLibraryLoadingMore] = useState(false)
   const [libraryError, setLibraryError] = useState<string | null>(null)
+  const libraryScrollRef = useRef<HTMLDivElement>(null)
+  const librarySentinelRef = useRef<HTMLDivElement>(null)
+  const libraryRequestIdRef = useRef(0)
 
   const [detailKind, setDetailKind] = useState<'local' | 'remote' | null>(null)
   const [detailName, setDetailName] = useState<string | null>(null)
   const [localDetail, setLocalDetail] = useState<OllamaModelDetails | null>(null)
   const [remoteDetail, setRemoteDetail] = useState<LibraryModelDetail | null>(null)
+  const [readmeMd, setReadmeMd] = useState<string | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
 
@@ -218,48 +226,122 @@ export function ModelsPage({
     })
   }, [onRefreshModels])
 
-  const loadLibrary = useCallback(async (): Promise<void> => {
-    setLibraryLoading(true)
-    setLibraryError(null)
-    try {
-      const apiOrder =
-        libraryOrder === 'newest' ? 'newest' : 'popular'
-      const result = await window.api.ollama.searchLibrary({
-        q: libraryQuery || undefined,
-        category: libraryCap,
-        order: apiOrder,
-        page: libraryPage
+  const sortLibraryModels = useCallback(
+    (list: LibraryModelSummary[]): LibraryModelSummary[] => {
+      if (libraryOrder !== 'smallest' && libraryOrder !== 'largest') return list
+      const dir = libraryOrder === 'smallest' ? 1 : -1
+      return [...list].sort((a, b) => {
+        const aUnknown = !a.minSize
+        const bUnknown = !b.minSize
+        if (aUnknown && bUnknown) return a.name.localeCompare(b.name)
+        if (aUnknown) return 1
+        if (bUnknown) return -1
+        const aBytes = diskLabelToBytes(a.minSize!)
+        const bBytes = diskLabelToBytes(b.minSize!)
+        if (aBytes === bBytes) return a.name.localeCompare(b.name)
+        return (aBytes - bBytes) * dir
       })
-      let models = result.models
-      if (libraryOrder === 'smallest' || libraryOrder === 'largest') {
-        const dir = libraryOrder === 'smallest' ? 1 : -1
-        models = [...models].sort((a, b) => {
-          const aUnknown = !a.minSize
-          const bUnknown = !b.minSize
-          if (aUnknown && bUnknown) return a.name.localeCompare(b.name)
-          if (aUnknown) return 1
-          if (bUnknown) return -1
-          const aBytes = diskLabelToBytes(a.minSize!)
-          const bBytes = diskLabelToBytes(b.minSize!)
-          if (aBytes === bBytes) return a.name.localeCompare(b.name)
-          return (aBytes - bBytes) * dir
-        })
+    },
+    [libraryOrder]
+  )
+
+  const loadLibraryPage = useCallback(
+    async (page: number, mode: 'replace' | 'append'): Promise<void> => {
+      const requestId = ++libraryRequestIdRef.current
+      if (mode === 'replace') {
+        setLibraryLoading(true)
+        setLibraryError(null)
+      } else {
+        setLibraryLoadingMore(true)
       }
-      setLibraryModels(models)
-      setLibraryHasMore(result.hasMore)
-    } catch (err) {
-      setLibraryModels([])
-      setLibraryHasMore(false)
-      setLibraryError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLibraryLoading(false)
-    }
-  }, [libraryQuery, libraryCap, libraryOrder, libraryPage])
+      try {
+        const apiOrder = libraryOrder === 'newest' ? 'newest' : 'popular'
+        const result = await window.api.ollama.searchLibrary({
+          q: libraryQuery || undefined,
+          category: libraryCap,
+          order: apiOrder,
+          page
+        })
+        if (requestId !== libraryRequestIdRef.current) return
+
+        setLibraryModels((prev) => {
+          const merged =
+            mode === 'append'
+              ? (() => {
+                  const seen = new Set(prev.map((m) => m.name))
+                  const next = [...prev]
+                  for (const m of result.models) {
+                    if (seen.has(m.name)) continue
+                    seen.add(m.name)
+                    next.push(m)
+                  }
+                  return next
+                })()
+              : result.models
+          return sortLibraryModels(merged)
+        })
+        setLibraryHasMore(result.hasMore)
+        setLibraryPage(page)
+      } catch (err) {
+        if (requestId !== libraryRequestIdRef.current) return
+        if (mode === 'replace') {
+          setLibraryModels([])
+          setLibraryHasMore(false)
+        }
+        setLibraryError(err instanceof Error ? err.message : String(err))
+      } finally {
+        if (requestId === libraryRequestIdRef.current) {
+          setLibraryLoading(false)
+          setLibraryLoadingMore(false)
+        }
+      }
+    },
+    [libraryQuery, libraryCap, libraryOrder, sortLibraryModels]
+  )
 
   useEffect(() => {
     if (tab !== 'library') return
-    void loadLibrary()
-  }, [tab, loadLibrary])
+    libraryRequestIdRef.current += 1
+    setLibraryModels([])
+    setLibraryPage(0)
+    setLibraryHasMore(true)
+    setLibraryError(null)
+    void loadLibraryPage(1, 'replace')
+  }, [tab, libraryQuery, libraryCap, libraryOrder, loadLibraryPage])
+
+  useLayoutEffect(() => {
+    if (!active || tab !== 'library') return
+    const el = libraryScrollRef.current
+    if (!el) return
+    el.scrollTop = 0
+  }, [active, tab, libraryQuery, libraryCap, libraryOrder])
+
+  useEffect(() => {
+    if (tab !== 'library') return
+    const root = libraryScrollRef.current
+    const sentinel = librarySentinelRef.current
+    if (!root || !sentinel) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return
+        if (!libraryHasMore || libraryLoading || libraryLoadingMore) return
+        if (libraryPage < 1) return
+        void loadLibraryPage(libraryPage + 1, 'append')
+      },
+      { root, rootMargin: '240px 0px', threshold: 0 }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [
+    tab,
+    libraryHasMore,
+    libraryLoading,
+    libraryLoadingMore,
+    libraryPage,
+    loadLibraryPage,
+    libraryModels.length
+  ])
 
   const filteredInstalled = useMemo(() => {
     const q = installedQuery.trim().toLowerCase()
@@ -298,11 +380,16 @@ export function ModelsPage({
     setDetailKind('local')
     setDetailName(name)
     setRemoteDetail(null)
+    setReadmeMd(null)
     setDetailLoading(true)
     setDetailError(null)
     try {
       const detail = await window.api.ollama.showModel(name)
       setLocalDetail(detail)
+      void window.api.ollama
+        .getLibraryReadme(localBaseName(name))
+        .then((md) => setReadmeMd(md ?? null))
+        .catch(() => setReadmeMd(null))
     } catch (err) {
       setLocalDetail(null)
       setDetailError(err instanceof Error ? err.message : String(err))
@@ -315,11 +402,13 @@ export function ModelsPage({
     setDetailKind('remote')
     setDetailName(name)
     setLocalDetail(null)
+    setReadmeMd(null)
     setDetailLoading(true)
     setDetailError(null)
     try {
       const detail = await window.api.ollama.getLibraryModel(name)
       setRemoteDetail(detail)
+      setReadmeMd(detail.readme ?? null)
     } catch (err) {
       setRemoteDetail(null)
       setDetailError(err instanceof Error ? err.message : String(err))
@@ -333,6 +422,7 @@ export function ModelsPage({
     setDetailName(null)
     setLocalDetail(null)
     setRemoteDetail(null)
+    setReadmeMd(null)
     setDetailError(null)
   }
 
@@ -460,7 +550,7 @@ export function ModelsPage({
       )}
 
       <div className="flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
+        <div ref={libraryScrollRef} className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
           {tab === 'installed' ? (
             <div className="space-y-4">
               {!ollamaOk && (
@@ -607,7 +697,6 @@ export function ModelsPage({
                 className="flex flex-wrap gap-2"
                 onSubmit={(e) => {
                   e.preventDefault()
-                  setLibraryPage(1)
                   setLibraryQuery(libraryDraft.trim())
                 }}
               >
@@ -620,7 +709,6 @@ export function ModelsPage({
                 <select
                   value={libraryOrder}
                   onChange={(e) => {
-                    setLibraryPage(1)
                     setLibraryOrder(e.target.value as LibrarySort)
                   }}
                   className="rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-2 py-2 text-xs text-[#e7ecf1]"
@@ -644,7 +732,6 @@ export function ModelsPage({
                     key={f.label}
                     type="button"
                     onClick={() => {
-                      setLibraryPage(1)
                       setLibraryCap(f.id)
                     }}
                     className={`rounded-full px-2.5 py-1 text-[11px] ${
@@ -664,7 +751,7 @@ export function ModelsPage({
                 </p>
               )}
 
-              {libraryLoading ? (
+              {libraryLoading && libraryModels.length === 0 ? (
                 <p className="py-10 text-center text-sm text-[#6b7a8c]">Loading library…</p>
               ) : libraryModels.length === 0 ? (
                 <p className="py-10 text-center text-sm text-[#6b7a8c]">No models found.</p>
@@ -752,31 +839,33 @@ export function ModelsPage({
                 </ul>
               )}
 
-              <div className="flex items-center justify-center gap-3 pt-2 text-xs text-[#8b9aab]">
-                <button
-                  type="button"
-                  disabled={libraryPage <= 1 || libraryLoading}
-                  onClick={() => setLibraryPage((p) => p - 1)}
-                  className="rounded border border-[#2a3a4d] px-2 py-1 disabled:opacity-40"
-                >
-                  Prev
-                </button>
-                <span>Page {libraryPage}</span>
-                <button
-                  type="button"
-                  disabled={!libraryHasMore || libraryLoading}
-                  onClick={() => setLibraryPage((p) => p + 1)}
-                  className="rounded border border-[#2a3a4d] px-2 py-1 disabled:opacity-40"
-                >
-                  Next
-                </button>
+              <div
+                ref={librarySentinelRef}
+                className="flex min-h-10 items-center justify-center py-3 text-xs text-[#6b7a8c]"
+              >
+                {libraryLoadingMore ? (
+                  <div
+                    className="library-load-more flex items-center gap-2"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <span>Loading more</span>
+                    <span className="library-load-dots" aria-hidden>
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </div>
+                ) : libraryModels.length > 0 && !libraryHasMore ? (
+                  <span className="library-load-end">End of results</span>
+                ) : null}
               </div>
             </div>
           )}
         </div>
 
         {detailKind && (
-          <aside className="flex w-[min(100%,22rem)] shrink-0 flex-col border-l border-[#243041] bg-[#121820]">
+          <aside className="flex w-[min(100%,28rem)] shrink-0 flex-col border-l border-[#243041] bg-[#121820]">
             <div className="flex items-start justify-between gap-2 border-b border-[#243041] px-4 py-3">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-semibold text-[#f0f4f8]">
@@ -889,6 +978,16 @@ export function ModelsPage({
                       Delete
                     </button>
                   </div>
+                  {readmeMd ? (
+                    <div>
+                      <h4 className="mb-2 text-[10px] uppercase tracking-wider text-[#6b7a8c]">
+                        README
+                      </h4>
+                      <div className="rounded-lg bg-[#0f1419] px-3 py-2 text-[12px] leading-relaxed text-[#c5d0dc] [&_.markdown-body]:text-[#c5d0dc] [&_.markdown-body_h1]:text-sm [&_.markdown-body_h2]:text-sm [&_.markdown-body_h3]:text-[13px]">
+                        <MarkdownContent content={readmeMd} allowHtml />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -986,6 +1085,16 @@ export function ModelsPage({
                       })}
                     </ul>
                   </div>
+                  {readmeMd ? (
+                    <div>
+                      <h4 className="mb-2 text-[10px] uppercase tracking-wider text-[#6b7a8c]">
+                        README
+                      </h4>
+                      <div className="rounded-lg bg-[#0f1419] px-3 py-2 text-[12px] leading-relaxed text-[#c5d0dc] [&_.markdown-body]:text-[#c5d0dc] [&_.markdown-body_h1]:text-sm [&_.markdown-body_h2]:text-sm [&_.markdown-body_h3]:text-[13px]">
+                        <MarkdownContent content={readmeMd} allowHtml />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>

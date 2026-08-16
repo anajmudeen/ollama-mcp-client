@@ -25,7 +25,7 @@ import {
   upsertServer
 } from './config-store'
 import { mcpManager } from './mcp-manager'
-import { getLibraryModel, searchLibrary } from './ollama-library'
+import { getLibraryModel, getLibraryReadme, searchLibrary } from './ollama-library'
 import {
   abortPull,
   deleteModel,
@@ -81,6 +81,9 @@ export function registerIpc(ipcMain: IpcMain): void {
   )
   ipcMain.handle('ollama:getLibraryModel', (_e, name: string) =>
     getLibraryModel(name)
+  )
+  ipcMain.handle('ollama:getLibraryReadme', (_e, name: string) =>
+    getLibraryReadme(name)
   )
   ipcMain.handle('ollama:setBaseUrl', (_e, url: string) => setOllamaBaseUrl(url))
   ipcMain.handle('ollama:getSelectedModel', () => getSelectedModel())
