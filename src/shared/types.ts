@@ -112,6 +112,13 @@ export interface OllamaStatus {
   ok: boolean
   baseUrl: string
   error?: string
+  /** Ollama server version from /api/version when available. */
+  version?: string
+  /**
+   * False when this Ollama build rejects image-generation models
+   * (experimental support removed in v0.32.6+).
+   */
+  imageGenSupported?: boolean
 }
 
 export interface McpToolInfo {
@@ -159,6 +166,12 @@ export type ChatEvent =
   | { type: 'chunk'; content: string; turnId?: string }
   | { type: 'assistant_done'; content: string; turnId?: string }
   | {
+      type: 'assistant_images'
+      images: string[]
+      mime?: string
+      turnId?: string
+    }
+  | {
       type: 'tool_start'
       id: string
       name: string
@@ -203,6 +216,8 @@ export type UiMessage =
       responseMs?: number
       /** Model that generated this reply. */
       model?: string
+      /** Generated image data URLs (e.g. data:image/png;base64,...). */
+      images?: string[]
     }
   | {
       kind: 'thinking'

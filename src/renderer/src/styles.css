@@ -438,6 +438,57 @@ pre,
   animation: live-pulse 1.4s ease-out infinite;
 }
 
+@keyframes image-gen-scan {
+  0% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateY(220%);
+    opacity: 0;
+  }
+}
+
+@keyframes image-gen-grid-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.image-gen-frame {
+  box-shadow: inset 0 0 0 1px rgba(126, 200, 227, 0.08);
+}
+
+.image-gen-grid {
+  background-image:
+    linear-gradient(rgba(126, 200, 227, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(126, 200, 227, 0.08) 1px, transparent 1px);
+  background-size: 18px 18px;
+  animation: image-gen-grid-pulse 2.2s ease-in-out infinite;
+}
+
+.image-gen-beam {
+  top: 0;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--activity-accent) 28%, transparent),
+    transparent
+  );
+  filter: blur(1px);
+  animation: image-gen-scan 2.4s ease-in-out infinite;
+}
+
 .tool-spinner {
   display: inline-block;
   width: 12px;

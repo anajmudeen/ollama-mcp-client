@@ -82,7 +82,7 @@ export function ActivityIndicator({
     el.scrollTop = el.scrollHeight
   }, [activity.thinking, thinkingOpen])
 
-  if (!visible || activity.phase === 'idle' || activity.phase === 'generating') {
+  if (!visible || activity.phase === 'idle') {
     return null
   }
 
@@ -96,17 +96,24 @@ export function ActivityIndicator({
   }
 
   const meta = PHASE_META[activity.phase]
+  const isImageGen =
+    activity.phase === 'generating' &&
+    (activity.detail ?? '').toLowerCase().includes('image')
   const hasThinking =
     Boolean(activity.thinking?.trim()) && activity.phase === 'thinking'
   const style = {
-    '--activity-accent': meta.accent,
-    '--activity-ring': meta.ring
+    '--activity-accent': isImageGen ? '#7ec8e3' : meta.accent,
+    '--activity-ring': isImageGen
+      ? 'rgba(126, 200, 227, 0.35)'
+      : meta.ring
   } as CSSProperties
 
   return (
     <div
       className="activity-enter mr-auto w-full min-w-[16rem] max-w-[min(100%,42rem)] overflow-hidden rounded-xl border border-[#2a3a4d] bg-[#121820]"
       style={style}
+      aria-live="polite"
+      aria-busy="true"
     >
       <div className="activity-shimmer relative px-3.5 py-3">
         <div className="flex items-center gap-3">
@@ -119,7 +126,7 @@ export function ActivityIndicator({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium tracking-wide text-[#f0f4f8]">
-                {meta.label}
+                {isImageGen ? 'Generating image' : meta.label}
               </span>
               <span className="activity-dots" aria-hidden="true">
                 <span>.</span>
@@ -139,6 +146,18 @@ export function ActivityIndicator({
         <div className="activity-progress mt-3 h-1 overflow-hidden rounded-full bg-[#1a2430]">
           <div className="activity-progress-bar h-full rounded-full" />
         </div>
+
+        {isImageGen ? (
+          <div
+            className="image-gen-frame mt-3 overflow-hidden rounded-lg border border-[#243041] bg-[#0d1218]"
+            aria-hidden="true"
+          >
+            <div className="image-gen-scan relative aspect-square w-full max-w-[14rem]">
+              <div className="image-gen-grid absolute inset-0" />
+              <div className="image-gen-beam absolute inset-x-0 h-1/3" />
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {hasThinking ? (

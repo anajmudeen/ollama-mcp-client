@@ -611,7 +611,7 @@ export function ModelsPage({
                 </button>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {[null, 'tools', 'vision', 'thinking', 'embedding'].map((cap) => (
+                {[null, 'tools', 'vision', 'image', 'thinking', 'embedding'].map((cap) => (
                   <button
                     key={cap ?? 'all'}
                     type="button"

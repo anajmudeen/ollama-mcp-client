@@ -2,10 +2,12 @@ import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
 import type { ChatEvent, ChatMessage, ChatSendPayload } from '../shared/types'
 import { mcpManager } from './mcp-manager'
+import { generateImageBase64 } from './ollama-image'
 import {
   chatStream,
   detectVisionSupport,
   getModelInfo,
+  modelIsImageGen,
   toOllamaMessages,
   type OllamaChatMessage,
   type OllamaTool
@@ -105,6 +107,56 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
     `[agent] turn start id=${tid} model=${payload.model} messages=${messages.length} chars≈${approxChars(messages)} tools=${tools.length}`
   )
 
+  // Image-generation models use /api/generate instead of the chat/tools loop.
+  const modelInfo = await getModelInfo(payload.model).catch(() => null)
+  if (modelIsImageGen(payload.model, modelInfo)) {
+    const lastUser = [...payload.messages].reverse().find((m) => m.role === 'user')
+    const prompt = (lastUser?.content ?? '').trim()
+    if (!prompt) {
+      emitTurn({ type: 'error', message: 'Enter a prompt describing the image to generate.' })
+      finish()
+      return
+    }
+
+    emitTurn({
+      type: 'status',
+      phase: 'generating',
+      detail: 'Generating image…'
+    })
+
+    try {
+      const imageBase64 = await generateImageBase64(
+        payload.model,
+        prompt,
+        abort.signal
+      )
+      if (abort.signal.aborted || activeTurnId !== turnId) {
+        emitTurn({ type: 'error', message: 'Aborted' })
+        return
+      }
+      console.log(
+        `[agent] image done id=${tid} bytes=${imageBase64.length} +${ms(turnStartedAt)}`
+      )
+      emitTurn({
+        type: 'assistant_images',
+        images: [imageBase64],
+        mime: 'image/png'
+      })
+      finish()
+      return
+    } catch (err) {
+      if (abort.signal.aborted || activeTurnId !== turnId) {
+        emitTurn({ type: 'error', message: 'Aborted' })
+        return
+      }
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[agent] image error id=${tid}`, message)
+      emitTurn({ type: 'error', message })
+      finish()
+      return
+    }
+  }
+
   const imageStats = messages
     .filter((m) => m.images?.length)
     .map((m) => ({
@@ -114,7 +166,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
     }))
   if (imageStats.length) {
     console.log('[agent] image payloads', imageStats)
-    const info = await getModelInfo(payload.model).catch(() => null)
+    const info = modelInfo ?? (await getModelInfo(payload.model).catch(() => null))
     const support = detectVisionSupport(payload.model, info)
     if (support === 'no') {
       emitTurn({

@@ -38,6 +38,7 @@ export default function App(): React.JSX.Element {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [ollamaOk, setOllamaOk] = useState(false)
   const [ollamaError, setOllamaError] = useState<string | undefined>()
+  const [imageGenSupported, setImageGenSupported] = useState(true)
   const [baseUrl, setBaseUrl] = useState('http://127.0.0.1:11434')
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -181,6 +182,7 @@ export default function App(): React.JSX.Element {
     setOllamaOk(status.ok)
     setOllamaError(status.error)
     setBaseUrl(status.baseUrl)
+    setImageGenSupported(status.imageGenSupported !== false)
     if (status.ok) {
       try {
         const list = await window.api.ollama.listModels()
@@ -351,6 +353,54 @@ export default function App(): React.JSX.Element {
               kind: 'assistant',
               id: uid(),
               content: event.content,
+              createdAt: finishedAt,
+              streaming: false,
+              responseMs,
+              model: turnModelRef.current ?? undefined
+            })
+          }
+          messagesRef.current = next
+          persistSessionRef.current(sessionId, next, historySnapshot)
+          return next
+        })
+      } else if (event.type === 'assistant_images') {
+        if (!stillCurrent()) return
+        endBusy()
+        const mime = event.mime ?? 'image/png'
+        const dataUrls = event.images.map((b64) =>
+          b64.startsWith('data:') ? b64 : `data:${mime};base64,${b64}`
+        )
+        historyRef.current = [
+          ...historyRef.current,
+          { role: 'assistant', content: '[generated image]' }
+        ]
+        const historySnapshot = historyRef.current
+        const responseMs =
+          turnStartedAtRef.current != null
+            ? Date.now() - turnStartedAtRef.current
+            : undefined
+        const finishedAt = nowIso()
+        setMessages((prev) => {
+          if (sessionId !== activeSessionIdRef.current) return prev
+          const next = [...prev].map((m) =>
+            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
+          )
+          const last = next[next.length - 1]
+          if (last?.kind === 'assistant' && last.streaming) {
+            next[next.length - 1] = {
+              ...last,
+              content: last.content || '',
+              images: dataUrls,
+              streaming: false,
+              createdAt: finishedAt,
+              responseMs
+            }
+          } else {
+            next.push({
+              kind: 'assistant',
+              id: uid(),
+              content: '',
+              images: dataUrls,
               createdAt: finishedAt,
               streaming: false,
               responseMs,
@@ -656,6 +706,7 @@ export default function App(): React.JSX.Element {
           showThinking={showThinking}
           canSend={Boolean(selectedModel) && ollamaOk}
           ollamaOk={ollamaOk}
+          imageGenSupported={imageGenSupported}
           models={models}
           selectedModel={selectedModel}
           onSelectModel={(m) => void handleSelectModel(m)}

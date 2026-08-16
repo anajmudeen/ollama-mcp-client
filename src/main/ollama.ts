@@ -65,7 +65,24 @@ export async function getOllamaStatus(): Promise<OllamaStatus> {
     if (!res.ok) {
       return { ok: false, baseUrl, error: `HTTP ${res.status}` }
     }
-    return { ok: true, baseUrl }
+    let version: string | undefined
+    try {
+      const verRes = await fetch(`${baseUrl}/api/version`, {
+        signal: AbortSignal.timeout(3000)
+      })
+      if (verRes.ok) {
+        const ver = (await verRes.json()) as { version?: string }
+        version = ver.version
+      }
+    } catch {
+      // optional
+    }
+    return {
+      ok: true,
+      baseUrl,
+      version,
+      imageGenSupported: ollamaSupportsImageGeneration(version)
+    }
   } catch (err) {
     return {
       ok: false,
@@ -73,6 +90,19 @@ export async function getOllamaStatus(): Promise<OllamaStatus> {
       error: err instanceof Error ? err.message : String(err)
     }
   }
+}
+
+/** Experimental image gen was removed in Ollama v0.32.6. */
+export function ollamaSupportsImageGeneration(version?: string): boolean {
+  if (!version) return true // unknown — allow attempt
+  const parts = version.split('.').map((p) => parseInt(p, 10))
+  const major = parts[0] ?? 0
+  const minor = parts[1] ?? 0
+  const patch = parts[2] ?? 0
+  if (major > 0) return false
+  if (minor > 32) return false
+  if (minor === 32 && patch >= 6) return false
+  return true
 }
 
 export async function listModels(): Promise<OllamaModel[]> {
@@ -115,6 +145,12 @@ export async function listModels(): Promise<OllamaModel[]> {
         }) === 'yes'
       ) {
         capabilities.push('vision')
+      }
+      if (
+        !capabilities.includes('image') &&
+        detectImageGenSupport(m.name, { capabilities }) === 'yes'
+      ) {
+        capabilities.push('image')
       }
 
       const tags = buildModelTags({
@@ -227,7 +263,12 @@ const VISION_NAME_RE =
 
 const VISION_FAMILY_RE = /mllama|clip|vision/i
 
+/** Text-to-image generators (not vision/OCR). From ollama-play / YT Shorts. */
+const IMAGE_GEN_NAME_RE =
+  /z-image|flux|sdxl|stable-diffusion|stable_diffusion|imagen|dreamshaper|animagine/i
+
 export type VisionSupport = 'yes' | 'no' | 'unknown'
+export type ImageGenSupport = 'yes' | 'no' | 'unknown'
 
 export function detectVisionSupport(
   model: string,
@@ -253,6 +294,25 @@ export function detectVisionSupport(
   if (caps && caps.length > 0 && !caps.includes('vision')) return 'no'
 
   return 'unknown'
+}
+
+export function detectImageGenSupport(
+  model: string,
+  info?: OllamaModelInfo | null
+): ImageGenSupport {
+  const caps = info?.capabilities
+  if (caps?.includes('image')) return 'yes'
+  if (IMAGE_GEN_NAME_RE.test(model)) return 'yes'
+  if (caps && caps.length > 0 && !caps.includes('image')) return 'no'
+  return 'unknown'
+}
+
+/** True when this model should use /api/generate for image output. */
+export function modelIsImageGen(
+  model: string,
+  info?: OllamaModelInfo | null
+): boolean {
+  return detectImageGenSupport(model, info) === 'yes'
 }
 
 export function modelSupportsVision(

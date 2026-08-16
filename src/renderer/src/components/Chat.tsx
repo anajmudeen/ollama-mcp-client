@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { OllamaModel } from '../../../shared/types'
 import type { UiMessage } from '../../../shared/types'
 import type { ActivityState } from './ActivityIndicator'
+import { DownloadImageButton } from './DownloadImageButton'
 import { ActivityIndicator } from './ActivityIndicator'
 import { CopyButton } from './CopyButton'
 import { MarkdownContent } from './MarkdownContent'
@@ -22,6 +23,7 @@ interface ChatProps {
   showThinking: boolean
   canSend: boolean
   ollamaOk: boolean
+  imageGenSupported?: boolean
   models: OllamaModel[]
   selectedModel: string | null
   onSelectModel: (model: string) => void
@@ -42,6 +44,7 @@ export function Chat({
   showThinking,
   canSend,
   ollamaOk,
+  imageGenSupported = true,
   models,
   selectedModel,
   onSelectModel,
@@ -87,22 +90,41 @@ export function Chat({
   const hasDraft = Boolean(draft.trim()) || attachments.length > 0
   const selectedMeta = models.find((m) => m.name === selectedModel)
   const modelHasVision = Boolean(
-    selectedMeta?.tags?.some((t) =>
-      ['vision', 'image'].includes(t.toLowerCase())
-    ) ||
-      selectedMeta?.capabilities?.some((c) =>
-        ['vision', 'image'].includes(c.toLowerCase())
-      ) ||
+    selectedMeta?.tags?.some((t) => t.toLowerCase() === 'vision') ||
+      selectedMeta?.capabilities?.some((c) => c.toLowerCase() === 'vision') ||
       /vision|llava|bakllava|moondream|minicpm-v|qwen2(\.5)?-?vl|gemma3|pixtral/i.test(
         selectedModel ?? ''
       )
   )
+  const modelIsImageGen = Boolean(
+    selectedMeta?.tags?.some((t) => t.toLowerCase() === 'image') ||
+      selectedMeta?.capabilities?.some((c) => c.toLowerCase() === 'image') ||
+      /z-image|flux|sdxl|stable-diffusion|stable_diffusion|imagen|dreamshaper|animagine/i.test(
+        selectedModel ?? ''
+      )
+  )
+  const hasStreamingAssistant = messages.some(
+    (m) => m.kind === 'assistant' && m.streaming
+  )
+  /** Hide generating spinner once reply text streams; keep it for image gen. */
+  const showActivity =
+    busy && !(activity.phase === 'generating' && hasStreamingAssistant)
   const hasImageAttachment = attachments.some((a) => a.kind === 'image')
   const modelNames = models.map((m) => m.name)
 
   const submit = (e?: React.FormEvent): void => {
     e?.preventDefault()
     if (!hasDraft || !canCompose) return
+    if (modelIsImageGen) {
+      const prompt = draft.trim()
+      if (!prompt) return
+      stickToBottomRef.current = true
+      onSend({ content: prompt })
+      setDraft('')
+      setAttachments([])
+      setAttachError(null)
+      return
+    }
     const built = buildMessageFromAttachments(draft, attachments)
     if (!built.content && !built.images?.length) return
     stickToBottomRef.current = true
@@ -239,7 +261,25 @@ export function Chat({
               <div key={m.id} className="msg-enter group/assistant flex justify-start">
                 <div className="max-w-[85%]">
                   <div className="relative rounded-2xl rounded-bl-md border border-[#2a3a4d] bg-[#161d27] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1]">
-                    <MarkdownContent content={m.content} streaming={m.streaming} />
+                    {m.images && m.images.length > 0 && (
+                      <div className="mb-2 flex flex-col gap-2">
+                        {m.images.map((src, i) => (
+                          <div key={`${m.id}-img-${i}`} className="relative">
+                            <img
+                              src={src}
+                              alt="Generated image"
+                              className="max-h-[28rem] w-full rounded-lg object-contain"
+                            />
+                            <div className="mt-1.5 flex justify-end opacity-80 transition group-hover/assistant:opacity-100">
+                              <DownloadImageButton src={src} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(m.content.trim() || m.streaming) && (
+                      <MarkdownContent content={m.content} streaming={m.streaming} />
+                    )}
                     {!m.streaming && m.content.trim() ? (
                       <div className="mt-2 flex justify-end opacity-70 transition group-hover/assistant:opacity-100">
                         <CopyButton text={m.content} />
@@ -294,7 +334,7 @@ export function Chat({
 
         <ActivityIndicator
           activity={activity}
-          visible={busy}
+          visible={showActivity}
           showThinking={showThinking}
         />
         <div ref={bottomRef} />
@@ -309,7 +349,19 @@ export function Chat({
         {attachError && (
           <p className="mb-2 text-xs text-rose-300">{attachError}</p>
         )}
-        {hasImageAttachment && selectedModel && !modelHasVision && (
+        {modelIsImageGen && (
+          <p className="mb-2 text-xs text-[#8b9aab]">
+            Image model selected — your message will be used as a generation prompt.
+          </p>
+        )}
+        {modelIsImageGen && !imageGenSupported && (
+          <p className="mb-2 text-xs text-amber-300/90">
+            Your Ollama build does not support image generation (removed in v0.32.6+).
+            Use Ollama 0.32.5 for models like x/z-image-turbo, or wait for a release that
+            restores it.
+          </p>
+        )}
+        {hasImageAttachment && selectedModel && !modelHasVision && !modelIsImageGen && (
           <p className="mb-2 text-xs text-amber-300/90">
             "{selectedModel}" may not support images. Pick a model tagged{' '}
             <span className="font-medium">vision</span>, or the model will ignore
@@ -324,7 +376,7 @@ export function Chat({
           </p>
         )}
         <div className="composer-shell relative rounded-[28px] border border-[#2a3a4d] bg-[#1a1f26] px-4 pb-3 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] focus-within:border-[#3d5168]">
-          {attachments.length > 0 && (
+          {!modelIsImageGen && attachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
               {attachments.map((file) => (
                 <div
@@ -371,6 +423,7 @@ export function Chat({
               }
             }}
             onPaste={(e) => {
+              if (modelIsImageGen) return
               const items = e.clipboardData?.files
               if (items && items.length > 0) {
                 e.preventDefault()
@@ -379,12 +432,17 @@ export function Chat({
             }}
             rows={2}
             placeholder={
-              busy ? 'Waiting for the model to finish…' : 'Send a message'
+              busy
+                ? 'Waiting for the model to finish…'
+                : modelIsImageGen
+                  ? 'Describe the image to generate…'
+                  : 'Send a message'
             }
             disabled={!ollamaOk}
             className="max-h-40 min-h-[56px] w-full resize-none bg-transparent px-1 pb-12 pt-1 text-[15px] leading-relaxed text-[#e7ecf1] outline-none placeholder:text-[#6b7a8c] disabled:opacity-50"
           />
 
+          {!modelIsImageGen && (
           <input
             ref={fileInputRef}
             type="file"
@@ -393,24 +451,27 @@ export function Chat({
             className="hidden"
             onChange={(e) => void addFiles(e.target.files)}
           />
+          )}
 
           <div className="absolute bottom-2.5 right-2.5 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!ollamaOk || busy}
-              title="Add file"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2a313a] text-[#c5d0dc] transition hover:bg-[#343c48] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <path
-                  d="M8 3.5v9M3.5 8h9"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
+            {!modelIsImageGen && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!ollamaOk || busy}
+                title="Add file"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2a313a] text-[#c5d0dc] transition hover:bg-[#343c48] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+                  <path
+                    d="M8 3.5v9M3.5 8h9"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            )}
 
             <div className="relative" ref={modelMenuRef}>
               <button
