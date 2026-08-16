@@ -97,7 +97,11 @@ export function Sidebar({
                   <span
                     className={`text-[10px] ${active ? 'text-[#7aa4d4]' : 'text-[#6b7a8c]'}`}
                   >
-                    {formatRelativeTime(session.updatedAt)}
+                    {formatRelativeTime(
+                      session.uiMessages.at(-1)?.createdAt ??
+                        session.updatedAt ??
+                        session.createdAt
+                    )}
                   </span>
                 </button>
                 <button

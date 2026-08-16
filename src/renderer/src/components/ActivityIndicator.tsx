@@ -108,6 +108,57 @@ export function ActivityIndicator({
       : meta.ring
   } as CSSProperties
 
+  if (isImageGen) {
+    return (
+      <div
+        className="activity-enter group/assistant mr-auto flex w-full max-w-[85%] justify-start"
+        style={style}
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <div className="w-full max-w-[min(100%,28rem)]">
+          <div className="relative overflow-hidden rounded-2xl rounded-bl-md border border-[#2a3a4d] bg-[#161d27] px-3.5 py-2">
+            <div
+              className="image-gen-frame activity-shimmer relative overflow-hidden rounded-lg border border-[#243041] bg-[#0d1218]"
+              aria-hidden="true"
+            >
+              <div className="image-gen-scan relative aspect-square w-full max-h-[28rem]">
+                <div className="image-gen-grid absolute inset-0" />
+                <div className="image-gen-beam absolute inset-x-0 h-1/3" />
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0d1218]/95 via-[#0d1218]/55 to-transparent px-3 pb-3 pt-10">
+                  <div className="flex items-center gap-2">
+                    <div className="activity-orb relative h-7 w-7 shrink-0">
+                      <span className="activity-orb-core absolute inset-1 rounded-full" />
+                      <span className="activity-orb-ring absolute inset-0 rounded-full" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium text-[#f0f4f8]">
+                          Generating image
+                        </span>
+                        <span className="activity-dots" aria-hidden="true">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                        <span className="ml-auto font-mono text-[11px] tabular-nums text-[#6b7a8c]">
+                          {formatElapsed(elapsed)}
+                        </span>
+                      </div>
+                      <div className="activity-progress mt-2 h-1 overflow-hidden rounded-full bg-[#1a2430]/90">
+                        <div className="activity-progress-bar h-full rounded-full" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="activity-enter mr-auto w-full min-w-[16rem] max-w-[min(100%,42rem)] overflow-hidden rounded-xl border border-[#2a3a4d] bg-[#121820]"
@@ -126,7 +177,7 @@ export function ActivityIndicator({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium tracking-wide text-[#f0f4f8]">
-                {isImageGen ? 'Generating image' : meta.label}
+                {meta.label}
               </span>
               <span className="activity-dots" aria-hidden="true">
                 <span>.</span>
@@ -146,18 +197,6 @@ export function ActivityIndicator({
         <div className="activity-progress mt-3 h-1 overflow-hidden rounded-full bg-[#1a2430]">
           <div className="activity-progress-bar h-full rounded-full" />
         </div>
-
-        {isImageGen ? (
-          <div
-            className="image-gen-frame mt-3 overflow-hidden rounded-lg border border-[#243041] bg-[#0d1218]"
-            aria-hidden="true"
-          >
-            <div className="image-gen-scan relative aspect-square w-full max-w-[14rem]">
-              <div className="image-gen-grid absolute inset-0" />
-              <div className="image-gen-beam absolute inset-x-0 h-1/3" />
-            </div>
-          </div>
-        ) : null}
       </div>
 
       {hasThinking ? (

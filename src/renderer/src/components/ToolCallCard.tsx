@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { MessageMeta } from './MessageMeta'
 
 interface ToolCallCardProps {
@@ -35,78 +35,97 @@ export function ToolCallCard({
   const truncated =
     result && result.length > 4000 ? `${result.slice(0, 4000)}\n…` : result
   const shortName = name.includes('__') ? name.split('__').slice(1).join('__') : name
+  const running = status === 'running'
+
+  const style = {
+    '--activity-accent': '#7dd3a8',
+    '--activity-ring': 'rgba(125, 211, 168, 0.35)'
+  } as CSSProperties
 
   return (
     <div className="tool-card-enter mr-auto w-full min-w-[16rem] max-w-[min(100%,42rem)]">
       <div
-        className={`overflow-hidden rounded-lg border bg-[#141a22] ${
-          status === 'running'
+        className={`overflow-hidden rounded-xl border bg-[#121820] text-left ${
+          running
             ? 'tool-card-running border-[#3d5a40]'
             : status === 'error'
               ? 'border-rose-900/50'
               : 'border-[#2a3a4d]'
         }`}
+        style={running ? style : undefined}
       >
-        <div className="px-3 py-2.5">
+        {running ? (
+          <div className="activity-shimmer relative px-3.5 py-3">
+            <div className="flex items-center gap-3">
+              <div className="activity-orb relative h-9 w-9 shrink-0">
+                <span className="activity-orb-core absolute inset-1.5 rounded-full" />
+                <span className="activity-orb-ring absolute inset-0 rounded-full" />
+                <span className="activity-orb-ring activity-orb-ring-delay absolute inset-0 rounded-full" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium tracking-wide text-[#f0f4f8]">
+                    Tool call
+                  </span>
+                  <span className="activity-dots" aria-hidden="true">
+                    <span>.</span>
+                    <span>.</span>
+                    <span>.</span>
+                  </span>
+                  <span className="ml-auto truncate font-mono text-[11px] text-[#6b7a8c]">
+                    {shortName}
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-xs text-[#8b9aab]">
+                  {STATUS_LABEL[status]}…
+                </p>
+              </div>
+            </div>
+            <div className="activity-progress mt-3 h-1 overflow-hidden rounded-full bg-[#1a2430]">
+              <div className="activity-progress-bar h-full rounded-full" />
+            </div>
+          </div>
+        ) : (
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="flex w-full items-center justify-between gap-2 text-left"
+            className="flex w-full items-center justify-between px-3.5 py-2 text-left hover:bg-[#1a2430]"
           >
             <div className="flex min-w-0 items-center gap-2">
-              {status === 'running' ? (
-                <span className="tool-spinner shrink-0" aria-hidden />
-              ) : status === 'done' ? (
-                <span className="tool-check shrink-0 text-emerald-400" aria-hidden>
-                  ✓
-                </span>
-              ) : (
-                <span className="shrink-0 text-rose-300" aria-hidden>
-                  !
-                </span>
-              )}
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[#e7ecf1]">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-[#8b9aab]">
                 Tool call
               </span>
               <span className="truncate text-[11px] text-[#6b7a8c]">{shortName}</span>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
               <span className={`text-[10px] uppercase ${STATUS_COLOR[status]}`}>
                 {STATUS_LABEL[status]}
               </span>
-              <span className="font-mono text-[11px] text-[#6b7a8c]">
-                {open ? '−' : '+'}
-              </span>
             </div>
+            <span className="shrink-0 font-mono text-[11px] text-[#6b7a8c]">
+              {open ? '−' : '+'}
+            </span>
           </button>
+        )}
 
-          {status === 'running' && (
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[#1a2430]">
-              <div className="tool-progress-bar h-full rounded-full bg-emerald-500/70" />
-            </div>
-          )}
-
-          {open && (
-            <div className="mt-2 space-y-2 border-t border-[#243041] pt-2">
-              <div className="min-w-0 rounded bg-[#0f1419] px-2 py-1.5">
-                <div className="truncate text-xs font-medium text-[#e7ecf1]">
-                  {shortName}
-                </div>
-                <div className="truncate font-mono text-[10px] text-[#6b7a8c]">
-                  {name}
-                </div>
+        {open && !running && (
+          <div className="space-y-2 border-t border-[#243041] px-3.5 py-2.5">
+            <div className="min-w-0 rounded bg-[#0f1419] px-2 py-1.5">
+              <div className="truncate text-xs font-medium text-[#e7ecf1]">
+                {shortName}
               </div>
-              <pre className="max-h-32 overflow-auto rounded bg-[#0f1419] p-2 font-mono text-[11px] leading-relaxed text-[#8b9aab]">
-                {argsJson}
-              </pre>
-              {truncated !== undefined && (
-                <pre className="max-h-48 overflow-auto rounded border border-[#243041] bg-[#0f1419] p-2 font-mono text-[11px] leading-relaxed text-[#c5d0dc]">
-                  {truncated}
-                </pre>
-              )}
+              <div className="truncate font-mono text-[10px] text-[#6b7a8c]">
+                {name}
+              </div>
             </div>
-          )}
-        </div>
+            <pre className="max-h-32 overflow-auto rounded bg-[#0f1419] p-2 font-mono text-[11px] leading-relaxed text-[#8b9aab]">
+              {argsJson}
+            </pre>
+            {truncated !== undefined && (
+              <pre className="max-h-48 overflow-auto rounded border border-[#243041] bg-[#0f1419] p-2 font-mono text-[11px] leading-relaxed text-[#c5d0dc]">
+                {truncated}
+              </pre>
+            )}
+          </div>
+        )}
       </div>
       <MessageMeta createdAt={createdAt} model={model} align="left" />
     </div>

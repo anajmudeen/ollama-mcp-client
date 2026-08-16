@@ -5,7 +5,8 @@ import type {
   ChatMessage,
   ChatSession,
   McpServerConfig,
-  SessionsState
+  SessionsState,
+  UiMessage
 } from '../shared/types'
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -102,14 +103,35 @@ function stripHeavyHistory(history: ChatMessage[]): ChatMessage[] {
   })
 }
 
+function lastMessageCreatedAt(uiMessages: UiMessage[]): string | null {
+  for (let i = uiMessages.length - 1; i >= 0; i--) {
+    const createdAt = uiMessages[i]?.createdAt
+    if (createdAt) return createdAt
+  }
+  return null
+}
+
+/** Session recency is last message time — not last open/flush. */
+function sessionActivityAt(session: ChatSession): string {
+  return lastMessageCreatedAt(session.uiMessages) ?? session.createdAt
+}
+
+function withActivityTimestamp(session: ChatSession): ChatSession {
+  const updatedAt = sessionActivityAt(session)
+  return session.updatedAt === updatedAt ? session : { ...session, updatedAt }
+}
+
 function sortSessions(sessions: ChatSession[]): ChatSession[] {
   return [...sessions].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    (a, b) =>
+      new Date(sessionActivityAt(b)).getTime() -
+      new Date(sessionActivityAt(a)).getTime()
   )
 }
 
 export function listSessions(): ChatSession[] {
-  return sortSessions(store.get('sessions', []))
+  const sessions = store.get('sessions', []).map(withActivityTimestamp)
+  return sortSessions(sessions)
 }
 
 export function getActiveSessionId(): string | null {
@@ -159,14 +181,15 @@ export function updateSession(
   const idx = sessions.findIndex((s) => s.id === id)
   if (idx < 0) throw new Error('Session not found')
 
+  const nextMessages = patch.uiMessages ?? sessions[idx].uiMessages
   const updated: ChatSession = {
     ...sessions[idx],
     ...patch,
     history: patch.history
       ? stripHeavyHistory(patch.history)
       : sessions[idx].history,
-    uiMessages: patch.uiMessages ?? sessions[idx].uiMessages,
-    updatedAt: new Date().toISOString()
+    uiMessages: nextMessages,
+    updatedAt: lastMessageCreatedAt(nextMessages) ?? sessions[idx].createdAt
   }
   sessions[idx] = updated
   store.set('sessions', sessions)

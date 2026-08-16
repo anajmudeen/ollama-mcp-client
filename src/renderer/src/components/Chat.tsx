@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { OllamaModel } from '../../../shared/types'
 import type { UiMessage } from '../../../shared/types'
 import type { ActivityState } from './ActivityIndicator'
 import { DownloadImageButton } from './DownloadImageButton'
 import { ActivityIndicator } from './ActivityIndicator'
 import { CopyButton } from './CopyButton'
+import { ImageLightbox } from './ImageLightbox'
 import { MarkdownContent } from './MarkdownContent'
 import { MessageMeta } from './MessageMeta'
 import { ThinkingCard } from './ThinkingCard'
@@ -57,34 +58,35 @@ export function Chat({
   const [modelOpen, setModelOpen] = useState(false)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
+  const programmaticScrollRef = useRef(false)
   const modelMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    if (!stickToBottomRef.current) return
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, activity.phase, activity.detail, activity.thinking])
-
-  const onMessagesScroll = (): void => {
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth'): void => {
     const el = scrollRef.current
     if (!el) return
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    stickToBottomRef.current = distanceFromBottom < 80
-  }
-
-  useEffect(() => {
-    if (!modelOpen) return
-    const onDoc = (e: MouseEvent): void => {
-      if (!modelMenuRef.current?.contains(e.target as Node)) {
-        setModelOpen(false)
-      }
+    programmaticScrollRef.current = true
+    if (behavior === 'auto') {
+      el.scrollTop = el.scrollHeight
+      // Allow layout to settle (image-gen frame is tall)
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight
+        programmaticScrollRef.current = false
+      })
+      return
     }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [modelOpen])
+    bottomRef.current?.scrollIntoView({ behavior, block: 'end' })
+    window.setTimeout(() => {
+      programmaticScrollRef.current = false
+      if (stickToBottomRef.current && scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      }
+    }, 320)
+  }
 
   const canCompose = canSend && !busy
   const hasDraft = Boolean(draft.trim()) || attachments.length > 0
@@ -111,6 +113,66 @@ export function Chat({
     busy && !(activity.phase === 'generating' && hasStreamingAssistant)
   const hasImageAttachment = attachments.some((a) => a.kind === 'image')
   const modelNames = models.map((m) => m.name)
+
+  const sessionImages = useMemo(() => {
+    const list: string[] = []
+    for (const m of messages) {
+      if (m.kind === 'assistant' && m.images?.length) {
+        list.push(...m.images)
+      }
+    }
+    return list
+  }, [messages])
+
+  useEffect(() => {
+    if (lightboxIndex == null) return
+    if (sessionImages.length === 0) {
+      setLightboxIndex(null)
+      return
+    }
+    if (lightboxIndex >= sessionImages.length) {
+      setLightboxIndex(sessionImages.length - 1)
+    }
+  }, [lightboxIndex, sessionImages])
+
+  const openLightbox = (src: string): void => {
+    const idx = sessionImages.indexOf(src)
+    setLightboxIndex(idx >= 0 ? idx : 0)
+  }
+
+  useEffect(() => {
+    if (!stickToBottomRef.current) return
+    // Tall image-gen card: snap after layout so the frame isn't clipped
+    const behavior: ScrollBehavior =
+      showActivity && activity.phase === 'generating' ? 'auto' : 'smooth'
+    scrollToBottom(behavior)
+  }, [
+    messages,
+    activity.phase,
+    activity.detail,
+    activity.thinking,
+    showActivity,
+    busy
+  ])
+
+  const onMessagesScroll = (): void => {
+    if (programmaticScrollRef.current) return
+    const el = scrollRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceFromBottom < 80
+  }
+
+  useEffect(() => {
+    if (!modelOpen) return
+    const onDoc = (e: MouseEvent): void => {
+      if (!modelMenuRef.current?.contains(e.target as Node)) {
+        setModelOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [modelOpen])
 
   const submit = (e?: React.FormEvent): void => {
     e?.preventDefault()
@@ -262,15 +324,22 @@ export function Chat({
                 <div className="max-w-[85%]">
                   <div className="relative rounded-2xl rounded-bl-md border border-[#2a3a4d] bg-[#161d27] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1]">
                     {m.images && m.images.length > 0 && (
-                      <div className="mb-2 flex flex-col gap-2">
+                      <div className="flex flex-col gap-2">
                         {m.images.map((src, i) => (
-                          <div key={`${m.id}-img-${i}`} className="relative">
+                          <div
+                            key={`${m.id}-img-${i}`}
+                            className="relative w-full max-w-[min(100%,28rem)]"
+                          >
                             <img
                               src={src}
                               alt="Generated image"
-                              className="max-h-[28rem] w-full rounded-lg object-contain"
+                              className="aspect-square max-h-[28rem] w-full cursor-zoom-in rounded-lg object-contain"
+                              onClick={() => openLightbox(src)}
                             />
-                            <div className="mt-1.5 flex justify-end opacity-80 transition group-hover/assistant:opacity-100">
+                            <div
+                              className="mt-1.5 flex justify-end opacity-80 transition group-hover/assistant:opacity-100"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <DownloadImageButton src={src} />
                             </div>
                           </div>
@@ -587,6 +656,15 @@ export function Chat({
           </div>
         </div>
       </form>
+
+      {lightboxIndex != null && sessionImages.length > 0 && (
+        <ImageLightbox
+          images={sessionImages}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onIndexChange={setLightboxIndex}
+        />
+      )}
     </main>
   )
 }
