@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { registerIpc, restoreMcpConnections } from './ipc'
 import { mcpManager } from './mcp-manager'
@@ -27,6 +27,13 @@ function createWindow(): void {
     if (isDev) {
       mainWindow.webContents.openDevTools({ mode: 'detach' })
     }
+  })
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https:') || url.startsWith('http:')) {
+      void shell.openExternal(url)
+    }
+    return { action: 'deny' }
   })
 
   // Cmd+Option+I (macOS) / Ctrl+Shift+I (Windows/Linux)

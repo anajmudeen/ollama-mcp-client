@@ -7,6 +7,30 @@ export interface McpServerConfig {
   enabled: boolean
 }
 
+export interface CatalogInstallEnvHint {
+  name: string
+  description?: string
+  required?: boolean
+}
+
+export interface CatalogInstall {
+  command: string
+  args: string[]
+  envHints?: CatalogInstallEnvHint[]
+}
+
+export interface CatalogServer {
+  id: string
+  name: string
+  description: string
+  category: string
+  url: string
+  language?: string
+  tags?: string[]
+  official?: boolean
+  install?: CatalogInstall
+}
+
 export interface AppConfig {
   ollamaBaseUrl: string
   selectedModel: string | null

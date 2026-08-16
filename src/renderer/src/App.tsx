@@ -11,6 +11,7 @@ import type {
 import type { ServerWithStatus } from '../../preload/index'
 import type { ActivityState } from './components/ActivityIndicator'
 import { Chat } from './components/Chat'
+import { McpCatalogPage } from './components/McpCatalogPage'
 import { ModelsPage } from './components/ModelsPage'
 import { Settings } from './components/Settings'
 import { Sidebar } from './components/Sidebar'
@@ -47,8 +48,9 @@ export default function App(): React.JSX.Element {
   const [activity, setActivity] = useState<ActivityState>(IDLE_ACTIVITY)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showThinking, setShowThinking] = useState(false)
-  const [view, setView] = useState<'chat' | 'models'>('chat')
+  const [view, setView] = useState<'chat' | 'models' | 'mcp'>('chat')
   const [modelsVisited, setModelsVisited] = useState(false)
+  const [mcpVisited, setMcpVisited] = useState(false)
 
   const historyRef = useRef<ChatMessage[]>([])
   const messagesRef = useRef<UiMessage[]>([])
@@ -676,6 +678,10 @@ export default function App(): React.JSX.Element {
           // Warm the default library list cache while Models opens.
           void window.api.ollama.searchLibrary({ page: 1 }).catch(() => {})
         }}
+        onOpenMcp={() => {
+          setMcpVisited(true)
+          setView('mcp')
+        }}
         onOpenSettings={() => setSettingsOpen(true)}
       />
       {modelsVisited ? (
@@ -695,6 +701,16 @@ export default function App(): React.JSX.Element {
               setSelectedModel(selected)
             }}
             onUseInChat={(m) => void handleUseModelInChat(m)}
+          />
+        </div>
+      ) : null}
+      {mcpVisited ? (
+        <div
+          className={view === 'mcp' ? 'flex min-h-0 min-w-0 flex-1' : 'hidden'}
+        >
+          <McpCatalogPage
+            servers={servers}
+            onServerAdded={() => refreshServers()}
           />
         </div>
       ) : null}

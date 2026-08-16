@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { OllamaModel } from '../../../shared/types'
 import type { UiMessage } from '../../../shared/types'
 import type { ActivityState } from './ActivityIndicator'
@@ -63,6 +63,7 @@ export function Chat({
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
   const programmaticScrollRef = useRef(false)
+  const scrollTimeoutRef = useRef<number | null>(null)
   const modelMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -70,17 +71,23 @@ export function Chat({
     const el = scrollRef.current
     if (!el) return
     programmaticScrollRef.current = true
+    if (scrollTimeoutRef.current != null) {
+      window.clearTimeout(scrollTimeoutRef.current)
+      scrollTimeoutRef.current = null
+    }
     if (behavior === 'auto') {
       el.scrollTop = el.scrollHeight
-      // Allow layout to settle (image-gen frame is tall)
+      // Allow layout to settle (image-gen frame / markdown reflow)
       requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight
+        const node = scrollRef.current
+        if (node) node.scrollTop = node.scrollHeight
         programmaticScrollRef.current = false
       })
       return
     }
     bottomRef.current?.scrollIntoView({ behavior, block: 'end' })
-    window.setTimeout(() => {
+    scrollTimeoutRef.current = window.setTimeout(() => {
+      scrollTimeoutRef.current = null
       programmaticScrollRef.current = false
       if (stickToBottomRef.current && scrollRef.current) {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -140,11 +147,20 @@ export function Chat({
     setLightboxIndex(idx >= 0 ? idx : 0)
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!stickToBottomRef.current) return
-    // Tall image-gen card: snap after layout so the frame isn't clipped
+    const streaming =
+      busy ||
+      messages.some(
+        (m) =>
+          (m.kind === 'assistant' || m.kind === 'thinking') &&
+          Boolean(m.streaming)
+      )
+    // Smooth scroll fights rapid thinking/token updates and looks shaky.
     const behavior: ScrollBehavior =
-      showActivity && activity.phase === 'generating' ? 'auto' : 'smooth'
+      streaming || (showActivity && activity.phase === 'generating')
+        ? 'auto'
+        : 'smooth'
     scrollToBottom(behavior)
   }, [
     messages,

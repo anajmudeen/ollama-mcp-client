@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { MarkdownContent } from './MarkdownContent'
 import { MessageMeta } from './MessageMeta'
 
@@ -27,6 +27,7 @@ export function ThinkingCard({
   const [open, setOpen] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const streamRef = useRef<HTMLDivElement>(null)
+  const stickInnerRef = useRef(true)
 
   useEffect(() => {
     if (!streaming || !startedAt) {
@@ -42,11 +43,22 @@ export function ThinkingCard({
   }, [streaming, startedAt])
 
   useEffect(() => {
+    if (streaming) stickInnerRef.current = true
+  }, [streaming])
+
+  useLayoutEffect(() => {
     if (!streaming && !open) return
     const el = streamRef.current
-    if (!el) return
+    if (!el || !stickInnerRef.current) return
     el.scrollTop = el.scrollHeight
   }, [content, streaming, open])
+
+  const onInnerScroll = (): void => {
+    const el = streamRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickInnerRef.current = distanceFromBottom < 48
+  }
 
   const style = {
     '--activity-accent': '#c4a35a',
@@ -110,6 +122,7 @@ export function ThinkingCard({
         {(streaming || open) && (
           <div
             ref={streamRef}
+            onScroll={onInnerScroll}
             className="thinking-stream max-h-48 overflow-y-auto border-t border-[#243041] px-3.5 py-2.5 text-[12px] leading-relaxed text-[#9aa8b8] [&_.markdown-body]:text-[#9aa8b8] [&_.markdown-body_strong]:text-[#c5d0dc] [&_.markdown-body_h1]:text-sm [&_.markdown-body_h2]:text-sm [&_.markdown-body_h3]:text-[13px]"
           >
             <MarkdownContent content={content} streaming={streaming} />

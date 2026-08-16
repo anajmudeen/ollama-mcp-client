@@ -1,10 +1,13 @@
 import { useState } from 'react'
-import type { McpServerConfig } from '../../../shared/types'
+import type { CatalogInstallEnvHint, McpServerConfig } from '../../../shared/types'
 
 interface ServerFormProps {
   initial: McpServerConfig | null
   onCancel: () => void
   onSave: (server: McpServerConfig) => void
+  docsUrl?: string
+  envHints?: CatalogInstallEnvHint[]
+  hasInstallPreset?: boolean
 }
 
 function parseArgs(text: string): string[] {
@@ -36,11 +39,19 @@ function parseEnv(text: string): Record<string, string> | undefined {
 export function ServerForm({
   initial,
   onCancel,
-  onSave
+  onSave,
+  docsUrl,
+  envHints,
+  hasInstallPreset
 }: ServerFormProps): React.JSX.Element {
   const [name, setName] = useState(initial?.name ?? '')
   const [command, setCommand] = useState(initial?.command ?? 'npx')
-  const [argsText, setArgsText] = useState(initial?.args.join(' ') ?? '-y @modelcontextprotocol/server-filesystem /tmp')
+  const [argsText, setArgsText] = useState(
+    initial?.args.join(' ') ??
+      (hasInstallPreset
+        ? ''
+        : '-y @modelcontextprotocol/server-filesystem /tmp')
+  )
   const [envText, setEnvText] = useState(
     initial?.env
       ? Object.entries(initial.env)
@@ -49,6 +60,8 @@ export function ServerForm({
       : ''
   )
   const [enabled, setEnabled] = useState(initial?.enabled ?? true)
+  const noteHints = envHints?.filter((h) => h.name === 'NOTE') ?? []
+  const keyHints = envHints?.filter((h) => h.name !== 'NOTE') ?? []
 
   const submit = (e: React.FormEvent): void => {
     e.preventDefault()
@@ -72,6 +85,48 @@ export function ServerForm({
         <h3 className="mb-3 text-base font-semibold text-[#f0f4f8]">
           {initial ? 'Edit MCP server' : 'Add MCP server'}
         </h3>
+        {!hasInstallPreset && docsUrl ? (
+          <p className="mb-3 text-xs leading-relaxed text-[#8b9aab]">
+            No install preset yet — check the{' '}
+            <a
+              href={docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[#7aa4d4] hover:underline"
+            >
+              project docs
+            </a>{' '}
+            for the command, then fill the fields below.
+          </p>
+        ) : null}
+        {noteHints.length > 0 ? (
+          <ul className="mb-3 list-disc space-y-1 pl-4 text-xs text-[#8b9aab]">
+            {noteHints.map((h) => (
+              <li key={h.description ?? h.name}>{h.description ?? h.name}</li>
+            ))}
+          </ul>
+        ) : null}
+        {keyHints.length > 0 ? (
+          <p className="mb-3 text-xs text-[#8b9aab]">
+            Fill required env vars:{' '}
+            {keyHints
+              .map((h) => `${h.name}${h.required ? '*' : ''}`)
+              .join(', ')}
+            .
+          </p>
+        ) : null}
+        {docsUrl && hasInstallPreset ? (
+          <p className="mb-3 text-xs text-[#8b9aab]">
+            <a
+              href={docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[#7aa4d4] hover:underline"
+            >
+              Open docs
+            </a>
+          </p>
+        ) : null}
         <label className="mb-1 block text-xs text-[#8b9aab]">Name</label>
         <input
           value={name}

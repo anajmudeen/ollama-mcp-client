@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type JSX } from 'react'
 import type { ActivityPhase } from '../../../shared/types'
 import { MarkdownContent } from './MarkdownContent'
 
@@ -75,7 +75,7 @@ export function ActivityIndicator({
     if (activity.thinking) setThinkingOpen(true)
   }, [activity.thinking])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!thinkingOpen) return
     const el = thinkingStreamRef.current
     if (!el) return
