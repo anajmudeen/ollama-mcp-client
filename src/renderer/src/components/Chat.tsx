@@ -229,7 +229,7 @@ export function Chat({
                     )}
                     <div className="whitespace-pre-wrap">{m.content}</div>
                   </div>
-                  <MessageMeta createdAt={m.createdAt} align="right" />
+                  <MessageMeta createdAt={m.createdAt} model={m.model} align="right" />
                 </div>
               </div>
             )
@@ -249,6 +249,7 @@ export function Chat({
                   <MessageMeta
                     createdAt={m.createdAt}
                     responseMs={m.streaming ? undefined : m.responseMs}
+                    model={m.model}
                     align="left"
                   />
                 </div>
@@ -263,6 +264,7 @@ export function Chat({
                 content={m.content}
                 streaming={m.streaming}
                 createdAt={m.createdAt}
+                model={m.model}
                 startedAt={m.streaming ? activity.startedAt : undefined}
               />
             )
@@ -276,6 +278,7 @@ export function Chat({
                 status={m.status}
                 result={m.result}
                 createdAt={m.createdAt}
+                model={m.model}
               />
             )
           }
@@ -284,7 +287,7 @@ export function Chat({
               <div className="rounded border border-rose-900/40 bg-rose-950/30 px-3 py-2 text-sm text-rose-200">
                 {m.content}
               </div>
-              <MessageMeta createdAt={m.createdAt} align="left" />
+              <MessageMeta createdAt={m.createdAt} model={m.model} align="left" />
             </div>
           )
         })}

@@ -8,6 +8,7 @@ import type {
   PullProgressEvent
 } from '../../../shared/types'
 
+type ModelsTab = 'installed' | 'library'
 type LibrarySort = 'popular' | 'newest' | 'smallest' | 'largest'
 type InstalledSort = 'name' | 'smallest' | 'largest'
 
@@ -103,6 +104,13 @@ function localBaseName(name: string): string {
 
 function isInstalledFamily(local: OllamaModel[], libraryName: string): boolean {
   return local.some((m) => localBaseName(m.name) === libraryName)
+}
+
+function isTagInstalled(local: OllamaModel[], tagName: string): boolean {
+  const base = tagName.includes(':') ? tagName : `${tagName}:latest`
+  return local.some(
+    (m) => m.name === tagName || m.name === base || `${m.name}:latest` === base
+  )
 }
 
 function isCloudModelRef(name: string): boolean {

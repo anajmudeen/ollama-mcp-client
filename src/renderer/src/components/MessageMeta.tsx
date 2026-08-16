@@ -1,6 +1,7 @@
 interface MessageMetaProps {
   createdAt?: string
   responseMs?: number
+  model?: string
   align?: 'left' | 'right'
 }
 
@@ -38,20 +39,28 @@ export function formatResponseMs(ms?: number): string {
 export function MessageMeta({
   createdAt,
   responseMs,
+  model,
   align = 'left'
 }: MessageMetaProps): React.JSX.Element | null {
   const time = formatMessageTime(createdAt)
   const duration = formatResponseMs(responseMs)
-  if (!time && !duration) return null
+  const modelLabel = model?.trim() || ''
+  if (!time && !duration && !modelLabel) return null
 
   return (
     <div
-      className={`mt-1 flex items-center gap-1.5 text-[10px] tabular-nums text-[#6b7a8c] ${
+      className={`mt-1 flex flex-wrap items-center gap-1.5 text-[10px] tabular-nums text-[#6b7a8c] ${
         align === 'right' ? 'justify-end' : 'justify-start'
       }`}
     >
+      {modelLabel ? (
+        <span title="Model" className="max-w-[14rem] truncate font-medium text-[#8b9aab]">
+          {modelLabel}
+        </span>
+      ) : null}
+      {modelLabel && time ? <span aria-hidden>·</span> : null}
       {time ? <span>{time}</span> : null}
-      {time && duration ? <span aria-hidden>·</span> : null}
+      {(modelLabel || time) && duration ? <span aria-hidden>·</span> : null}
       {duration ? (
         <span title="Response time" className="text-[#8b9aab]">
           {duration}

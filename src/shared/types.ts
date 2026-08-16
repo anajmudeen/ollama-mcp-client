@@ -190,6 +190,8 @@ export type UiMessage =
       content: string
       createdAt: string
       attachmentLabels?: string[]
+      /** Model selected for this turn. */
+      model?: string
     }
   | {
       kind: 'assistant'
@@ -199,6 +201,8 @@ export type UiMessage =
       streaming?: boolean
       /** Wall-clock duration from user send to this reply finishing. */
       responseMs?: number
+      /** Model that generated this reply. */
+      model?: string
     }
   | {
       kind: 'thinking'
@@ -206,6 +210,7 @@ export type UiMessage =
       content: string
       createdAt: string
       streaming?: boolean
+      model?: string
     }
   | {
       kind: 'tool'
@@ -215,8 +220,15 @@ export type UiMessage =
       status: 'running' | 'done' | 'error'
       createdAt: string
       result?: string
+      model?: string
     }
-  | { kind: 'error'; id: string; content: string; createdAt: string }
+  | {
+      kind: 'error'
+      id: string
+      content: string
+      createdAt: string
+      model?: string
+    }
 
 export interface ChatSession {
   id: string

@@ -7,6 +7,7 @@ interface ToolCallCardProps {
   status: 'running' | 'done' | 'error'
   result?: string
   createdAt?: string
+  model?: string
 }
 
 const STATUS_LABEL = {
@@ -26,7 +27,8 @@ export function ToolCallCard({
   arguments: args,
   status,
   result,
-  createdAt
+  createdAt,
+  model
 }: ToolCallCardProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const argsJson = JSON.stringify(args, null, 2)
@@ -106,7 +108,7 @@ export function ToolCallCard({
           )}
         </div>
       </div>
-      <MessageMeta createdAt={createdAt} align="left" />
+      <MessageMeta createdAt={createdAt} model={model} align="left" />
     </div>
   )
 }

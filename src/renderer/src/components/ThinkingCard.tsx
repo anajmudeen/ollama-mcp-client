@@ -7,6 +7,7 @@ interface ThinkingCardProps {
   streaming?: boolean
   startedAt?: number
   createdAt?: string
+  model?: string
 }
 
 function formatElapsed(ms: number): string {
@@ -20,7 +21,8 @@ export function ThinkingCard({
   content,
   streaming,
   startedAt,
-  createdAt
+  createdAt,
+  model
 }: ThinkingCardProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -114,7 +116,7 @@ export function ThinkingCard({
           </div>
         )}
       </div>
-      <MessageMeta createdAt={createdAt} align="left" />
+      <MessageMeta createdAt={createdAt} model={model} align="left" />
     </div>
   )
 }

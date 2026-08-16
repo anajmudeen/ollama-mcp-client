@@ -57,6 +57,7 @@ export default function App(): React.JSX.Element {
   const chatEpochRef = useRef(0)
   const activeTurnIdRef = useRef<string | null>(null)
   const turnStartedAtRef = useRef<number | null>(null)
+  const turnModelRef = useRef<string | null>(null)
   const showThinkingRef = useRef(false)
   const persistSessionRef = useRef<
     (
@@ -271,7 +272,8 @@ export default function App(): React.JSX.Element {
               id: uid(),
               content: event.content,
               createdAt: nowIso(),
-              streaming: true
+              streaming: true,
+              model: turnModelRef.current ?? undefined
             })
           }
           messagesRef.current = next
@@ -307,7 +309,8 @@ export default function App(): React.JSX.Element {
               id: uid(),
               content: event.content,
               createdAt: nowIso(),
-              streaming: true
+              streaming: true,
+              model: turnModelRef.current ?? undefined
             })
           }
           messagesRef.current = next
@@ -349,7 +352,8 @@ export default function App(): React.JSX.Element {
               content: event.content,
               createdAt: finishedAt,
               streaming: false,
-              responseMs
+              responseMs,
+              model: turnModelRef.current ?? undefined
             })
           }
           messagesRef.current = next
@@ -392,7 +396,8 @@ export default function App(): React.JSX.Element {
             name: event.name,
             arguments: event.arguments,
             status: 'running',
-            createdAt: nowIso()
+            createdAt: nowIso(),
+            model: turnModelRef.current ?? undefined
           })
           messagesRef.current = withClosed
           persistSessionRef.current(sessionId, withClosed, historyRef.current)
@@ -427,7 +432,8 @@ export default function App(): React.JSX.Element {
               kind: 'error' as const,
               id: uid(),
               content: event.message,
-              createdAt: nowIso()
+              createdAt: nowIso(),
+              model: turnModelRef.current ?? undefined
             }
           ]
           messagesRef.current = next
@@ -476,6 +482,7 @@ export default function App(): React.JSX.Element {
     const turnId = uid()
     activeTurnIdRef.current = turnId
     turnStartedAtRef.current = Date.now()
+    turnModelRef.current = selectedModel
 
     const userMsg: ChatMessage = {
       role: 'user',
@@ -502,7 +509,8 @@ export default function App(): React.JSX.Element {
         id: uid(),
         content: uiContent,
         createdAt: nowIso(),
-        attachmentLabels: payload.attachmentLabels
+        attachmentLabels: payload.attachmentLabels,
+        model: selectedModel
       }
     ]
     syncMessages(nextMessages)
