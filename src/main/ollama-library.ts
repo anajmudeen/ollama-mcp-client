@@ -133,11 +133,47 @@ export function leastSizeLabel(options: {
   return undefined
 }
 
+function parseModelHref(href: string): string | null {
+  if (!href) return null
+  const path = href.split('?')[0] ?? href
+  if (path.startsWith('/library/')) {
+    const rest = path.slice('/library/'.length)
+    const name = rest.split('/')[0]?.split(':')[0]?.trim()
+    return name || null
+  }
+  // Community / namespaced models: /x/z-image-turbo, /jmorgan/z-image-turbo:latest
+  const parts = path.split('/').filter(Boolean)
+  const skip = new Set([
+    'docs',
+    'blog',
+    'signin',
+    'download',
+    'pricing',
+    'search',
+    'models',
+    'assets',
+    'api'
+  ])
+  if (parts.length >= 2 && !skip.has(parts[0]) && parts[0] !== 'library') {
+    const leaf = parts[1].split(':')[0]?.trim()
+    if (!leaf) return null
+    return `${parts[0]}/${leaf}`
+  }
+  return null
+}
+
 function parseSearchItem($: cheerio.CheerioAPI, li: any): LibraryModelSummary | null {
   const root = $(li)
-  const link = root.find('a[href^="/library/"]').first()
+  let link = root.find('a[href^="/library/"], a[href^="/x/"]').first()
+  if (!link.length) {
+    root.find('a[href]').each((_, el) => {
+      if (link.length) return
+      const href = $(el).attr('href') ?? ''
+      if (parseModelHref(href)) link = $(el)
+    })
+  }
   const href = link.attr('href') ?? ''
-  const name = href.replace(/^\/library\//, '').split('/')[0]?.trim()
+  const name = parseModelHref(href)
   if (!name) return null
 
   const description =
@@ -189,6 +225,41 @@ async function fetchLibrarySearch(
   params: LibrarySearchParams
 ): Promise<LibrarySearchResult> {
   const page = Math.max(1, params.page ?? 1)
+  const hasQuery = Boolean(params.q?.trim())
+
+  // Keyword search: Ollama often ranks namespaced hits (e.g. x/z-image-turbo)
+  // on page 2+. Merge the first two pages on the initial request.
+  if (hasQuery && page === 1) {
+    const [first, second] = await Promise.all([
+      fetchLibrarySearchPage({ ...params, page: 1 }),
+      fetchLibrarySearchPage({ ...params, page: 2 })
+    ])
+    const seen = new Set<string>()
+    const models: LibraryModelSummary[] = []
+    for (const m of [...first.models, ...second.models]) {
+      if (seen.has(m.name)) continue
+      seen.add(m.name)
+      models.push(m)
+    }
+    const result: LibrarySearchResult = {
+      models,
+      // Client should continue lazy-loading from page 3
+      page: 2,
+      hasMore: second.hasMore
+    }
+    setCachedLibrarySearch(params, result)
+    return result
+  }
+
+  const result = await fetchLibrarySearchPage(params)
+  setCachedLibrarySearch(params, result)
+  return result
+}
+
+async function fetchLibrarySearchPage(
+  params: LibrarySearchParams
+): Promise<LibrarySearchResult> {
+  const page = Math.max(1, params.page ?? 1)
   const url = new URL('https://ollama.com/search')
   if (params.q?.trim()) url.searchParams.set('q', params.q.trim())
   if (params.category) url.searchParams.set('c', params.category)
@@ -217,7 +288,6 @@ async function fetchLibrarySearch(
   const models: LibraryModelSummary[] = []
   const seen = new Set<string>()
   $('li').each((_, li) => {
-    if (!$(li).find('a[href^="/library/"]').length) return
     const item = parseSearchItem($, li)
     if (!item || seen.has(item.name)) return
     seen.add(item.name)
@@ -232,9 +302,7 @@ async function fetchLibrarySearch(
       html.includes(`page=${nextPage}`))
 
   const enriched = await enrichMinDiskSize(models)
-  const result: LibrarySearchResult = { models: enriched, page, hasMore }
-  setCachedLibrarySearch(params, result)
-  return result
+  return { models: enriched, page, hasMore }
 }
 
 async function mapPool<T, R>(

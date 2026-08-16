@@ -284,7 +284,7 @@ export function ModelsPage({
           return sortLibraryModels(merged)
         })
         setLibraryHasMore(result.hasMore)
-        setLibraryPage(page)
+        setLibraryPage(result.page)
       } catch (err) {
         if (requestId !== libraryRequestIdRef.current) return
         if (mode === 'replace') {
