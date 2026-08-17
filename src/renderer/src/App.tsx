@@ -358,7 +358,9 @@ export default function App(): React.JSX.Element {
               content: event.content || last.content,
               streaming: false,
               createdAt: finishedAt,
-              responseMs
+              responseMs,
+              contextUsed: event.contextUsed ?? last.contextUsed,
+              contextLimit: event.contextLimit ?? last.contextLimit
             }
           } else if (event.content) {
             next.push({
@@ -368,7 +370,9 @@ export default function App(): React.JSX.Element {
               createdAt: finishedAt,
               streaming: false,
               responseMs,
-              model: turnModelRef.current ?? undefined
+              model: turnModelRef.current ?? undefined,
+              contextUsed: event.contextUsed,
+              contextLimit: event.contextLimit
             })
           }
           messagesRef.current = next

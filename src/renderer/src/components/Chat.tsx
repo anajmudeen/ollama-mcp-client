@@ -272,17 +272,46 @@ export function Chat({
     (contextUsage && contextUsage.limit > 0 ? contextUsage.limit : null) ??
     modelLimit
 
+  const recentlyCompacted = useMemo(() => {
+    let userIdx = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].kind === 'user') {
+        userIdx = i
+        break
+      }
+    }
+    return userIdx > 0 && messages[userIdx - 1]?.kind === 'notice'
+  }, [messages])
+
+  const lastReplyContext = useMemo(() => {
+    const last = messages[messages.length - 1]
+    if (last?.kind !== 'assistant' || last.streaming) return undefined
+    if (last.contextUsed == null || last.contextUsed <= 0) return undefined
+    let userIdx = -1
+    for (let i = messages.length - 2; i >= 0; i--) {
+      if (messages[i].kind === 'user') {
+        userIdx = i
+        break
+      }
+    }
+    // Post-turn compact inserts a notice before this user; don't floor to the
+    // pre-compact snapshot.
+    if (userIdx > 0 && messages[userIdx - 1]?.kind === 'notice') return undefined
+    return last.contextUsed
+  }, [messages])
+
   const contextUsed = useMemo(() => {
     const draftTokens = estimateDraftTokens(draft, attachments)
-    if (contextUsage && contextUsage.used > 0) {
-      return contextUsage.used + draftTokens
-    }
+    const reported =
+      contextUsage && contextUsage.used > 0 ? contextUsage.used : 0
+    const measured = Math.max(reported, lastReplyContext ?? 0)
+    if (measured > 0) return measured + draftTokens
     return (
       estimateMessageTokens(messages) +
       estimateToolSchemaTokens(tools) +
       draftTokens
     )
-  }, [attachments, contextUsage, draft, messages, tools])
+  }, [attachments, contextUsage, draft, lastReplyContext, messages, tools])
 
   const submit = (e?: React.FormEvent): void => {
     e?.preventDefault()
@@ -483,6 +512,8 @@ export function Chat({
                     createdAt={m.createdAt}
                     responseMs={m.streaming ? undefined : m.responseMs}
                     model={m.model}
+                    contextUsed={m.streaming ? undefined : m.contextUsed}
+                    contextLimit={m.streaming ? undefined : m.contextLimit}
                     align="left"
                   />
                 </div>
@@ -520,7 +551,7 @@ export function Chat({
               <div
                 key={m.id}
                 className="msg-enter flex justify-center py-1"
-                title={m.summary ? 'Earlier messages were compacted for the model' : undefined}
+                title="Earlier messages were compacted so the model history would fit the context window"
               >
                 <div className="inline-flex items-center gap-2 rounded-full border border-[#2a3a4d] bg-[#121820]/90 px-3 py-1 text-[11px] text-[#8b9aab]">
                   <span className="h-1 w-1 rounded-full bg-[#9ec5f0]" aria-hidden="true" />
@@ -661,7 +692,11 @@ export function Chat({
           )}
 
           {ollamaOk && selectedModel && contextLimit && contextLimit > 0 ? (
-            <ContextMeter used={contextUsed} limit={contextLimit} />
+            <ContextMeter
+              used={contextUsed}
+              limit={contextLimit}
+              compacted={recentlyCompacted}
+            />
           ) : null}
 
           <div className="absolute bottom-2.5 right-2.5 flex items-center gap-2">
@@ -813,17 +848,23 @@ export function Chat({
 
 function ContextMeter({
   used,
-  limit
+  limit,
+  compacted
 }: {
   used: number
   limit: number
+  compacted?: boolean
 }): React.JSX.Element {
   const pct = Math.max(0, Math.min(100, (used / limit) * 100))
   const color = contextUsageColor(pct)
   return (
     <div
       className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-11rem)] items-center gap-2"
-      title="Tokens that will be sent on the next prompt vs the live window (min of Ollama’s context setting and the model maximum)."
+      title={
+        compacted
+          ? 'Earlier messages were summarized so this prompt would fit the window. The previous reply’s count is what that turn used before compacting.'
+          : 'Tokens that will be sent on the next prompt vs the live window (min of Ollama’s context setting and the model maximum).'
+      }
     >
       <div className="h-1 w-14 overflow-hidden rounded-full bg-[#2a313a]">
         <div
@@ -836,6 +877,8 @@ function ContextMeter({
         style={{ color }}
       >
         {formatTokenCount(used)} / {formatTokenCount(limit)}
+        <span className="text-[#6b7a8c]"> ({Math.round(pct)}%)</span>
+        {compacted ? ' · compacted' : ''}
       </span>
     </div>
   )

@@ -17,17 +17,7 @@ export function normalizeMarkdown(source: string): string {
       ? lines.map((l) => (l.trim() ? stripWidth(l, minIndent) : l))
       : lines
 
-  // Paragraphs at column 0 + lists indented 4+ still become code blocks.
-  const unindentedLists = dedented
-    .map((line) => {
-      const match = /^(?<indent>[ \t]+)(?<marker>[-*+]|\d+\.)(?<gap>\s+)(?<rest>.*)$/.exec(
-        line
-      )
-      if (!match?.groups) return line
-      if (leadingWidth(match.groups.indent) < 4) return line
-      return `${match.groups.marker}${match.groups.gap}${match.groups.rest}`
-    })
-    .join('\n')
+  const unindentedLists = unindentOrphanLists(dedented).join('\n')
 
   return sanitizeMathCurrency(unindentedLists)
 }
@@ -88,6 +78,41 @@ function replaceCurrencyInMath(body: string): string {
     if (next.includes(char)) next = next.split(char).join(repl)
   }
   return next
+}
+
+/**
+ * Models often indent a whole list with 4+ spaces, which CommonMark treats as a
+ * code block. Only flatten those orphan lists — keep nested items under a
+ * less-indented parent (`* parent` / `    * child`).
+ */
+function unindentOrphanLists(lines: string[]): string[] {
+  const stack: number[] = []
+
+  return lines.map((line) => {
+    if (!line.trim()) return line
+
+    const indented = /^(?<indent>[ \t]+)(?<marker>[-*+]|\d+\.)(?<gap>\s+)(?<rest>.*)$/.exec(
+      line
+    )
+    let indent: number
+    let flatten: string | null = null
+    if (indented?.groups) {
+      indent = leadingWidth(indented.groups.indent)
+      flatten = `${indented.groups.marker}${indented.groups.gap}${indented.groups.rest}`
+    } else if (/^([-*+]|\d+\.)\s+/.test(line)) {
+      indent = 0
+    } else {
+      if (leadingWidth(line) === 0) stack.length = 0
+      return line
+    }
+
+    while (stack.length > 0 && stack[stack.length - 1] >= indent) {
+      stack.pop()
+    }
+    const orphan = indent >= 4 && stack.length === 0 && flatten != null
+    stack.push(indent)
+    return orphan && flatten != null ? flatten : line
+  })
 }
 
 function leadingWidth(line: string): number {

@@ -2,7 +2,11 @@ import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
 import type { ChatEvent, ChatMessage, ChatSendPayload } from '../shared/types'
 import { compactIfNeeded, shouldCompact } from './context-compact'
-import { estimateChatMessagesTokens, estimateTokensFromChars } from '../shared/contextUsage'
+import {
+  estimateChatMessagesTokens,
+  estimateTokensFromChars,
+  formatTokenCount
+} from '../shared/contextUsage'
 import { mcpManager } from './mcp-manager'
 import { generateImageBase64 } from './ollama-image'
 import {
@@ -82,6 +86,21 @@ function occupancyUsed(messages: ChatMessage[], extraTokens: number): number {
   return estimateChatMessagesTokens(messages) + extraTokens
 }
 
+/**
+ * Live meter for the next prompt. Prefer Ollama's prompt+eval counts when
+ * history was not rewritten; char/4 estimates alone undercount (e.g. 1.5k vs 2.1k).
+ */
+function liveContextUsed(
+  messages: ChatMessage[],
+  extraTokens: number,
+  measuredUsed?: number | null,
+  historyRewritten = false
+): number {
+  const estimated = occupancyUsed(messages, extraTokens)
+  if (historyRewritten) return estimated
+  return Math.max(estimated, measuredUsed && measuredUsed > 0 ? measuredUsed : 0)
+}
+
 type EmitTurn = (event: Exclude<ChatEvent, { type: 'user' }>) => void
 
 async function applyCompact(options: {
@@ -130,20 +149,24 @@ async function applyCompact(options: {
 
   if (!compact.summarized) return compact.messages
 
+  const beforeUsed = liveContextUsed(messages, extraTokens, measuredUsed, false)
+  const afterUsed = occupancyUsed(compact.messages, extraTokens)
+  const delta = `${formatTokenCount(beforeUsed)} → ${formatTokenCount(afterUsed)}`
+
   console.log(
-    `[agent] compacted id=${turnId.slice(0, 8)} before=${messages.length} after=${compact.messages.length}`
+    `[agent] compacted id=${turnId.slice(0, 8)} before=${messages.length} after=${compact.messages.length} tokens ${delta}`
   )
   emitTurn({ type: 'compacted', messages: compact.messages })
   if (compact.summary) {
     emitTurn({
       type: 'notice',
-      content: 'Summarized earlier chat',
+      content: `Summarized earlier chat · ${delta}`,
       summary: compact.summary
     })
   } else {
     emitTurn({
       type: 'notice',
-      content: 'Trimmed earlier chat to fit context'
+      content: `Trimmed earlier chat to fit context · ${delta}`
     })
   }
   return compact.messages
@@ -266,6 +289,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
   const toolOverhead = estimateToolOverhead(tools)
   let workingMessages = payload.messages
   try {
+    const beforeCompact = workingMessages
     workingMessages = await applyCompact({
       model: payload.model,
       messages: workingMessages,
@@ -283,7 +307,12 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
     if (contextLimit) {
       emitTurn({
         type: 'context',
-        used: occupancyUsed(workingMessages, toolOverhead),
+        used: liveContextUsed(
+          workingMessages,
+          toolOverhead,
+          payload.contextUsed,
+          workingMessages !== beforeCompact
+        ),
         limit: contextLimit
       })
     }
@@ -460,7 +489,12 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
           ? [...workingMessages, { role: 'assistant', content: finalContent }]
           : workingMessages
         const used = (promptEvalCount ?? 0) + (evalCount ?? 0)
-        emitTurn({ type: 'assistant_done', content: finalContent })
+        emitTurn({
+          type: 'assistant_done',
+          content: finalContent,
+          contextUsed: used > 0 ? used : occupancyUsed(withReply, toolOverhead),
+          contextLimit: contextLimit ?? undefined
+        })
         try {
           const compacted = await applyCompact({
             model: payload.model,
@@ -479,7 +513,12 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
           if (contextLimit) {
             emitTurn({
               type: 'context',
-              used: occupancyUsed(compacted, toolOverhead),
+              used: liveContextUsed(
+                compacted,
+                toolOverhead,
+                used,
+                compacted !== withReply
+              ),
               limit: contextLimit
             })
           }
@@ -491,7 +530,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
           if (contextLimit) {
             emitTurn({
               type: 'context',
-              used: occupancyUsed(withReply, toolOverhead),
+              used: liveContextUsed(withReply, toolOverhead, used, false),
               limit: contextLimit
             })
           }

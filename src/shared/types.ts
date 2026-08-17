@@ -191,7 +191,7 @@ export type ChatEvent =
     }
   | { type: 'thinking'; content: string; turnId?: string }
   | { type: 'chunk'; content: string; turnId?: string }
-  | { type: 'assistant_done'; content: string; turnId?: string }
+  | { type: 'assistant_done'; content: string; turnId?: string; contextUsed?: number; contextLimit?: number }
   | {
       type: 'assistant_images'
       images: string[]
@@ -250,6 +250,10 @@ export type UiMessage =
       responseMs?: number
       /** Model that generated this reply. */
       model?: string
+      /** Context tokens used when this reply finished. */
+      contextUsed?: number
+      /** Live context window at that time. */
+      contextLimit?: number
       /** Generated image data URLs (e.g. data:image/png;base64,...). */
       images?: string[]
     }

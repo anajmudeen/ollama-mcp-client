@@ -1,7 +1,13 @@
+import type { ReactNode } from 'react'
+import { formatTokenCount } from '../../../shared/contextUsage'
+import { contextUsageColor } from '../lib/contextUsage'
+
 interface MessageMetaProps {
   createdAt?: string
   responseMs?: number
   model?: string
+  contextUsed?: number
+  contextLimit?: number
   align?: 'left' | 'right'
 }
 
@@ -40,12 +46,79 @@ export function MessageMeta({
   createdAt,
   responseMs,
   model,
+  contextUsed,
+  contextLimit,
   align = 'left'
 }: MessageMetaProps): React.JSX.Element | null {
   const time = formatMessageTime(createdAt)
   const duration = formatResponseMs(responseMs)
   const modelLabel = model?.trim() || ''
-  if (!time && !duration && !modelLabel) return null
+  const hasContext =
+    contextUsed != null &&
+    contextLimit != null &&
+    contextLimit > 0 &&
+    contextUsed >= 0
+  const pct = hasContext
+    ? Math.max(0, Math.min(100, (contextUsed / contextLimit) * 100))
+    : 0
+  if (!time && !duration && !modelLabel && !hasContext) return null
+
+  const parts: ReactNode[] = []
+  const push = (node: ReactNode): void => {
+    if (parts.length > 0) {
+      parts.push(
+        <span key={`dot-${parts.length}`} aria-hidden>
+          ·
+        </span>
+      )
+    }
+    parts.push(node)
+  }
+
+  if (modelLabel) {
+    push(
+      <span
+        key="model"
+        title="Model"
+        className="max-w-[14rem] truncate font-medium text-[#8b9aab]"
+      >
+        {modelLabel}
+      </span>
+    )
+  }
+  if (time) {
+    push(<span key="time">{time}</span>)
+  }
+  if (duration) {
+    push(
+      <span key="duration" title="Response time" className="text-[#8b9aab]">
+        {duration}
+      </span>
+    )
+  }
+  if (hasContext) {
+    const color = contextUsageColor(pct)
+    push(
+      <span
+        key="context"
+        title={`Context window when this reply finished: ${Math.round(contextUsed)} / ${Math.round(contextLimit)} tokens (${Math.round(pct)}%)`}
+        className="inline-flex items-center gap-1.5 font-mono"
+        style={{ color }}
+      >
+        <span
+          className="inline-block h-1 w-8 overflow-hidden rounded-full bg-[#2a313a]"
+          aria-hidden
+        >
+          <span
+            className="block h-full rounded-full"
+            style={{ width: `${pct}%`, backgroundColor: color }}
+          />
+        </span>
+        {formatTokenCount(contextUsed)} / {formatTokenCount(contextLimit)}
+        <span className="text-[#6b7a8c]">({Math.round(pct)}%)</span>
+      </span>
+    )
+  }
 
   return (
     <div
@@ -53,19 +126,7 @@ export function MessageMeta({
         align === 'right' ? 'justify-end' : 'justify-start'
       }`}
     >
-      {modelLabel ? (
-        <span title="Model" className="max-w-[14rem] truncate font-medium text-[#8b9aab]">
-          {modelLabel}
-        </span>
-      ) : null}
-      {modelLabel && time ? <span aria-hidden>·</span> : null}
-      {time ? <span>{time}</span> : null}
-      {(modelLabel || time) && duration ? <span aria-hidden>·</span> : null}
-      {duration ? (
-        <span title="Response time" className="text-[#8b9aab]">
-          {duration}
-        </span>
-      ) : null}
+      {parts}
     </div>
   )
 }
