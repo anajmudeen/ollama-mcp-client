@@ -217,6 +217,24 @@ pre,
   color: #c5d0dc;
 }
 
+.markdown-body kbd {
+  display: inline-block;
+  padding: 0.08em 0.4em 0.12em;
+  margin: 0 0.1em;
+  font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #e7ecf1;
+  white-space: nowrap;
+  vertical-align: 0.05em;
+  background: linear-gradient(180deg, #243041 0%, #1a2330 100%);
+  border: 1px solid #3d5168;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 #0f1419;
+}
+
 .markdown-body pre {
   margin: 0.65em 0;
   padding: 0.75em 0.85em;
@@ -230,15 +248,192 @@ pre,
   padding: 0;
   background: transparent;
   font-size: 0.8em;
-  line-height: 1.5;
+  line-height: 1.35;
   color: #c5d0dc;
 }
 
-.markdown-body table {
+.markdown-body .md-code-block {
+  margin: 0.65em 0;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid #2a3a4d;
+  background: #0f1419;
+}
+
+.markdown-body .md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  padding: 0.28em 0.45em 0.28em 0.75em;
+  border-bottom: 1px solid #2a3a4d;
+}
+
+.markdown-body .md-code-lang {
+  font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: #8b9aab;
+}
+
+.markdown-body .md-code-block pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.markdown-body .md-code-block-compact {
+  margin: 0.2em 0;
+  min-width: 11rem;
+}
+
+.markdown-body .md-code-block-compact pre {
+  padding: 0.3em 0.5em;
+}
+
+.markdown-body td .md-code-block,
+.markdown-body th .md-code-block {
+  margin: 0.15em 0;
+}
+
+.markdown-body .md-code-block-compact .hljs-addition,
+.markdown-body .md-code-block-compact .hljs-deletion,
+.markdown-body .md-code-block-compact .hljs-change,
+.markdown-body .md-code-block-compact .hljs-meta {
+  margin: 0 -0.5em;
+  padding: 0 0.5em;
+}
+
+.markdown-body .md-code-block .hljs {
+  color: #c5d0dc;
+}
+
+.markdown-body .hljs-comment,
+.markdown-body .hljs-quote {
+  color: #6a7785;
+  font-style: italic;
+}
+
+.markdown-body .hljs-keyword,
+.markdown-body .hljs-selector-tag,
+.markdown-body .hljs-literal {
+  color: #c9a0dc;
+}
+
+.markdown-body .hljs-string,
+.markdown-body .hljs-doctag,
+.markdown-body .hljs-template-tag {
+  color: #7dd3a8;
+}
+
+.markdown-body .md-code-block .hljs-addition,
+.markdown-body .md-code-block .hljs-deletion,
+.markdown-body .md-code-block .hljs-change,
+.markdown-body .md-code-block .hljs-meta {
   display: block;
-  width: 100%;
+  margin: 0 -0.85em;
+  padding: 0 0.85em;
+  line-height: 1.35;
+}
+
+.markdown-body .hljs-addition {
+  color: #7dd3a8;
+  background: rgba(125, 211, 168, 0.12);
+}
+
+.markdown-body .hljs-deletion {
+  color: #f0a0a0;
+  background: rgba(240, 160, 160, 0.12);
+}
+
+.markdown-body .hljs-change {
+  color: #e0c070;
+  background: rgba(224, 192, 112, 0.14);
+}
+
+.markdown-body .hljs-number,
+.markdown-body .hljs-symbol,
+.markdown-body .hljs-bullet,
+.markdown-body .hljs-meta {
+  color: #e0c070;
+}
+
+.markdown-body .hljs-title,
+.markdown-body .hljs-title.function_,
+.markdown-body .hljs-section {
+  color: #6eb5ff;
+}
+
+.markdown-body .hljs-title.class_,
+.markdown-body .hljs-type,
+.markdown-body .hljs-built_in,
+.markdown-body .hljs-attr,
+.markdown-body .hljs-attribute,
+.markdown-body .hljs-name,
+.markdown-body .hljs-selector-class,
+.markdown-body .hljs-selector-id {
+  color: #9ec5f0;
+}
+
+.markdown-body .hljs-variable,
+.markdown-body .hljs-template-variable,
+.markdown-body .hljs-params {
+  color: #c5d0dc;
+}
+
+.markdown-body .hljs-regexp {
+  color: #f0a0a0;
+}
+
+.markdown-body .hljs-punctuation,
+.markdown-body .hljs-operator {
+  color: #8b9aab;
+}
+
+.markdown-body .mermaid-diagram {
+  margin: 0.65em 0;
+  padding: 0.85em 0.75em;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #2a3a4d;
+  background: #0f1419;
+}
+
+.markdown-body .mermaid-diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.markdown-body .mermaid-diagram-pending {
+  color: #8b9aab;
+  font-size: 0.8em;
+}
+
+.markdown-body .mermaid-fallback {
+  margin: 0.65em 0;
+}
+
+.markdown-body .mermaid-fallback-error {
+  margin: 0 0 0.35em;
+  font-size: 0.75em;
+  color: #c5a070;
+}
+
+.markdown-body .mermaid-fallback pre {
+  margin: 0;
+}
+
+.markdown-body .md-table-wrap {
   margin: 0.65em 0;
   overflow-x: auto;
+}
+
+.markdown-body table {
+  width: 100%;
+  margin: 0;
   border-collapse: collapse;
   font-size: 0.9em;
 }
@@ -248,6 +443,25 @@ pre,
   padding: 0.4em 0.65em;
   border: 1px solid #2a3a4d;
   text-align: left;
+  vertical-align: top;
+}
+
+.markdown-body td ul,
+.markdown-body td ol,
+.markdown-body th ul,
+.markdown-body th ol {
+  margin: 0.15em 0;
+  padding-left: 1.2em;
+}
+
+.markdown-body td li,
+.markdown-body th li {
+  margin: 0.12em 0;
+}
+
+.markdown-body td p,
+.markdown-body th p {
+  margin: 0.2em 0;
 }
 
 .markdown-body th {

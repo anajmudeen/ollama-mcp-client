@@ -41,8 +41,8 @@ export function parseNumCtx(
 /**
  * Live window is the minimum of Ollama's configured context (app slider,
  * OLLAMA_CONTEXT_LENGTH, Modelfile num_ctx, or the 4k default) and the
- * model's architecture maximum. Never treat the architecture max as the
- * configured window.
+ * model's architecture maximum. Server configuration wins over /api/ps
+ * because a loaded model may still reflect a stale allocation.
  */
 export function parseContextLength(
   modelInfo?: Record<string, unknown> | null,
@@ -60,8 +60,10 @@ export function parseContextLength(
     running = undefined
   }
 
+  // Prefer Ollama's configured window over /api/ps: a loaded model may still
+  // be on a stale 4k allocation while the server default is much higher.
   const configured =
-    numCtx ?? running ?? server ?? OLLAMA_DEFAULT_NUM_CTX
+    numCtx ?? server ?? running ?? OLLAMA_DEFAULT_NUM_CTX
   if (archMax) return Math.min(configured, archMax)
   return configured
 }

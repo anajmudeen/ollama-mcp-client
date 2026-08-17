@@ -318,6 +318,63 @@ function ollamaAppDbPath(): string {
   }
 }
 
+/** Ollama app stores 0 when the VRAM-tier default should be used (since v0.15.5). */
+function readVramDefaultFromLogFile(filePath: string): number | undefined {
+  try {
+    const stat = fs.statSync(filePath)
+    let content: string
+    if (stat.size <= 8 * 1024 * 1024) {
+      content = fs.readFileSync(filePath, 'utf8')
+    } else {
+      const headLen = 256 * 1024
+      const tailLen = 256 * 1024
+      const head = Buffer.alloc(Math.min(stat.size, headLen))
+      const tail = Buffer.alloc(Math.min(stat.size, tailLen))
+      const fd = fs.openSync(filePath, 'r')
+      fs.readSync(fd, head, 0, head.length, 0)
+      fs.readSync(fd, tail, 0, tail.length, Math.max(0, stat.size - tail.length))
+      fs.closeSync(fd)
+      content = `${head.toString('utf8')}\n${tail.toString('utf8')}`
+    }
+    const matches = [...content.matchAll(/default_num_ctx=(\d+)/g)]
+    const last = matches.at(-1)
+    if (!last) return undefined
+    const n = Number.parseInt(last[1], 10)
+    return Number.isFinite(n) && n > 0 ? n : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function readOllamaVramTierDefault(): number | undefined {
+  const logsDir = path.join(os.homedir(), '.ollama', 'logs')
+  if (!fs.existsSync(logsDir)) return undefined
+
+  const candidates = ['server.log']
+  try {
+    const numbered = fs
+      .readdirSync(logsDir)
+      .filter((f) => /^server-\d+\.log$/.test(f))
+      .map((f) => ({
+        f,
+        mtime: fs.statSync(path.join(logsDir, f)).mtimeMs
+      }))
+      .sort((a, b) => b.mtime - a.mtime)
+      .map((x) => x.f)
+    candidates.push(...numbered)
+  } catch {
+    // optional enrichment
+  }
+
+  for (const name of candidates) {
+    const filePath = path.join(logsDir, name)
+    if (!fs.existsSync(filePath)) continue
+    const n = readVramDefaultFromLogFile(filePath)
+    if (n) return n
+  }
+  return undefined
+}
+
 function readOllamaAppContextLength(): number | undefined {
   const dbPath = ollamaAppDbPath()
   if (!fs.existsSync(dbPath)) return undefined
@@ -328,7 +385,9 @@ function readOllamaAppContextLength(): number | undefined {
       { encoding: 'utf8', timeout: 1500 }
     )
     const n = Number.parseInt(out.trim(), 10)
-    return Number.isFinite(n) && n > 0 ? n : undefined
+    if (!Number.isFinite(n) || n < 0) return undefined
+    if (n === 0) return readOllamaVramTierDefault()
+    return n
   } catch {
     return undefined
   }

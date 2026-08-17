@@ -1,5 +1,12 @@
-import { useLayoutEffect, useRef } from 'react'
-import ReactMarkdown from 'react-markdown'
+import {
+  Children,
+  isValidElement,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type ReactNode
+} from 'react'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -8,17 +15,20 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import 'katex/dist/katex.min.css'
 import { normalizeMarkdown } from '../lib/normalizeMarkdown'
 import { prepareLibraryReadme } from '../lib/prepareLibraryReadme'
+import { rehypeKatexInHtml } from '../lib/rehypeKatexInHtml'
+import { CodeBlock } from './CodeBlock'
+import { MermaidDiagram } from './MermaidDiagram'
 
 interface MarkdownContentProps {
   content: string
   streaming?: boolean
-  /** Allow limited HTML (library README). Off for chat streams. */
+  /** Extra README HTML (center wrappers, classed divs). Chat still gets sanitized lists/etc. */
   allowHtml?: boolean
 }
 
-const readmeSanitizeSchema = {
+const htmlSanitizeSchema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames ?? []), 'div', 'span', 'center'],
+  tagNames: [...(defaultSchema.tagNames ?? []), 'u', 'center', 'font'],
   attributes: {
     ...defaultSchema.attributes,
     div: [...(defaultSchema.attributes?.div ?? []), 'className', 'class', 'align'],
@@ -33,6 +43,12 @@ const readmeSanitizeSchema = {
     ],
     a: [...(defaultSchema.attributes?.a ?? []), 'href', 'title', 'target', 'rel']
   }
+}
+
+const katexOptions = {
+  throwOnError: false,
+  strict: 'ignore' as const,
+  errorColor: '#c5d0dc'
 }
 
 function isElement(node: Node): node is HTMLElement {
@@ -102,6 +118,79 @@ function findCaretHost(root: HTMLElement): HTMLElement {
   return root
 }
 
+function parseSerializedFence(
+  text: string
+): { language: string; source: string } | null {
+  const trimmed = text.replace(/\n$/, '')
+  const match = /^([a-zA-Z][\w+-]*)(?:\\n|\n)([\s\S]+)$/.exec(trimmed)
+  if (!match) return null
+  const language = match[1]
+  const source = match[2]
+    .replace(/\\n/g, '\n')
+    .replace(/\n```\s*$/, '')
+    .replace(/\n$/, '')
+  if (!source.includes('\n') && !/^[+\-!]/.test(source)) return null
+  return { language, source }
+}
+
+function fencedCodeFromPre(
+  children: ReactNode
+): { language: string; source: string } | null {
+  const child = Children.toArray(children)[0]
+  if (!isValidElement<{ className?: string; children?: ReactNode }>(child)) {
+    return null
+  }
+  const className = child.props.className ?? ''
+  const match = /(?:^|\s)language-([^\s]+)/.exec(className)
+  const source = String(child.props.children ?? '').replace(/\n$/, '')
+  return { language: match?.[1] ?? '', source }
+}
+
+function markdownComponents(streaming?: boolean): Components {
+  return {
+    pre({ children }) {
+      const fence = fencedCodeFromPre(children)
+      if (fence?.language === 'mermaid') {
+        return <MermaidDiagram source={fence.source} streaming={streaming} />
+      }
+      if (fence) {
+        return <CodeBlock code={fence.source} language={fence.language} />
+      }
+      return <pre>{children}</pre>
+    },
+    code({ className, children }) {
+      const text = String(children)
+      if (!className) {
+        const serialized = parseSerializedFence(text)
+        if (serialized) {
+          if (serialized.language === 'mermaid') {
+            return (
+              <MermaidDiagram source={serialized.source} streaming={streaming} />
+            )
+          }
+          return (
+            <CodeBlock
+              code={serialized.source}
+              language={serialized.language}
+              compact
+            />
+          )
+        }
+      }
+      return (
+        <code className={className}>{children}</code>
+      )
+    },
+    table({ children }) {
+      return (
+        <div className="md-table-wrap">
+          <table>{children}</table>
+        </div>
+      )
+    }
+  }
+}
+
 function syncStreamCaret(
   root: HTMLElement | null,
   streaming: boolean | undefined
@@ -146,6 +235,8 @@ export function MarkdownContent({
 }: MarkdownContentProps): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
 
+  const components = useMemo(() => markdownComponents(streaming), [streaming])
+
   useLayoutEffect(() => {
     syncStreamCaret(rootRef.current, streaming)
   }, [content, streaming])
@@ -167,31 +258,13 @@ export function MarkdownContent({
     <div ref={rootRef} className="markdown-body">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={
-          allowHtml
-            ? [
-                rehypeRaw,
-                [rehypeSanitize, readmeSanitizeSchema],
-                [
-                  rehypeKatex,
-                  {
-                    throwOnError: false,
-                    strict: 'ignore',
-                    errorColor: '#c5d0dc'
-                  }
-                ]
-              ]
-            : [
-                [
-                  rehypeKatex,
-                  {
-                    throwOnError: false,
-                    strict: 'ignore',
-                    errorColor: '#c5d0dc'
-                  }
-                ]
-              ]
-        }
+        components={components}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeSanitize, htmlSanitizeSchema],
+          [rehypeKatexInHtml, katexOptions],
+          [rehypeKatex, katexOptions]
+        ]}
       >
         {normalized}
       </ReactMarkdown>
