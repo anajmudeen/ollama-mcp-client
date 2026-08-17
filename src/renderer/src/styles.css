@@ -712,6 +712,12 @@ pre,
   animation-name: msg-enter;
 }
 
+.chat-transcript:not([data-animate-enter]) .msg-enter,
+.chat-transcript:not([data-animate-enter]) .tool-card-enter,
+.chat-transcript:not([data-animate-enter]) .activity-enter {
+  animation: none;
+}
+
 .activity-orb-core {
   background: radial-gradient(
     circle at 35% 30%,

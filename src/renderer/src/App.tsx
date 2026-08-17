@@ -769,6 +769,7 @@ export default function App(): React.JSX.Element {
       ) : null}
       {view === 'chat' ? (
         <Chat
+          key={activeSessionId ?? 'chat'}
           messages={messages}
           busy={busy}
           activity={activity}

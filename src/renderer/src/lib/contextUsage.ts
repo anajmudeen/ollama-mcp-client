@@ -1,5 +1,5 @@
 import type { McpToolInfo, UiMessage } from '../../../shared/types'
-import { estimateTokensFromChars } from '../../../shared/contextUsage'
+import { estimateTokensFromChars, estimateTokensFromText } from '../../../shared/contextUsage'
 import type { ChatAttachment } from './attachments'
 
 export {
@@ -56,4 +56,74 @@ export function contextUsageColor(pct: number): string {
   if (pct >= 90) return '#f0a0a0'
   if (pct >= 70) return '#e0c070'
   return '#8b9aab'
+}
+
+export interface ContextSlice {
+  id: 'system' | 'tools' | 'summarized' | 'conversation' | 'draft'
+  label: string
+  tokens: number
+  color: string
+}
+
+const SLICE_META: Record<
+  ContextSlice['id'],
+  { label: string; color: string }
+> = {
+  system: { label: 'System prompt', color: '#8b95a2' },
+  tools: { label: 'MCP tools', color: '#a78bfa' },
+  summarized: { label: 'Summarized conversation', color: '#f0a8c8' },
+  conversation: { label: 'Conversation', color: '#7c6bc4' },
+  draft: { label: 'Current prompt', color: '#7dd3fc' }
+}
+
+/** Estimate how the live meter total splits across prompt parts. */
+export function buildContextSlices(options: {
+  used: number
+  systemPrompt?: string
+  tools: McpToolInfo[]
+  messages: UiMessage[]
+  draft: string
+  attachments: ChatAttachment[]
+}): ContextSlice[] {
+  const system = estimateTokensFromText(options.systemPrompt ?? '')
+  const tools = estimateToolSchemaTokens(options.tools)
+  const summarized = options.messages.reduce((n, m) => {
+    if (m.kind !== 'notice' || !m.summary) return n
+    return n + estimateTokensFromText(m.summary)
+  }, 0)
+  const draft = estimateDraftTokens(options.draft, options.attachments)
+  const parts: Array<{ id: ContextSlice['id']; tokens: number }> = [
+    { id: 'system', tokens: system },
+    { id: 'tools', tokens: tools },
+    { id: 'summarized', tokens: summarized },
+    { id: 'draft', tokens: draft }
+  ]
+  const reserved = parts.reduce((n, p) => n + p.tokens, 0)
+  const used = Math.max(0, options.used)
+  const scale = reserved > used && reserved > 0 ? used / reserved : 1
+  const scaled = parts.map((p) => ({
+    ...p,
+    tokens: Math.round(p.tokens * scale)
+  }))
+  const assigned = scaled.reduce((n, p) => n + p.tokens, 0)
+  const conversation = Math.max(0, Math.round(used - assigned))
+  const byId = new Map<ContextSlice['id'], number>([
+    ...scaled.map((p) => [p.id, p.tokens] as const),
+    ['conversation', conversation]
+  ])
+  const order: ContextSlice['id'][] = [
+    'system',
+    'tools',
+    'summarized',
+    'conversation',
+    'draft'
+  ]
+  return order
+    .map((id) => ({
+      id,
+      tokens: byId.get(id) ?? 0,
+      label: SLICE_META[id].label,
+      color: SLICE_META[id].color
+    }))
+    .filter((p) => p.tokens > 0)
 }

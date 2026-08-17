@@ -16,6 +16,8 @@ import {
   formatBytes
 } from '../lib/attachments'
 import {
+  type ContextSlice,
+  buildContextSlices,
   contextUsageColor,
   estimateDraftTokens,
   estimateMessageTokens,
@@ -70,11 +72,14 @@ export function Chat({
   const [attachError, setAttachError] = useState<string | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [modelLimit, setModelLimit] = useState<number | null>(null)
+  const [modelSystem, setModelSystem] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
   const programmaticScrollRef = useRef(false)
   const scrollTimeoutRef = useRef<number | null>(null)
+  const [animateEnter, setAnimateEnter] = useState(false)
   const modelMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -100,27 +105,27 @@ export function Chat({
       window.clearTimeout(scrollTimeoutRef.current)
       scrollTimeoutRef.current = null
     }
+    const pin = (): void => {
+      const node = scrollRef.current
+      if (!node || !stickToBottomRef.current) return
+      node.scrollTop = node.scrollHeight
+    }
     if (behavior === 'auto') {
-      el.scrollTop = el.scrollHeight
-      // Allow layout to settle (image-gen frame / markdown reflow)
+      pin()
       requestAnimationFrame(() => {
-        if (!stickToBottomRef.current) {
+        pin()
+        requestAnimationFrame(() => {
+          pin()
           programmaticScrollRef.current = false
-          return
-        }
-        const node = scrollRef.current
-        if (node) node.scrollTop = node.scrollHeight
-        programmaticScrollRef.current = false
+        })
       })
       return
     }
     bottomRef.current?.scrollIntoView({ behavior, block: 'end' })
     scrollTimeoutRef.current = window.setTimeout(() => {
       scrollTimeoutRef.current = null
+      pin()
       programmaticScrollRef.current = false
-      if (stickToBottomRef.current && scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-      }
     }, 320)
   }
 
@@ -185,9 +190,10 @@ export function Chat({
           (m.kind === 'assistant' || m.kind === 'thinking') &&
           Boolean(m.streaming)
       )
-    // Smooth scroll fights rapid thinking/token updates and looks shaky.
     const behavior: ScrollBehavior =
-      streaming || (showActivity && activity.phase === 'generating')
+      !animateEnter ||
+      streaming ||
+      (showActivity && activity.phase === 'generating')
         ? 'auto'
         : 'smooth'
     scrollToBottom(behavior)
@@ -197,19 +203,37 @@ export function Chat({
     activity.detail,
     activity.thinking,
     showActivity,
-    busy
+    busy,
+    animateEnter
   ])
+
+  useEffect(() => {
+    setAnimateEnter(true)
+  }, [])
+
+  useEffect(() => {
+    const content = contentRef.current
+    if (!content) return
+    const ro = new ResizeObserver(() => {
+      if (!stickToBottomRef.current) return
+      const node = scrollRef.current
+      if (!node) return
+      programmaticScrollRef.current = true
+      node.scrollTop = node.scrollHeight
+      requestAnimationFrame(() => {
+        programmaticScrollRef.current = false
+      })
+    })
+    ro.observe(content)
+    return () => ro.disconnect()
+  }, [])
 
   const onMessagesScroll = (): void => {
     const el = scrollRef.current
     if (!el) return
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
     const nearBottom = distanceFromBottom < 80
-    // While we are auto-scrolling, still honor a user override that left the bottom.
-    if (programmaticScrollRef.current) {
-      if (!nearBottom) releaseStickToBottom()
-      return
-    }
+    if (programmaticScrollRef.current) return
     stickToBottomRef.current = nearBottom
   }
 
@@ -249,16 +273,19 @@ export function Chat({
   useEffect(() => {
     if (!selectedModel || !ollamaOk) {
       setModelLimit(null)
+      setModelSystem('')
       return
     }
     let cancelled = false
     setModelLimit(null)
+    setModelSystem('')
     void window.api.ollama
       .showModel(selectedModel)
       .then((detail) => {
         if (cancelled) return
         const next = detail.contextLength
         if (next && next > 0) setModelLimit(next)
+        setModelSystem(detail.system?.trim() ?? '')
       })
       .catch(() => {
         // Keep null / last successful value from a later resolve; don't blank on errors.
@@ -312,6 +339,19 @@ export function Chat({
       draftTokens
     )
   }, [attachments, contextUsage, draft, lastReplyContext, messages, tools])
+
+  const contextSlices = useMemo(
+    () =>
+      buildContextSlices({
+        used: contextUsed,
+        systemPrompt: modelSystem,
+        tools,
+        messages,
+        draft,
+        attachments
+      }),
+    [attachments, contextUsed, draft, messages, modelSystem, tools]
+  )
 
   const submit = (e?: React.FormEvent): void => {
     e?.preventDefault()
@@ -434,8 +474,13 @@ export function Chat({
         onTouchMove={onMessagesTouchMove}
         onKeyDown={onMessagesKeyDown}
         tabIndex={-1}
-        className="flex-1 space-y-3 overflow-y-auto px-5 py-4 outline-none"
+        className="flex-1 overflow-y-auto px-5 py-4 outline-none"
       >
+        <div
+          ref={contentRef}
+          className="chat-transcript space-y-3"
+          data-animate-enter={animateEnter ? '' : undefined}
+        >
         {messages.length === 0 && !busy && (
           <div className="mx-auto mt-16 max-w-md text-center text-sm text-[#6b7a8c]">
             <p className="mb-2 text-[#8b9aab]">Ready when you are.</p>
@@ -576,6 +621,7 @@ export function Chat({
           showThinking={showThinking}
         />
         <div ref={bottomRef} />
+        </div>
       </div>
 
       <form onSubmit={submit} className="px-5 pb-5 pt-2">
@@ -695,6 +741,7 @@ export function Chat({
             <ContextMeter
               used={contextUsed}
               limit={contextLimit}
+              slices={contextSlices}
               compacted={recentlyCompacted}
             />
           ) : null}
@@ -846,40 +893,150 @@ export function Chat({
   )
 }
 
+function SegmentedBar({
+  slices,
+  used,
+  limit,
+  heightClass
+}: {
+  slices: ContextSlice[]
+  used: number
+  limit: number
+  heightClass: string
+}): React.JSX.Element {
+  const span = Math.max(used, limit, 1)
+  return (
+    <div className={`flex overflow-hidden rounded-full bg-[#2a313a] ${heightClass}`}>
+      {slices.map((slice) => (
+        <div
+          key={slice.id}
+          className="h-full min-w-px"
+          style={{
+            width: `${(slice.tokens / span) * 100}%`,
+            backgroundColor: slice.color
+          }}
+          title={`${slice.label}: ${formatTokenCount(slice.tokens)}`}
+        />
+      ))}
+    </div>
+  )
+}
+
 function ContextMeter({
   used,
   limit,
+  slices,
   compacted
 }: {
   used: number
   limit: number
+  slices: ContextSlice[]
   compacted?: boolean
 }): React.JSX.Element {
-  const pct = Math.max(0, Math.min(100, (used / limit) * 100))
-  const color = contextUsageColor(pct)
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const rawPct = limit > 0 ? (used / limit) * 100 : 0
+  const over = rawPct > 100
+  const color = contextUsageColor(over ? 100 : rawPct)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent): void => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
   return (
-    <div
-      className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-11rem)] items-center gap-2"
-      title={
-        compacted
-          ? 'Earlier messages were summarized so this prompt would fit the window. The previous reply’s count is what that turn used before compacting.'
-          : 'Tokens that will be sent on the next prompt vs the live window (min of Ollama’s context setting and the model maximum).'
-      }
-    >
-      <div className="h-1 w-14 overflow-hidden rounded-full bg-[#2a313a]">
-        <div
-          className="h-full rounded-full transition-[width]"
-          style={{ width: `${pct}%`, backgroundColor: color }}
-        />
-      </div>
-      <span
-        className="truncate font-mono text-[10px] tabular-nums"
-        style={{ color }}
+    <div ref={rootRef} className="absolute bottom-3 left-3 z-20">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        title={
+          compacted
+            ? 'Earlier messages were summarized so this prompt would fit the window. Click for a breakdown.'
+            : 'Tokens that will be sent on the next prompt vs the live window. Click for a breakdown.'
+        }
+        className="flex max-w-[calc(100vw-14rem)] items-center gap-2 rounded-md px-0.5 py-0.5 text-left hover:bg-[#ffffff08]"
       >
-        {formatTokenCount(used)} / {formatTokenCount(limit)}
-        <span className="text-[#6b7a8c]"> ({Math.round(pct)}%)</span>
-        {compacted ? ' · compacted' : ''}
-      </span>
+        <div className="w-14">
+          <SegmentedBar slices={slices} used={used} limit={limit} heightClass="h-1" />
+        </div>
+        <span
+          className="truncate font-mono text-[10px] tabular-nums"
+          style={{ color }}
+        >
+          {formatTokenCount(used)} / {formatTokenCount(limit)}
+          <span className="text-[#6b7a8c]"> ({Math.round(rawPct)}%)</span>
+          {compacted ? ' · compacted' : ''}
+        </span>
+      </button>
+
+      {open ? (
+        <div
+          role="dialog"
+          aria-label="Context usage"
+          className="absolute bottom-full left-0 z-30 mb-2 w-[min(22rem,calc(100vw-2.5rem))] rounded-xl border border-[#2a3a4d] bg-[#161d27] p-3.5 shadow-xl"
+        >
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <p className="text-[13px] font-medium text-[#e7ecf1]">Context Usage</p>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded p-0.5 text-[#8b9aab] hover:bg-[#ffffff10] hover:text-[#e7ecf1]"
+              aria-label="Close"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                <path
+                  d="M3 3l6 6M9 3l-6 6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+          <div className="mb-2 flex items-baseline justify-between gap-3 text-[12px]">
+            <span style={{ color }}>
+              {over ? `${Math.round(rawPct)}% Over` : `${Math.round(rawPct)}% Full`}
+            </span>
+            <span className="font-mono tabular-nums text-[#c5d0dc]">
+              {formatTokenCount(used)} / {formatTokenCount(limit)} tokens
+            </span>
+          </div>
+          <SegmentedBar slices={slices} used={used} limit={limit} heightClass="h-2" />
+          <ul className="mt-3 space-y-1.5">
+            {slices.map((slice) => (
+              <li
+                key={slice.id}
+                className="flex items-center justify-between gap-3 text-[12px]"
+              >
+                <span className="flex min-w-0 items-center gap-2 text-[#c5d0dc]">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                    style={{ backgroundColor: slice.color }}
+                    aria-hidden
+                  />
+                  <span className="truncate">{slice.label}</span>
+                </span>
+                <span className="font-mono tabular-nums text-[#9aa8b8]">
+                  {formatTokenCount(slice.tokens)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   )
 }

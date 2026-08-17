@@ -59,8 +59,9 @@ export function MessageMeta({
     contextLimit > 0 &&
     contextUsed >= 0
   const pct = hasContext
-    ? Math.max(0, Math.min(100, (contextUsed / contextLimit) * 100))
+    ? Math.max(0, (contextUsed / contextLimit) * 100)
     : 0
+  const barPct = Math.min(100, pct)
   if (!time && !duration && !modelLabel && !hasContext) return null
 
   const parts: ReactNode[] = []
@@ -111,7 +112,7 @@ export function MessageMeta({
         >
           <span
             className="block h-full rounded-full"
-            style={{ width: `${pct}%`, backgroundColor: color }}
+            style={{ width: `${barPct}%`, backgroundColor: color }}
           />
         </span>
         {formatTokenCount(contextUsed)} / {formatTokenCount(contextLimit)}
