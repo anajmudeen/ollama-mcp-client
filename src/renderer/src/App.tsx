@@ -532,11 +532,7 @@ export default function App(): React.JSX.Element {
             createdAt: nowIso(),
             summary: event.summary
           }
-          const next = [...prev]
-          let idx = next.length - 1
-          while (idx >= 0 && next[idx].kind !== 'user') idx--
-          if (idx >= 0) next.splice(idx, 0, notice)
-          else next.push(notice)
+          const next = [...prev, notice]
           messagesRef.current = next
           persistSessionRef.current(sessionId, next, historyRef.current)
           return next

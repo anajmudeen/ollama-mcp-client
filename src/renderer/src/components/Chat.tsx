@@ -307,7 +307,10 @@ export function Chat({
         break
       }
     }
-    return userIdx > 0 && messages[userIdx - 1]?.kind === 'notice'
+    return (
+      userIdx >= 0 &&
+      messages.some((m, i) => m.kind === 'notice' && i >= Math.max(0, userIdx - 1))
+    )
   }, [messages])
 
   const lastReplyContext = useMemo(() => {
@@ -323,7 +326,12 @@ export function Chat({
     }
     // Post-turn compact inserts a notice before this user; don't floor to the
     // pre-compact snapshot.
-    if (userIdx > 0 && messages[userIdx - 1]?.kind === 'notice') return undefined
+    if (
+      userIdx >= 0 &&
+      messages.some((m, i) => m.kind === 'notice' && i >= Math.max(0, userIdx - 1))
+    ) {
+      return undefined
+    }
     return last.contextUsed
   }, [messages])
 
@@ -595,13 +603,15 @@ export function Chat({
             return (
               <div
                 key={m.id}
-                className="msg-enter flex justify-center py-1"
+                className="msg-enter flex items-center gap-3 py-3"
                 title="Earlier messages were compacted so the model history would fit the context window"
               >
-                <div className="inline-flex items-center gap-2 rounded-full border border-[#2a3a4d] bg-[#121820]/90 px-3 py-1 text-[11px] text-[#8b9aab]">
-                  <span className="h-1 w-1 rounded-full bg-[#9ec5f0]" aria-hidden="true" />
+                <span className="h-px min-w-4 flex-1 bg-[#3d5168]" aria-hidden />
+                <div className="inline-flex max-w-[min(100%,24rem)] items-center gap-2 rounded-full border border-[#fb7185]/35 bg-[#fb7185]/10 px-3 py-1.5 text-[12px] leading-snug text-[#f5c4ce]">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#fb7185]" aria-hidden />
                   <span>{m.content}</span>
                 </div>
+                <span className="h-px min-w-4 flex-1 bg-[#3d5168]" aria-hidden />
               </div>
             )
           }
@@ -969,8 +979,14 @@ function ContextMeter({
         }
         className="flex max-w-[calc(100vw-14rem)] items-center gap-2 rounded-md px-0.5 py-0.5 text-left hover:bg-[#ffffff08]"
       >
-        <div className="w-14">
-          <SegmentedBar slices={slices} used={used} limit={limit} heightClass="h-1" />
+        <div className="h-1 w-14 overflow-hidden rounded-full bg-[#2a313a]">
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${Math.max(0, Math.min(100, rawPct))}%`,
+              backgroundColor: color
+            }}
+          />
         </div>
         <span
           className="truncate font-mono text-[10px] tabular-nums"

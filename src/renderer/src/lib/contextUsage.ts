@@ -69,11 +69,11 @@ const SLICE_META: Record<
   ContextSlice['id'],
   { label: string; color: string }
 > = {
-  system: { label: 'System prompt', color: '#8b95a2' },
-  tools: { label: 'MCP tools', color: '#a78bfa' },
-  summarized: { label: 'Summarized conversation', color: '#f0a8c8' },
-  conversation: { label: 'Conversation', color: '#7c6bc4' },
-  draft: { label: 'Current prompt', color: '#7dd3fc' }
+  system: { label: 'System prompt', color: '#9ca3af' },
+  tools: { label: 'MCP tools', color: '#c084fc' },
+  summarized: { label: 'Summarized conversation', color: '#fb7185' },
+  conversation: { label: 'Conversation', color: '#34d399' },
+  draft: { label: 'Current prompt', color: '#38bdf8' }
 }
 
 /** Estimate how the live meter total splits across prompt parts. */
