@@ -47,6 +47,8 @@ export interface OllamaChatChunk {
   error?: string
   prompt_eval_count?: number
   eval_count?: number
+  /** Nanoseconds spent generating tokens (Ollama `eval_duration`). */
+  eval_duration?: number
 }
 
 function normalizeArgs(
@@ -524,6 +526,7 @@ export async function chatStream(options: {
   toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>
   promptEvalCount?: number
   evalCount?: number
+  evalDurationNs?: number
 }> {
   const baseUrl = getOllamaBaseUrl()
   const body: Record<string, unknown> = {
@@ -562,6 +565,7 @@ export async function chatStream(options: {
   let toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> = []
   let promptEvalCount: number | undefined
   let evalCount: number | undefined
+  let evalDurationNs: number | undefined
 
   const ingestToolCalls = (calls: OllamaToolCall[] | undefined): void => {
     if (!calls?.length) return
@@ -577,6 +581,9 @@ export async function chatStream(options: {
     }
     if (typeof chunk.eval_count === 'number') {
       evalCount = chunk.eval_count
+    }
+    if (typeof chunk.eval_duration === 'number') {
+      evalDurationNs = chunk.eval_duration
     }
   }
 
@@ -621,7 +628,7 @@ export async function chatStream(options: {
     }
   }
 
-  return { content, toolCalls, promptEvalCount, evalCount }
+  return { content, toolCalls, promptEvalCount, evalCount, evalDurationNs }
 }
 
 /** Non-streaming chat completion (e.g. history summarization). */

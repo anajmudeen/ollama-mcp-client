@@ -564,6 +564,7 @@ export function Chat({
                   <MessageMeta
                     createdAt={m.createdAt}
                     responseMs={m.streaming ? undefined : m.responseMs}
+                    tokensPerSec={m.streaming ? undefined : m.tokensPerSec}
                     model={m.model}
                     contextUsed={m.streaming ? undefined : m.contextUsed}
                     contextLimit={m.streaming ? undefined : m.contextLimit}

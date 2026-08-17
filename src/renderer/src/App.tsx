@@ -360,7 +360,8 @@ export default function App(): React.JSX.Element {
               createdAt: finishedAt,
               responseMs,
               contextUsed: event.contextUsed ?? last.contextUsed,
-              contextLimit: event.contextLimit ?? last.contextLimit
+              contextLimit: event.contextLimit ?? last.contextLimit,
+              tokensPerSec: event.tokensPerSec ?? last.tokensPerSec
             }
           } else if (event.content) {
             next.push({
@@ -372,7 +373,8 @@ export default function App(): React.JSX.Element {
               responseMs,
               model: turnModelRef.current ?? undefined,
               contextUsed: event.contextUsed,
-              contextLimit: event.contextLimit
+              contextLimit: event.contextLimit,
+              tokensPerSec: event.tokensPerSec
             })
           }
           messagesRef.current = next

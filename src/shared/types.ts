@@ -191,7 +191,15 @@ export type ChatEvent =
     }
   | { type: 'thinking'; content: string; turnId?: string }
   | { type: 'chunk'; content: string; turnId?: string }
-  | { type: 'assistant_done'; content: string; turnId?: string; contextUsed?: number; contextLimit?: number }
+  | {
+      type: 'assistant_done'
+      content: string
+      turnId?: string
+      contextUsed?: number
+      contextLimit?: number
+      /** Generated tokens per second for this reply (Ollama eval_count / eval_duration). */
+      tokensPerSec?: number
+    }
   | {
       type: 'assistant_images'
       images: string[]
@@ -248,6 +256,8 @@ export type UiMessage =
       streaming?: boolean
       /** Wall-clock duration from user send to this reply finishing. */
       responseMs?: number
+      /** Generated tokens per second for this reply. */
+      tokensPerSec?: number
       /** Model that generated this reply. */
       model?: string
       /** Context tokens used when this reply finished. */

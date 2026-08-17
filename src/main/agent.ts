@@ -392,7 +392,8 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       let firstContentAt: number | null = null
       let firstToolCallAt: number | null = null
 
-      const { content, toolCalls, promptEvalCount, evalCount } = await chatStream({
+      const { content, toolCalls, promptEvalCount, evalCount, evalDurationNs } =
+        await chatStream({
         model: payload.model,
         messages,
         tools: tools.length > 0 ? tools : undefined,
@@ -466,6 +467,13 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       if (toolCalls.length > 0) {
         emitContext(promptEvalCount, evalCount)
       }
+      const tokensPerSec =
+        evalCount != null &&
+        evalCount > 0 &&
+        evalDurationNs != null &&
+        evalDurationNs > 0
+          ? evalCount / (evalDurationNs / 1e9)
+          : undefined
       console.log(
         `[agent] iter=${iteration} stream-done +${ms(iterStartedAt)} id=${tid} contentChars=${finalContent.length} tools=${toolCalls.length}` +
           (firstThinkingAt != null
@@ -476,7 +484,8 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
             : '') +
           (firstToolCallAt != null
             ? ` ttf-tool=${ms(iterStartedAt, firstToolCallAt)}`
-            : '')
+            : '') +
+          (tokensPerSec != null ? ` tok/s=${tokensPerSec.toFixed(1)}` : '')
       )
 
       if (toolCalls.length === 0) {
@@ -493,7 +502,8 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
           type: 'assistant_done',
           content: finalContent,
           contextUsed: used > 0 ? used : occupancyUsed(withReply, toolOverhead),
-          contextLimit: contextLimit ?? undefined
+          contextLimit: contextLimit ?? undefined,
+          tokensPerSec
         })
         try {
           const compacted = await applyCompact({
