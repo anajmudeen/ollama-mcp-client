@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
 import type { ChatEvent, ChatMessage, ChatSendPayload } from '../shared/types'
+import { compactIfNeeded, shouldCompact } from './context-compact'
 import { mcpManager } from './mcp-manager'
 import { generateImageBase64 } from './ollama-image'
 import {
@@ -8,6 +9,7 @@ import {
   detectVisionSupport,
   getModelInfo,
   modelIsImageGen,
+  resolveContextLength,
   toOllamaMessages,
   type OllamaChatMessage,
   type OllamaTool
@@ -99,16 +101,25 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
   }
 
   const tools = toolsFromMcp()
-  const messages: OllamaChatMessage[] = toOllamaMessages(payload.messages)
   const turnStartedAt = Date.now()
   const tid = shortTurnId(turnId)
 
   console.log(
-    `[agent] turn start id=${tid} model=${payload.model} messages=${messages.length} chars≈${approxChars(messages)} tools=${tools.length}`
+    `[agent] turn start id=${tid} model=${payload.model} messages=${payload.messages.length} tools=${tools.length}`
   )
 
   // Image-generation models use /api/generate instead of the chat/tools loop.
   const modelInfo = await getModelInfo(payload.model).catch(() => null)
+  const contextLimit = await resolveContextLength(payload.model, modelInfo)
+
+  const emitContext = (promptEvalCount?: number, evalCount?: number): void => {
+    if (promptEvalCount == null && evalCount == null) return
+    emitTurn({
+      type: 'context',
+      used: (promptEvalCount ?? 0) + (evalCount ?? 0),
+      limit: contextLimit ?? 0
+    })
+  }
   if (modelIsImageGen(payload.model, modelInfo)) {
     const lastUser = [...payload.messages].reverse().find((m) => m.role === 'user')
     const prompt = (lastUser?.content ?? '').trim()
@@ -156,6 +167,61 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       return
     }
   }
+
+  // Compact older history when near the context window (model history only).
+  let workingMessages = payload.messages
+  try {
+    if (shouldCompact(workingMessages, contextLimit)) {
+      emitTurn({
+        type: 'status',
+        phase: 'compacting',
+        detail: 'Compressing conversation…'
+      })
+    }
+    const compact = await compactIfNeeded({
+      model: payload.model,
+      messages: workingMessages,
+      limit: contextLimit,
+      signal: abort.signal
+    })
+    if (abort.signal.aborted || activeTurnId !== turnId) {
+      emitTurn({ type: 'error', message: 'Aborted' })
+      return
+    }
+    if (compact.summarized) {
+      console.log(
+        `[agent] compacted id=${tid} before=${payload.messages.length} after=${compact.messages.length}`
+      )
+      workingMessages = compact.messages
+      emitTurn({ type: 'compacted', messages: workingMessages })
+      if (compact.summary) {
+        emitTurn({
+          type: 'notice',
+          content: 'Summarized earlier chat',
+          summary: compact.summary
+        })
+      } else {
+        emitTurn({
+          type: 'notice',
+          content: 'Trimmed earlier chat to fit context'
+        })
+      }
+    }
+  } catch (err) {
+    if (abort.signal.aborted || activeTurnId !== turnId) {
+      emitTurn({ type: 'error', message: 'Aborted' })
+      return
+    }
+    console.warn(
+      '[agent] compact skipped:',
+      err instanceof Error ? err.message : err
+    )
+  }
+
+  const messages: OllamaChatMessage[] = toOllamaMessages(workingMessages)
+  console.log(
+    `[agent] prompt ready id=${tid} messages=${messages.length} chars≈${approxChars(messages)}`
+  )
 
   const imageStats = messages
     .filter((m) => m.images?.length)
@@ -217,7 +283,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       let firstContentAt: number | null = null
       let firstToolCallAt: number | null = null
 
-      const { content, toolCalls } = await chatStream({
+      const { content, toolCalls, promptEvalCount, evalCount } = await chatStream({
         model: payload.model,
         messages,
         tools: tools.length > 0 ? tools : undefined,
@@ -283,6 +349,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       }
 
       const finalContent = content || streamedContent
+      emitContext(promptEvalCount, evalCount)
       console.log(
         `[agent] iter=${iteration} stream-done +${ms(iterStartedAt)} id=${tid} contentChars=${finalContent.length} tools=${toolCalls.length}` +
           (firstThinkingAt != null

@@ -39,6 +39,11 @@ const PHASE_META: Record<
     label: 'Synthesizing',
     accent: '#b39ddb',
     ring: 'rgba(179, 157, 219, 0.35)'
+  },
+  compacting: {
+    label: 'Compressing',
+    accent: '#9ec5f0',
+    ring: 'rgba(158, 197, 240, 0.35)'
   }
 }
 

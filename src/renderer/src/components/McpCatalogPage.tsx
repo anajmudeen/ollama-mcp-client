@@ -300,6 +300,7 @@ export function McpCatalogPage({
           docsUrl={draftMeta?.url}
           envHints={draftMeta?.envHints}
           hasInstallPreset={draftMeta?.hasInstall}
+          saving={saving}
           onCancel={closeForm}
           onSave={(server) => void handleSave(server)}
         />
@@ -423,15 +424,23 @@ function MyServerCard({
               type="button"
               disabled={busy}
               onClick={onConnect}
-              className="rounded border border-[#3d6a9a] bg-[#1a3050] px-2.5 py-1 text-[11px] text-[#9ec5f0] hover:bg-[#234068] disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded border border-[#3d6a9a] bg-[#1a3050] px-2.5 py-1 text-[11px] text-[#9ec5f0] hover:bg-[#234068] disabled:opacity-70"
             >
-              Connect
+              {busy ? (
+                <>
+                  <span className="tool-spinner" />
+                  Starting…
+                </>
+              ) : (
+                'Connect'
+              )}
             </button>
           )}
           <button
             type="button"
             onClick={onEdit}
-            className="rounded border border-[#2a3a4d] px-2.5 py-1 text-[11px] text-[#c5d0dc] hover:bg-[#1a2430]"
+            disabled={busy}
+            className="rounded border border-[#2a3a4d] px-2.5 py-1 text-[11px] text-[#c5d0dc] hover:bg-[#1a2430] disabled:opacity-50"
           >
             Edit
           </button>
@@ -446,7 +455,12 @@ function MyServerCard({
         </div>
       </div>
 
-      {server.connected ? (
+      {busy && !server.connected ? (
+        <p className="mt-3 flex items-center gap-2 text-xs text-[#8b9aab]">
+          <span className="tool-spinner" />
+          Starting the server — first run may download the package.
+        </p>
+      ) : server.connected ? (
         <div className="mt-3 border-t border-[#243041] pt-2">
           <button
             type="button"

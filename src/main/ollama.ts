@@ -5,6 +5,7 @@ import type {
   OllamaStatus,
   PullProgressEvent
 } from '../shared/types'
+import { parseContextLength } from '../shared/contextLength'
 import { getOllamaBaseUrl } from './config-store'
 
 export interface OllamaTool {
@@ -40,6 +41,8 @@ export interface OllamaChatChunk {
   }
   done?: boolean
   error?: string
+  prompt_eval_count?: number
+  eval_count?: number
 }
 
 function normalizeArgs(
@@ -186,6 +189,8 @@ export interface OllamaModelInfo {
     quantization_level?: string
   }
   model_info?: Record<string, unknown>
+  parameters?: string
+  modelfile?: string
 }
 
 function buildModelTags(input: {
@@ -251,6 +256,57 @@ export async function getModelInfo(model: string): Promise<OllamaModelInfo> {
   if (!res.ok) return {}
   return (await res.json()) as OllamaModelInfo
 }
+
+function namesMatch(a: string, b: string): boolean {
+  if (a === b) return true
+  const base = (name: string): string => name.split(':')[0] ?? name
+  const tag = (name: string): string =>
+    name.includes(':') ? name : `${name}:latest`
+  return base(a) === base(b) && tag(a) === tag(b)
+}
+
+export async function getRunningContextLength(
+  model: string
+): Promise<number | undefined> {
+  const baseUrl = getOllamaBaseUrl()
+  try {
+    const res = await fetch(`${baseUrl}/api/ps`, {
+      signal: AbortSignal.timeout(3000)
+    })
+    if (!res.ok) return undefined
+    const data = (await res.json()) as {
+      models?: Array<{
+        name?: string
+        model?: string
+        context_length?: number
+        options?: { num_ctx?: number }
+      }>
+    }
+    const match = (data.models ?? []).find(
+      (m) =>
+        namesMatch(m.name ?? '', model) || namesMatch(m.model ?? '', model)
+    )
+    const n = match?.options?.num_ctx ?? match?.context_length
+    return typeof n === 'number' && n > 0 ? n : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export async function resolveContextLength(
+  model: string,
+  info?: OllamaModelInfo | null
+): Promise<number | undefined> {
+  const running = await getRunningContextLength(model)
+  return parseContextLength(
+    info?.model_info,
+    info?.parameters,
+    info?.modelfile,
+    running
+  )
+}
+
+export { parseContextLength }
 
 export async function getModelCapabilities(model: string): Promise<string[]> {
   const info = await getModelInfo(model)
@@ -339,6 +395,8 @@ export async function chatStream(options: {
 }): Promise<{
   content: string
   toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>
+  promptEvalCount?: number
+  evalCount?: number
 }> {
   const baseUrl = getOllamaBaseUrl()
   const body: Record<string, unknown> = {
@@ -373,6 +431,8 @@ export async function chatStream(options: {
   let content = ''
   // Ollama re-sends the full tool_calls array on later chunks — replace, don't append
   let toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> = []
+  let promptEvalCount: number | undefined
+  let evalCount: number | undefined
 
   const ingestToolCalls = (calls: OllamaToolCall[] | undefined): void => {
     if (!calls?.length) return
@@ -380,6 +440,15 @@ export async function chatStream(options: {
       name: tc.function.name,
       arguments: normalizeArgs(tc.function.arguments)
     }))
+  }
+
+  const ingestCounts = (chunk: OllamaChatChunk): void => {
+    if (typeof chunk.prompt_eval_count === 'number') {
+      promptEvalCount = chunk.prompt_eval_count
+    }
+    if (typeof chunk.eval_count === 'number') {
+      evalCount = chunk.eval_count
+    }
   }
 
   while (true) {
@@ -402,6 +471,7 @@ export async function chatStream(options: {
         throw new Error(formatOllamaError(chunk.error))
       }
       options.onChunk(chunk)
+      ingestCounts(chunk)
       const msg = chunk.message
       if (msg?.content) {
         content += msg.content
@@ -414,6 +484,7 @@ export async function chatStream(options: {
     try {
       const chunk = JSON.parse(buffer.trim()) as OllamaChatChunk
       options.onChunk(chunk)
+      ingestCounts(chunk)
       if (chunk.message?.content) content += chunk.message.content
       ingestToolCalls(chunk.message?.tool_calls)
     } catch {
@@ -421,7 +492,41 @@ export async function chatStream(options: {
     }
   }
 
-  return { content, toolCalls }
+  return { content, toolCalls, promptEvalCount, evalCount }
+}
+
+/** Non-streaming chat completion (e.g. history summarization). */
+export async function chatOnce(options: {
+  model: string
+  messages: OllamaChatMessage[]
+  signal?: AbortSignal
+}): Promise<string> {
+  const baseUrl = getOllamaBaseUrl()
+  const res = await fetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: options.model,
+      messages: options.messages,
+      stream: false
+    }),
+    signal: options.signal
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    const raw = `Ollama chat failed: HTTP ${res.status}${text ? ` — ${text}` : ''}`
+    throw new Error(formatOllamaError(raw))
+  }
+
+  const data = (await res.json()) as {
+    message?: { content?: string }
+    error?: string
+  }
+  if (data.error) {
+    throw new Error(formatOllamaError(data.error))
+  }
+  return data.message?.content?.trim() ?? ''
 }
 
 export function toOllamaMessages(messages: ChatMessage[]): OllamaChatMessage[] {
@@ -499,7 +604,13 @@ export async function showModel(model: string): Promise<OllamaModelDetails> {
     capabilities: data.capabilities,
     model_info: data.model_info,
     size,
-    modifiedAt
+    modifiedAt,
+    contextLength: parseContextLength(
+      data.model_info,
+      data.parameters,
+      data.modelfile,
+      await getRunningContextLength(model)
+    )
   }
 }
 

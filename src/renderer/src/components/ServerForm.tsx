@@ -8,6 +8,25 @@ interface ServerFormProps {
   docsUrl?: string
   envHints?: CatalogInstallEnvHint[]
   hasInstallPreset?: boolean
+  saving?: boolean
+}
+
+function Spinner({ className }: { className?: string }): React.JSX.Element {
+  return (
+    <span
+      className={className}
+      aria-hidden
+      style={{
+        display: 'inline-block',
+        width: 12,
+        height: 12,
+        border: '2px solid rgba(255, 255, 255, 0.25)',
+        borderTopColor: '#fff',
+        borderRadius: '50%',
+        animation: 'spin 0.7s linear infinite'
+      }}
+    />
+  )
 }
 
 function parseArgs(text: string): string[] {
@@ -42,7 +61,8 @@ export function ServerForm({
   onSave,
   docsUrl,
   envHints,
-  hasInstallPreset
+  hasInstallPreset,
+  saving = false
 }: ServerFormProps): React.JSX.Element {
   const [name, setName] = useState(initial?.name ?? '')
   const [command, setCommand] = useState(initial?.command ?? 'npx')
@@ -65,7 +85,7 @@ export function ServerForm({
 
   const submit = (e: React.FormEvent): void => {
     e.preventDefault()
-    if (!name.trim() || !command.trim()) return
+    if (saving || !name.trim() || !command.trim()) return
     onSave({
       id: initial?.id ?? crypto.randomUUID(),
       name: name.trim(),
@@ -131,7 +151,8 @@ export function ServerForm({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 text-sm outline-none focus:border-[#4a7ab0]"
+          disabled={saving}
+          className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 text-sm outline-none focus:border-[#4a7ab0] disabled:opacity-60"
           placeholder="Filesystem"
           required
         />
@@ -139,16 +160,18 @@ export function ServerForm({
         <input
           value={command}
           onChange={(e) => setCommand(e.target.value)}
-          className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 font-mono text-sm outline-none focus:border-[#4a7ab0]"
           placeholder="npx"
           required
+          disabled={saving}
+          className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 font-mono text-sm outline-none focus:border-[#4a7ab0] disabled:opacity-60"
         />
         <label className="mb-1 block text-xs text-[#8b9aab]">Arguments</label>
         <input
           value={argsText}
           onChange={(e) => setArgsText(e.target.value)}
-          className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 font-mono text-sm outline-none focus:border-[#4a7ab0]"
           placeholder="-y @modelcontextprotocol/server-filesystem /tmp"
+          disabled={saving}
+          className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 font-mono text-sm outline-none focus:border-[#4a7ab0] disabled:opacity-60"
         />
         <label className="mb-1 block text-xs text-[#8b9aab]">
           Env (KEY=value per line)
@@ -157,30 +180,52 @@ export function ServerForm({
           value={envText}
           onChange={(e) => setEnvText(e.target.value)}
           rows={3}
-          className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 font-mono text-sm outline-none focus:border-[#4a7ab0]"
           placeholder="API_KEY=..."
+          disabled={saving}
+          className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 font-mono text-sm outline-none focus:border-[#4a7ab0] disabled:opacity-60"
         />
         <label className="mb-4 flex items-center gap-2 text-sm text-[#c5d0dc]">
           <input
             type="checkbox"
             checked={enabled}
+            disabled={saving}
             onChange={(e) => setEnabled(e.target.checked)}
           />
           Enabled
         </label>
+        {saving ? (
+          <p className="mb-3 flex items-start gap-2 rounded border border-[#2a3a4d] bg-[#0f1419] px-2.5 py-2 text-xs leading-relaxed text-[#8b9aab]">
+            <span className="tool-spinner mt-0.5 shrink-0" />
+            <span>
+              Starting the server
+              {enabled
+                ? ' — first run may download the package (npx/uvx) and take a minute.'
+                : '.'}
+            </span>
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded border border-[#2a3a4d] px-3 py-1.5 text-sm text-[#c5d0dc] hover:bg-[#1a2430]"
+            disabled={saving}
+            className="rounded border border-[#2a3a4d] px-3 py-1.5 text-sm text-[#c5d0dc] hover:bg-[#1a2430] disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="rounded bg-[#2d6cb5] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#3a7cc9]"
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded bg-[#2d6cb5] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#3a7cc9] disabled:opacity-70"
           >
-            Save
+            {saving ? (
+              <>
+                <Spinner />
+                Connecting…
+              </>
+            ) : (
+              'Save'
+            )}
           </button>
         </div>
       </form>

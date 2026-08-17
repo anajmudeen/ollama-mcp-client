@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { OllamaModel } from '../../../shared/types'
-import type { UiMessage } from '../../../shared/types'
+import type { McpToolInfo, OllamaModel, UiMessage } from '../../../shared/types'
 import type { ActivityState } from './ActivityIndicator'
 import { DownloadImageButton } from './DownloadImageButton'
 import { ActivityIndicator } from './ActivityIndicator'
@@ -16,6 +15,13 @@ import {
   fileToAttachment,
   formatBytes
 } from '../lib/attachments'
+import {
+  contextUsageColor,
+  estimateDraftTokens,
+  estimateMessageTokens,
+  estimateToolSchemaTokens,
+  formatTokenCount
+} from '../lib/contextUsage'
 
 interface ChatProps {
   messages: UiMessage[]
@@ -27,6 +33,8 @@ interface ChatProps {
   imageGenSupported?: boolean
   models: OllamaModel[]
   selectedModel: string | null
+  tools: McpToolInfo[]
+  contextUsage: { used: number; limit: number } | null
   onSelectModel: (model: string) => void
   onSend: (payload: {
     content: string
@@ -48,6 +56,8 @@ export function Chat({
   imageGenSupported = true,
   models,
   selectedModel,
+  tools,
+  contextUsage,
   onSelectModel,
   onSend,
   onAbort,
@@ -59,6 +69,7 @@ export function Chat({
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [modelLimit, setModelLimit] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
@@ -189,6 +200,44 @@ export function Chat({
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
   }, [modelOpen])
+
+  useEffect(() => {
+    if (!selectedModel || !ollamaOk) {
+      setModelLimit(null)
+      return
+    }
+    let cancelled = false
+    setModelLimit(null)
+    void window.api.ollama
+      .showModel(selectedModel)
+      .then((detail) => {
+        if (cancelled) return
+        const next = detail.contextLength
+        if (next && next > 0) setModelLimit(next)
+      })
+      .catch(() => {
+        // Keep null / last successful value from a later resolve; don't blank on errors.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedModel, ollamaOk])
+
+  const contextLimit =
+    (contextUsage && contextUsage.limit > 0 ? contextUsage.limit : null) ??
+    modelLimit
+
+  const contextUsed = useMemo(() => {
+    const draftTokens = estimateDraftTokens(draft, attachments)
+    if (contextUsage && contextUsage.used > 0) {
+      return contextUsage.used + draftTokens
+    }
+    return (
+      estimateMessageTokens(messages) +
+      estimateToolSchemaTokens(tools) +
+      draftTokens
+    )
+  }, [attachments, contextUsage, draft, messages, tools])
 
   const submit = (e?: React.FormEvent): void => {
     e?.preventDefault()
@@ -407,6 +456,20 @@ export function Chat({
               />
             )
           }
+          if (m.kind === 'notice') {
+            return (
+              <div
+                key={m.id}
+                className="msg-enter flex justify-center py-1"
+                title={m.summary ? 'Earlier messages were compacted for the model' : undefined}
+              >
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#2a3a4d] bg-[#121820]/90 px-3 py-1 text-[11px] text-[#8b9aab]">
+                  <span className="h-1 w-1 rounded-full bg-[#9ec5f0]" aria-hidden="true" />
+                  <span>{m.content}</span>
+                </div>
+              </div>
+            )
+          }
           return (
             <div key={m.id} className="msg-enter max-w-[85%]">
               <div className="rounded border border-rose-900/40 bg-rose-950/30 px-3 py-2 text-sm text-rose-200">
@@ -537,6 +600,10 @@ export function Chat({
             onChange={(e) => void addFiles(e.target.files)}
           />
           )}
+
+          {ollamaOk && selectedModel && contextLimit && contextLimit > 0 ? (
+            <ContextMeter used={contextUsed} limit={contextLimit} />
+          ) : null}
 
           <div className="absolute bottom-2.5 right-2.5 flex items-center gap-2">
             {!modelIsImageGen && (
@@ -682,5 +749,35 @@ export function Chat({
         />
       )}
     </main>
+  )
+}
+
+function ContextMeter({
+  used,
+  limit
+}: {
+  used: number
+  limit: number
+}): React.JSX.Element {
+  const pct = Math.max(0, Math.min(100, (used / limit) * 100))
+  const color = contextUsageColor(pct)
+  return (
+    <div
+      className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-11rem)] items-center gap-2"
+      title="Tokens in this chat vs Ollama’s num_ctx for this model (not the architecture maximum). After a reply, the value comes from the loaded model."
+    >
+      <div className="h-1 w-14 overflow-hidden rounded-full bg-[#2a313a]">
+        <div
+          className="h-full rounded-full transition-[width]"
+          style={{ width: `${pct}%`, backgroundColor: color }}
+        />
+      </div>
+      <span
+        className="truncate font-mono text-[10px] tabular-nums"
+        style={{ color }}
+      >
+        {formatTokenCount(used)} / {formatTokenCount(limit)}
+      </span>
+    </div>
   )
 }

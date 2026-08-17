@@ -69,6 +69,8 @@ export interface OllamaModelDetails {
   model_info?: Record<string, unknown>
   size?: number
   modifiedAt?: string
+  /** Effective Ollama num_ctx (not the architecture maximum). */
+  contextLength?: number
 }
 
 export interface PullProgressEvent {
@@ -177,6 +179,7 @@ export type ActivityPhase =
   | 'generating'
   | 'tool'
   | 'synthesizing'
+  | 'compacting'
 
 export type ChatEvent =
   | { type: 'user'; content: string; turnId?: string }
@@ -212,6 +215,11 @@ export type ChatEvent =
     }
   | { type: 'done'; turnId?: string }
   | { type: 'error'; message: string; turnId?: string }
+  | { type: 'context'; used: number; limit: number; turnId?: string }
+  /** Model history was compacted; renderer should replace session history. */
+  | { type: 'compacted'; messages: ChatMessage[]; turnId?: string }
+  /** Lightweight UI notice (e.g. summarization). */
+  | { type: 'notice'; content: string; summary?: string; turnId?: string }
 
 export interface ChatSendPayload {
   model: string
@@ -267,6 +275,14 @@ export type UiMessage =
       content: string
       createdAt: string
       model?: string
+    }
+  | {
+      kind: 'notice'
+      id: string
+      content: string
+      createdAt: string
+      /** Optional compacted summary text for later expand UI. */
+      summary?: string
     }
 
 export interface ChatSession {

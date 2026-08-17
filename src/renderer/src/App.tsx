@@ -51,6 +51,10 @@ export default function App(): React.JSX.Element {
   const [view, setView] = useState<'chat' | 'models' | 'mcp'>('chat')
   const [modelsVisited, setModelsVisited] = useState(false)
   const [mcpVisited, setMcpVisited] = useState(false)
+  const [contextUsage, setContextUsage] = useState<{
+    used: number
+    limit: number
+  } | null>(null)
 
   const historyRef = useRef<ChatMessage[]>([])
   const messagesRef = useRef<UiMessage[]>([])
@@ -493,6 +497,40 @@ export default function App(): React.JSX.Element {
           persistSessionRef.current(sessionId, next, historyRef.current)
           return next
         })
+      } else if (event.type === 'context') {
+        if (!stillCurrent()) return
+        setContextUsage({
+          used: event.used,
+          limit: event.limit
+        })
+      } else if (event.type === 'compacted') {
+        if (!stillCurrent()) return
+        historyRef.current = event.messages
+        persistSessionRef.current(
+          sessionId,
+          messagesRef.current,
+          event.messages
+        )
+      } else if (event.type === 'notice') {
+        if (!stillCurrent()) return
+        setMessages((prev) => {
+          if (!stillCurrent()) return prev
+          const notice = {
+            kind: 'notice' as const,
+            id: uid(),
+            content: event.content,
+            createdAt: nowIso(),
+            summary: event.summary
+          }
+          const next = [...prev]
+          let idx = next.length - 1
+          while (idx >= 0 && next[idx].kind !== 'user') idx--
+          if (idx >= 0) next.splice(idx, 0, notice)
+          else next.push(notice)
+          messagesRef.current = next
+          persistSessionRef.current(sessionId, next, historyRef.current)
+          return next
+        })
       } else if (event.type === 'done') {
         if (!stillCurrent()) return
         endBusy()
@@ -606,6 +644,7 @@ export default function App(): React.JSX.Element {
     setBusy(false)
     setActivity(IDLE_ACTIVITY)
     sessionTitleRef.current = 'New chat'
+    setContextUsage(null)
     if (sessionId) persistSession(sessionId, [], [], 'New chat')
   }
 
@@ -615,6 +654,7 @@ export default function App(): React.JSX.Element {
     await window.api.chat.abort()
     setBusy(false)
     setActivity(IDLE_ACTIVITY)
+    setContextUsage(null)
     await flushActiveSession()
   }, [bumpChatEpoch, flushActiveSession])
 
@@ -643,6 +683,7 @@ export default function App(): React.JSX.Element {
 
   const handleSelectModel = async (model: string): Promise<void> => {
     setSelectedModel(model)
+    setContextUsage(null)
     await window.api.ollama.setSelectedModel(model)
   }
 
@@ -726,6 +767,8 @@ export default function App(): React.JSX.Element {
           imageGenSupported={imageGenSupported}
           models={models}
           selectedModel={selectedModel}
+          tools={tools}
+          contextUsage={contextUsage}
           onSelectModel={(m) => void handleSelectModel(m)}
           onSend={(payload) => void handleSend(payload)}
           onAbort={() => void handleAbort()}
