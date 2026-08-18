@@ -18,7 +18,8 @@ import type {
   OllamaModelDetails,
   OllamaStatus,
   PullProgressEvent,
-  SessionsState
+  SessionsState,
+  SkillImportResult
 } from '../shared/types'
 
 export type ServerWithStatus = McpServerConfig & { connected: boolean }
@@ -88,7 +89,12 @@ const api = {
     listCatalog: (): Promise<CatalogSkill[]> =>
       ipcRenderer.invoke('skills:listCatalog'),
     addFromCatalog: (id: string): Promise<void> =>
-      ipcRenderer.invoke('skills:addFromCatalog', id)
+      ipcRenderer.invoke('skills:addFromCatalog', id),
+    openRoot: (): Promise<void> => ipcRenderer.invoke('skills:openRoot'),
+    openDir: (id: string): Promise<void> =>
+      ipcRenderer.invoke('skills:openDir', id),
+    importFromFolder: (): Promise<SkillImportResult> =>
+      ipcRenderer.invoke('skills:importFromFolder')
   },
 
   sessions: {

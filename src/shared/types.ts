@@ -325,6 +325,10 @@ export interface AgentSkill {
   enabled: boolean
 }
 
+export type SkillImportResult =
+  | { canceled: true }
+  | { canceled: false; skill: AgentSkill }
+
 export interface AgentSkillInput {
   id?: string
   name: string

@@ -1,4 +1,4 @@
-import { BrowserWindow, type IpcMain } from 'electron'
+import { BrowserWindow, dialog, type IpcMain } from 'electron'
 import type {
   AgentSkillInput,
   ChatSendPayload,
@@ -6,7 +6,8 @@ import type {
   HtmlPreviewCreatePayload,
   LibrarySearchParams,
   McpServerConfig,
-  PullProgressEvent
+  PullProgressEvent,
+  SkillImportResult
 } from '../shared/types'
 import { abortChat, runAgentTurn } from './agent'
 import {
@@ -34,7 +35,10 @@ import { mcpManager } from './mcp-manager'
 import { getLibraryModel, getLibraryReadme, searchLibrary } from './ollama-library'
 import {
   deleteSkill,
+  importSkillFromFolder,
   listSkills,
+  openSkillDir,
+  openSkillsRoot,
   setSkillEnabled,
   upsertSkill
 } from './skills'
@@ -167,6 +171,26 @@ export function registerIpc(ipcMain: IpcMain): void {
   })
   ipcMain.handle('skills:listCatalog', () => listCatalogSkills())
   ipcMain.handle('skills:addFromCatalog', (_e, id: string) => addCatalogSkill(id))
+  ipcMain.handle('skills:openRoot', () => openSkillsRoot())
+  ipcMain.handle('skills:openDir', (_e, id: string) => openSkillDir(id))
+  ipcMain.handle(
+    'skills:importFromFolder',
+    async (e): Promise<SkillImportResult> => {
+      const win = BrowserWindow.fromWebContents(e.sender)
+      const opts = {
+        title: 'Add skill from folder',
+        properties: ['openDirectory' as const]
+      }
+      const result = win
+        ? await dialog.showOpenDialog(win, opts)
+        : await dialog.showOpenDialog(opts)
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true }
+      }
+      const skill = importSkillFromFolder(result.filePaths[0])
+      return { canceled: false, skill }
+    }
+  )
 
   ipcMain.handle('sessions:list', () => ensureActiveSession())
   ipcMain.handle('sessions:create', () => {
