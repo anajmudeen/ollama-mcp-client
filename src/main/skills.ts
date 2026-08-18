@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, shell } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import type { AgentSkill, AgentSkillInput } from '../shared/types'
@@ -10,6 +10,15 @@ import {
 import type { OllamaTool } from './ollama'
 
 export const LOAD_SKILL_NAME = 'load_skill'
+
+export const SKILL_MAX_FILES = 50
+export const SKILL_MAX_FILE_BYTES = 1024 * 1024
+export const SKILL_MAX_TOTAL_BYTES = 5 * 1024 * 1024
+
+export interface SkillTreeFile {
+  relativePath: string
+  data: Buffer
+}
 
 export function skillsRoot(): string {
   return path.join(app.getPath('userData'), 'skills')
@@ -42,6 +51,49 @@ function skillFile(id: string): string {
 
 function ensureRoot(): void {
   fs.mkdirSync(skillsRoot(), { recursive: true })
+}
+
+const SKIP_DIR_NAMES = new Set(['.git', 'node_modules'])
+const SKIP_FILE_NAMES = new Set(['.DS_Store'])
+
+function isInsideDir(root: string, candidate: string): boolean {
+  const rel = path.relative(path.resolve(root), path.resolve(candidate))
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+}
+
+function normalizeRelPath(rel: string): string {
+  const posix = rel.split(path.sep).join('/')
+  if (
+    !posix ||
+    posix.startsWith('/') ||
+    posix.split('/').includes('..') ||
+    posix.split('/').includes('')
+  ) {
+    throw new Error('Invalid skill file path')
+  }
+  return posix
+}
+
+export function assertSkillTreeLimits(files: SkillTreeFile[]): void {
+  if (files.length > SKILL_MAX_FILES) {
+    throw new Error(`Skill has more than ${SKILL_MAX_FILES} files`)
+  }
+  let total = 0
+  for (const file of files) {
+    if (file.data.length > SKILL_MAX_FILE_BYTES) {
+      throw new Error(`Skill file exceeds 1 MB: ${file.relativePath}`)
+    }
+    total += file.data.length
+    if (total > SKILL_MAX_TOTAL_BYTES) {
+      throw new Error('Skill exceeds 5 MB total')
+    }
+  }
+}
+
+function destRelativePath(files: SkillTreeFile[], rel: string): string {
+  const hasCanonical = files.some((f) => f.relativePath === 'SKILL.md')
+  if (rel === 'skill.md' && !hasCanonical) return 'SKILL.md'
+  return rel
 }
 
 function unquote(value: string): string {
@@ -201,11 +253,19 @@ export function upsertSkill(input: AgentSkillInput): AgentSkill {
   return saved
 }
 
-/** Install a remote SKILL.md as-is (keeps extra frontmatter). */
-export function installSkillFromMarkdown(raw: string): AgentSkill {
-  const parsed = parseSkillMarkdown(raw)
+export function installSkillFromFiles(files: SkillTreeFile[]): AgentSkill {
+  assertSkillTreeLimits(files)
+
+  const md =
+    files.find((f) => f.relativePath === 'SKILL.md') ??
+    files.find((f) => f.relativePath === 'skill.md')
+  if (!md) {
+    throw new Error('This folder is not a skill (missing SKILL.md).')
+  }
+
+  const parsed = parseSkillMarkdown(md.data.toString('utf8'))
   const name = parsed.name.trim()
-  if (!name) throw new Error('Catalog skill is missing a name')
+  if (!name) throw new Error('Skill is missing a name')
 
   const existing = listSkills()
   if (existing.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
@@ -213,14 +273,111 @@ export function installSkillFromMarkdown(raw: string): AgentSkill {
   }
 
   const id = uniqueId(slugifySkillName(name))
+  const dest = skillDir(id)
   ensureRoot()
-  fs.mkdirSync(skillDir(id), { recursive: true })
-  fs.writeFileSync(skillFile(id), raw.replace(/\r\n/g, '\n').trimEnd() + '\n', 'utf8')
-  setSkillEnabledFlag(id, true)
+  fs.mkdirSync(dest, { recursive: true })
 
+  try {
+    for (const file of files) {
+      const rel = destRelativePath(files, file.relativePath)
+      const destPath = path.join(dest, ...rel.split('/'))
+      if (!isInsideDir(dest, destPath)) {
+        throw new Error('Invalid skill file path')
+      }
+      fs.mkdirSync(path.dirname(destPath), { recursive: true })
+      fs.writeFileSync(destPath, file.data)
+    }
+  } catch (err) {
+    fs.rmSync(dest, { recursive: true, force: true })
+    throw err
+  }
+
+  setSkillEnabledFlag(id, true)
   const saved = readSkillFromDisk(id)
-  if (!saved) throw new Error('Failed to save skill')
+  if (!saved) {
+    fs.rmSync(dest, { recursive: true, force: true })
+    throw new Error('Failed to save skill')
+  }
   return saved
+}
+
+/** Install a remote SKILL.md as-is (keeps extra frontmatter). */
+export function installSkillFromMarkdown(raw: string): AgentSkill {
+  const data = Buffer.from(raw.replace(/\r\n/g, '\n').trimEnd() + '\n', 'utf8')
+  return installSkillFromFiles([{ relativePath: 'SKILL.md', data }])
+}
+
+export function collectLocalSkillFiles(sourceDir: string): SkillTreeFile[] {
+  const root = fs.realpathSync(sourceDir)
+  const files: SkillTreeFile[] = []
+
+  const pushFile = (readFrom: string, namedAs: string): void => {
+    if (files.length >= SKILL_MAX_FILES) {
+      throw new Error(`Skill has more than ${SKILL_MAX_FILES} files`)
+    }
+    const rel = normalizeRelPath(path.relative(root, namedAs))
+    const data = fs.readFileSync(readFrom)
+    files.push({ relativePath: rel, data })
+  }
+
+  const walk = (absDir: string): void => {
+    const entries = fs.readdirSync(absDir, { withFileTypes: true })
+    for (const entry of entries) {
+      const abs = path.join(absDir, entry.name)
+      if (entry.isSymbolicLink()) {
+        const real = fs.realpathSync(abs)
+        if (!isInsideDir(root, real)) {
+          throw new Error('Invalid skill file path')
+        }
+        const st = fs.statSync(real)
+        if (st.isDirectory()) {
+          if (SKIP_DIR_NAMES.has(entry.name)) continue
+          walk(real)
+        } else if (st.isFile()) {
+          if (SKIP_FILE_NAMES.has(entry.name)) continue
+          pushFile(real, abs)
+        }
+        continue
+      }
+      if (entry.isDirectory()) {
+        if (SKIP_DIR_NAMES.has(entry.name)) continue
+        walk(abs)
+        continue
+      }
+      if (entry.isFile()) {
+        if (SKIP_FILE_NAMES.has(entry.name)) continue
+        pushFile(abs, abs)
+      }
+    }
+  }
+
+  walk(root)
+  return files
+}
+
+export function importSkillFromFolder(sourceDir: string): AgentSkill {
+  const src = path.resolve(sourceDir)
+  if (!fs.existsSync(src) || !fs.statSync(src).isDirectory()) {
+    throw new Error('This folder is not a skill (missing SKILL.md).')
+  }
+  if (isInsideDir(skillsRoot(), src)) {
+    throw new Error('That folder is already in the skills directory')
+  }
+  return installSkillFromFiles(collectLocalSkillFiles(src))
+}
+
+export async function openSkillsRoot(): Promise<void> {
+  ensureRoot()
+  const err = await shell.openPath(skillsRoot())
+  if (err) throw new Error(err)
+}
+
+export async function openSkillDir(id: string): Promise<void> {
+  assertSafeId(id)
+  const dir = skillDir(id)
+  if (!fs.existsSync(dir)) throw new Error('Skill not found')
+  const err = await shell.openPath(dir)
+  if (err) throw new Error(err)
 }
 
 export function setSkillEnabled(id: string, enabled: boolean): AgentSkill {
