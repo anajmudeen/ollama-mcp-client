@@ -301,12 +301,6 @@ export function installSkillFromFiles(files: SkillTreeFile[]): AgentSkill {
   return saved
 }
 
-/** Install a remote SKILL.md as-is (keeps extra frontmatter). */
-export function installSkillFromMarkdown(raw: string): AgentSkill {
-  const data = Buffer.from(raw.replace(/\r\n/g, '\n').trimEnd() + '\n', 'utf8')
-  return installSkillFromFiles([{ relativePath: 'SKILL.md', data }])
-}
-
 export function collectLocalSkillFiles(sourceDir: string): SkillTreeFile[] {
   const root = fs.realpathSync(sourceDir)
   const files: SkillTreeFile[] = []
