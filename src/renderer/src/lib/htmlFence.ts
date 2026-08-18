@@ -1,7 +1,7 @@
 const HTML_FENCE_LANGS = new Set(['', 'html', 'htm', 'xml'])
 
 const DOCUMENT_RE = /<!DOCTYPE\s+html|<html(?:\s|>|\/)/i
-const SCRIPT_OR_CANVAS_RE = /<(?:script|canvas)[\s>]/i
+const SCRIPT_OR_CANVAS_RE = /<(?:script|canvas)[\s>/]/i
 const SCRIPT_SRC_QUOTED_RE = /<script\b[^>]*\bsrc\s*=\s*(["'])([^"']*)\1/gi
 const SCRIPT_SRC_UNQUOTED_RE = /<script\b[^>]*\bsrc\s*=\s*([^\s>]+)/gi
 const REMOTE_SRC_RE = /^(https?:)?\/\//i

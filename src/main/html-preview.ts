@@ -81,13 +81,17 @@ function guestCsp(entry: PreviewEntry): string {
 }
 
 function handleHtmlPreviewRequest(request: Request): Response {
-  let id = ''
+  let parsed: URL
   try {
-    id = new URL(request.url).hostname
+    parsed = new URL(request.url)
   } catch {
     return new Response('Bad Request', { status: 400 })
   }
-  const entry = previews.get(id)
+  const pathname = parsed.pathname
+  if (pathname !== '/' && pathname !== '') {
+    return new Response('Not Found', { status: 404 })
+  }
+  const entry = previews.get(parsed.hostname)
   if (!entry) {
     return new Response('Not Found', { status: 404 })
   }
@@ -95,7 +99,8 @@ function handleHtmlPreviewRequest(request: Request): Response {
     status: 200,
     headers: {
       'content-type': 'text/html; charset=utf-8',
-      'content-security-policy': guestCsp(entry)
+      'content-security-policy': guestCsp(entry),
+      'x-content-type-options': 'nosniff'
     }
   })
 }

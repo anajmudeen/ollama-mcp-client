@@ -37,7 +37,10 @@ export function HtmlPreview({
   const [error, setError] = useState<string | null>(null)
   const [promptRemote, setPromptRemote] = useState(false)
   const [scriptsOn, setScriptsOn] = useState(false)
+  const [creating, setCreating] = useState(false)
   const activeIdRef = useRef<string | null>(null)
+  const createGenRef = useRef(0)
+  const creatingRef = useRef(false)
 
   const dropGuest = useCallback(async (): Promise<void> => {
     const id = activeIdRef.current
@@ -52,22 +55,47 @@ export function HtmlPreview({
     }
   }, [])
 
+  const cancelInFlight = useCallback((): void => {
+    createGenRef.current += 1
+    creatingRef.current = false
+    setCreating(false)
+  }, [])
+
   const createGuest = useCallback(
     async (allowScripts: boolean, allowRemoteScripts: boolean): Promise<void> => {
-      await dropGuest()
+      if (creatingRef.current) return
+      const gen = ++createGenRef.current
+      creatingRef.current = true
+      setCreating(true)
       setError(null)
       setPromptRemote(false)
+      await dropGuest()
+      if (gen !== createGenRef.current) return
       try {
         const created = await window.api.htmlPreview.create({
           html: source,
           allowScripts,
           allowRemoteScripts
         })
+        if (gen !== createGenRef.current) {
+          try {
+            await window.api.htmlPreview.destroy(created.id)
+          } catch {
+            // already gone
+          }
+          return
+        }
         activeIdRef.current = created.id
         setUrl(created.url)
         setScriptsOn(allowScripts)
       } catch {
+        if (gen !== createGenRef.current) return
         setError('Preview failed to load')
+      } finally {
+        if (gen === createGenRef.current) {
+          creatingRef.current = false
+          setCreating(false)
+        }
       }
     },
     [dropGuest, source]
@@ -75,19 +103,20 @@ export function HtmlPreview({
 
   useEffect(() => {
     if (mode === 'source') {
+      cancelInFlight()
       setPromptRemote(false)
       void dropGuest()
-      return
-    }
-    if (!needsRun) {
+    } else if (!needsRun) {
       void createGuest(false, false)
     }
     return () => {
+      cancelInFlight()
       void dropGuest()
     }
-  }, [mode, needsRun, source, createGuest, dropGuest])
+  }, [mode, needsRun, source, createGuest, dropGuest, cancelInFlight])
 
   const onRun = (): void => {
+    if (creatingRef.current) return
     if (htmlHasRemoteScripts(source)) {
       setPromptRemote(true)
       return
@@ -96,8 +125,9 @@ export function HtmlPreview({
   }
 
   const label = language?.trim() || 'html'
-  const showPoster = mode === 'preview' && needsRun && !url && !promptRemote && !error
-  const showPrompt = mode === 'preview' && promptRemote
+  const showPoster =
+    mode === 'preview' && needsRun && !url && !promptRemote && !error && !creating
+  const showPrompt = mode === 'preview' && promptRemote && !creating
   const showFrame = mode === 'preview' && Boolean(url)
 
   return (
@@ -127,10 +157,11 @@ export function HtmlPreview({
           </div>
         </div>
         <div className="html-preview-actions">
-          {mode === 'preview' && needsRun && !url && !promptRemote ? (
+          {mode === 'preview' && needsRun && !url && !promptRemote && !creating ? (
             <button
               type="button"
               className="html-preview-btn html-preview-btn-primary"
+              disabled={creating}
               onClick={onRun}
             >
               Run
@@ -159,6 +190,7 @@ export function HtmlPreview({
               <button
                 type="button"
                 className="html-preview-btn html-preview-btn-primary"
+                disabled={creating}
                 onClick={onRun}
               >
                 Run
@@ -172,6 +204,7 @@ export function HtmlPreview({
                 <button
                   type="button"
                   className="html-preview-btn html-preview-btn-primary"
+                  disabled={creating}
                   onClick={() => void createGuest(true, true)}
                 >
                   Allow
@@ -179,6 +212,7 @@ export function HtmlPreview({
                 <button
                   type="button"
                   className="html-preview-btn"
+                  disabled={creating}
                   onClick={() => void createGuest(true, false)}
                 >
                   Deny
