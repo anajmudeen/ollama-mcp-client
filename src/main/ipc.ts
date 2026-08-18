@@ -3,6 +3,7 @@ import type {
   AgentSkillInput,
   ChatSendPayload,
   ChatSession,
+  HtmlPreviewCreatePayload,
   LibrarySearchParams,
   McpServerConfig,
   PullProgressEvent
@@ -46,6 +47,10 @@ import {
   pullModel,
   showModel
 } from './ollama'
+import {
+  createHtmlPreview,
+  destroyHtmlPreview
+} from './html-preview'
 
 function emitPullProgress(event: PullProgressEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -207,5 +212,13 @@ export function registerIpc(ipcMain: IpcMain): void {
 
   ipcMain.handle('chat:abort', () => {
     abortChat()
+  })
+
+  ipcMain.handle(
+    'htmlPreview:create',
+    (_e, payload: HtmlPreviewCreatePayload) => createHtmlPreview(payload)
+  )
+  ipcMain.handle('htmlPreview:destroy', (_e, id: string) => {
+    destroyHtmlPreview(id)
   })
 }

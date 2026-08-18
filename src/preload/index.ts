@@ -7,6 +7,8 @@ import type {
   ChatEvent,
   ChatSendPayload,
   ChatSession,
+  HtmlPreviewCreatePayload,
+  HtmlPreviewCreateResult,
   LibraryModelDetail,
   LibrarySearchParams,
   LibrarySearchResult,
@@ -117,6 +119,13 @@ const api = {
         ipcRenderer.removeListener('chat:event', handler)
       }
     }
+  },
+
+  htmlPreview: {
+    create: (payload: HtmlPreviewCreatePayload): Promise<HtmlPreviewCreateResult> =>
+      ipcRenderer.invoke('htmlPreview:create', payload),
+    destroy: (id: string): Promise<void> =>
+      ipcRenderer.invoke('htmlPreview:destroy', id)
   }
 }
 

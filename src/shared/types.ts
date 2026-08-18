@@ -340,3 +340,14 @@ export interface CatalogSkill {
   url: string
   source: string
 }
+
+export interface HtmlPreviewCreatePayload {
+  html: string
+  allowScripts: boolean
+  allowRemoteScripts: boolean
+}
+
+export interface HtmlPreviewCreateResult {
+  id: string
+  url: string
+}
