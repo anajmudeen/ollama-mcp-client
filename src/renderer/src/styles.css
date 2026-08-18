@@ -532,6 +532,128 @@ pre,
   margin: 0;
 }
 
+.markdown-body .html-preview {
+  margin: 0.65em 0;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid #2a3a4d;
+  background: #0f1419;
+}
+
+.markdown-body .html-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  padding: 0.28em 0.45em 0.28em 0.75em;
+  border-bottom: 1px solid #2a3a4d;
+}
+
+.markdown-body .html-preview-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+}
+
+.markdown-body .html-preview-lang {
+  font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: #8b9aab;
+}
+
+.markdown-body .html-preview-toggle {
+  display: inline-flex;
+  border: 1px solid #2a3a4d;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.markdown-body .html-preview-toggle button {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.2em 0.55em;
+  font-size: 10px;
+  color: #8b9aab;
+  cursor: pointer;
+}
+
+.markdown-body .html-preview-toggle button + button {
+  border-left: 1px solid #2a3a4d;
+}
+
+.markdown-body .html-preview-toggle button.is-active {
+  background: #1a2330;
+  color: #e7ecf1;
+}
+
+.markdown-body .html-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.markdown-body .html-preview-body {
+  min-height: 8rem;
+}
+
+.markdown-body .html-preview-frame {
+  display: block;
+  width: 100%;
+  height: 420px;
+  border: 0;
+  background: #fff;
+}
+
+.markdown-body .html-preview-poster,
+.markdown-body .html-preview-error {
+  padding: 1.1em 1em;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #9aa8b8;
+}
+
+.markdown-body .html-preview-error {
+  color: #c5a070;
+}
+
+.markdown-body .html-preview-poster p {
+  margin: 0 0 0.75em;
+}
+
+.markdown-body .html-preview-source .md-code-block {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.markdown-body .html-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  border-radius: 6px;
+  border: 1px solid #2a3a4d;
+  background: #0f1419;
+  padding: 0.2em 0.55em;
+  font-size: 10px;
+  color: #8b9aab;
+  cursor: pointer;
+}
+
+.markdown-body .html-preview-btn:hover {
+  border-color: #3d5168;
+  color: #e7ecf1;
+}
+
+.markdown-body .html-preview-btn-primary {
+  border-color: #3d5168;
+  color: #e7ecf1;
+}
+
 .markdown-body .md-table-wrap {
   margin: 0.65em 0;
   overflow-x: auto;
