@@ -199,7 +199,7 @@ export function McpCatalogPage({
         </div>
 
         {tab === 'mine' ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="titlebar-no-drag mt-4 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-[#6b7a8c]">
               {servers.length} server{servers.length === 1 ? '' : 's'} ·{' '}
               {tools.length} tool{tools.length === 1 ? '' : 's'}
@@ -222,7 +222,7 @@ export function McpCatalogPage({
             </div>
           </div>
         ) : (
-          <div className="mt-4 flex flex-col gap-3">
+          <div className="titlebar-no-drag mt-4 flex flex-col gap-3">
             <div className="flex flex-wrap items-end justify-between gap-2">
               <input
                 type="search"
