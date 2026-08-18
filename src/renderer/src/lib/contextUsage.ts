@@ -59,7 +59,7 @@ export function contextUsageColor(pct: number): string {
 }
 
 export interface ContextSlice {
-  id: 'system' | 'tools' | 'summarized' | 'conversation' | 'draft'
+  id: 'system' | 'skills' | 'tools' | 'summarized' | 'conversation' | 'draft'
   label: string
   tokens: number
   color: string
@@ -70,6 +70,7 @@ const SLICE_META: Record<
   { label: string; color: string }
 > = {
   system: { label: 'System prompt', color: '#9ca3af' },
+  skills: { label: 'Skills', color: '#f59e0b' },
   tools: { label: 'MCP tools', color: '#c084fc' },
   summarized: { label: 'Summarized conversation', color: '#fb7185' },
   conversation: { label: 'Conversation', color: '#34d399' },
@@ -80,12 +81,14 @@ const SLICE_META: Record<
 export function buildContextSlices(options: {
   used: number
   systemPrompt?: string
+  skillsText?: string
   tools: McpToolInfo[]
   messages: UiMessage[]
   draft: string
   attachments: ChatAttachment[]
 }): ContextSlice[] {
   const system = estimateTokensFromText(options.systemPrompt ?? '')
+  const skills = estimateTokensFromText(options.skillsText ?? '')
   const tools = estimateToolSchemaTokens(options.tools)
   const summarized = options.messages.reduce((n, m) => {
     if (m.kind !== 'notice' || !m.summary) return n
@@ -94,6 +97,7 @@ export function buildContextSlices(options: {
   const draft = estimateDraftTokens(options.draft, options.attachments)
   const parts: Array<{ id: ContextSlice['id']; tokens: number }> = [
     { id: 'system', tokens: system },
+    { id: 'skills', tokens: skills },
     { id: 'tools', tokens: tools },
     { id: 'summarized', tokens: summarized },
     { id: 'draft', tokens: draft }
@@ -113,6 +117,7 @@ export function buildContextSlices(options: {
   ])
   const order: ContextSlice['id'][] = [
     'system',
+    'skills',
     'tools',
     'summarized',
     'conversation',

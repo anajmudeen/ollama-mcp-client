@@ -638,6 +638,8 @@ export async function chatOnce(options: {
   signal?: AbortSignal
   numCtx?: number
   numPredict?: number
+  /** Ollama `keep_alive` (seconds, or 0 to unload immediately). */
+  keepAlive?: number
 }): Promise<string> {
   const baseUrl = getOllamaBaseUrl()
   const requestOptions = ollamaRequestOptions(options)
@@ -648,7 +650,10 @@ export async function chatOnce(options: {
       model: options.model,
       messages: options.messages,
       stream: false,
-      ...(requestOptions ? { options: requestOptions } : {})
+      ...(requestOptions ? { options: requestOptions } : {}),
+      ...(options.keepAlive !== undefined
+        ? { keep_alive: options.keepAlive }
+        : {})
     }),
     signal: options.signal
   })

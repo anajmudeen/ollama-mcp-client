@@ -3,10 +3,17 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { registerIpc, restoreMcpConnections } from './ipc'
 import { mcpManager } from './mcp-manager'
+import {
+  destroyAllHtmlPreviews,
+  registerHtmlPreviewProtocol,
+  registerHtmlPreviewScheme
+} from './html-preview'
 
 const isDev = Boolean(process.env.ELECTRON_RENDERER_URL)
 
 app.setName('Ollama MCP')
+
+registerHtmlPreviewScheme()
 
 function resourcesDir(): string {
   // Dev / electron-vite preview: project root. Packaged: next to the app binary.
@@ -60,6 +67,10 @@ function createWindow(): void {
     }
   })
 
+  mainWindow.on('closed', () => {
+    destroyAllHtmlPreviews()
+  })
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
     if (isDev) {
@@ -105,6 +116,7 @@ app.whenReady().then(async () => {
     }
   }
 
+  registerHtmlPreviewProtocol()
   registerIpc(ipcMain)
   await restoreMcpConnections()
   createWindow()
@@ -117,6 +129,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  destroyAllHtmlPreviews()
   void mcpManager.disconnectAll()
 })
 

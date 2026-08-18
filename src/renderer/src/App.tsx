@@ -15,6 +15,7 @@ import { McpCatalogPage } from './components/McpCatalogPage'
 import { ModelsPage } from './components/ModelsPage'
 import { Settings } from './components/Settings'
 import { Sidebar } from './components/Sidebar'
+import { SkillsPage } from './components/SkillsPage'
 
 function uid(): string {
   return crypto.randomUUID()
@@ -48,9 +49,10 @@ export default function App(): React.JSX.Element {
   const [activity, setActivity] = useState<ActivityState>(IDLE_ACTIVITY)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showThinking, setShowThinking] = useState(false)
-  const [view, setView] = useState<'chat' | 'models' | 'mcp'>('chat')
+  const [view, setView] = useState<'chat' | 'models' | 'mcp' | 'skills'>('chat')
   const [modelsVisited, setModelsVisited] = useState(false)
   const [mcpVisited, setMcpVisited] = useState(false)
+  const [skillsVisited, setSkillsVisited] = useState(false)
   const [contextUsage, setContextUsage] = useState<{
     used: number
     limit: number
@@ -75,6 +77,27 @@ export default function App(): React.JSX.Element {
       title?: string
     ) => void
   >(() => {})
+  const pendingAiTitleRef = useRef<{
+    sessionId: string
+    prompt: string
+    turnId: string
+  } | null>(null)
+  const titleGenEpochRef = useRef(0)
+  const requestAiTitleRef = useRef<() => void>(() => {})
+  /** Coalesce high-frequency stream IPC so React does not nest 50+ setStates. */
+  const streamBufRef = useRef<{
+    thinking: string
+    chunk: string
+    sessionId: string | null
+    turnId: string | null
+    raf: number | null
+  }>({
+    thinking: '',
+    chunk: '',
+    sessionId: null,
+    turnId: null,
+    raf: null
+  })
 
   const syncMessages = useCallback((next: UiMessage[]) => {
     messagesRef.current = next
@@ -107,14 +130,17 @@ export default function App(): React.JSX.Element {
       id: string,
       uiMessages: UiMessage[],
       history: ChatMessage[],
-      title: string
+      title?: string
     ): Promise<void> => {
       try {
-        const state = await window.api.sessions.update(id, {
-          title,
+        const patch: Partial<
+          Pick<ChatSession, 'title' | 'uiMessages' | 'history'>
+        > = {
           uiMessages,
           history
-        })
+        }
+        if (title !== undefined) patch.title = title
+        const state = await window.api.sessions.update(id, patch)
         // Refresh list only — never reload the open chat from this response
         // (that races with an in-progress switch).
         setSessions(state.sessions)
@@ -133,8 +159,7 @@ export default function App(): React.JSX.Element {
       title?: string
     ) => {
       if (!id) return
-      const nextTitle = title ?? sessionTitleRef.current
-      if (title && id === activeSessionIdRef.current) {
+      if (title !== undefined && id === activeSessionIdRef.current) {
         sessionTitleRef.current = title
       }
 
@@ -143,7 +168,11 @@ export default function App(): React.JSX.Element {
       }
       persistTimer.current = window.setTimeout(() => {
         persistTimer.current = null
-        void writeSession(id, uiMessages, history, nextTitle)
+        const titleNow =
+          id === activeSessionIdRef.current
+            ? sessionTitleRef.current
+            : undefined
+        void writeSession(id, uiMessages, history, titleNow)
       }, 250)
     },
     [writeSession]
@@ -152,6 +181,43 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     persistSessionRef.current = persistSession
   }, [persistSession])
+
+  const applyGeneratedTitle = useCallback((id: string, title: string) => {
+    setSessions((prev) =>
+      prev.map((session) => (session.id === id ? { ...session, title } : session))
+    )
+    if (id === activeSessionIdRef.current) {
+      sessionTitleRef.current = title
+    }
+  }, [])
+
+  const requestAiTitle = useCallback((): void => {
+    const pending = pendingAiTitleRef.current
+    if (!pending) return
+    pendingAiTitleRef.current = null
+    const epoch = titleGenEpochRef.current
+    void (async () => {
+      try {
+        const title = await window.api.sessions.generateTitle(
+          pending.sessionId,
+          pending.prompt
+        )
+        if (epoch !== titleGenEpochRef.current) return
+        applyGeneratedTitle(pending.sessionId, title)
+      } catch (err) {
+        console.error('Failed to generate session title', err)
+      }
+    })()
+  }, [applyGeneratedTitle])
+
+  const cancelAiTitle = useCallback((): void => {
+    pendingAiTitleRef.current = null
+    titleGenEpochRef.current += 1
+  }, [])
+
+  useEffect(() => {
+    requestAiTitleRef.current = requestAiTitle
+  }, [requestAiTitle])
 
   useEffect(() => {
     showThinkingRef.current = showThinking
@@ -174,6 +240,15 @@ export default function App(): React.JSX.Element {
 
   const bumpChatEpoch = useCallback(() => {
     chatEpochRef.current += 1
+    const buf = streamBufRef.current
+    if (buf.raf != null) {
+      window.cancelAnimationFrame(buf.raf)
+      buf.raf = null
+    }
+    buf.thinking = ''
+    buf.chunk = ''
+    buf.sessionId = null
+    buf.turnId = null
   }, [])
 
   const refreshServers = useCallback(async () => {
@@ -226,7 +301,112 @@ export default function App(): React.JSX.Element {
   }, [applySessionsState, refreshOllama, refreshServers])
 
   useEffect(() => {
+    const buf = streamBufRef.current
+
+    const applyThinkingDelta = (content: string): void => {
+      setActivity((prev) => ({
+        ...prev,
+        phase: 'thinking',
+        detail: prev.detail ?? 'Model is reasoning…',
+        thinking: (prev.thinking ?? '') + content,
+        startedAt: prev.startedAt ?? Date.now()
+      }))
+      if (!showThinkingRef.current) return
+      setMessages((prev) => {
+        const next = [...prev]
+        const last = next[next.length - 1]
+        if (last?.kind === 'thinking' && last.streaming) {
+          next[next.length - 1] = {
+            ...last,
+            content: last.content + content
+          }
+        } else {
+          next.push({
+            kind: 'thinking',
+            id: uid(),
+            content,
+            createdAt: nowIso(),
+            streaming: true,
+            model: turnModelRef.current ?? undefined
+          })
+        }
+        messagesRef.current = next
+        return next
+      })
+    }
+
+    const applyChunkDelta = (content: string): void => {
+      setActivity((prev) =>
+        prev.phase === 'generating'
+          ? prev
+          : {
+              ...prev,
+              phase: 'generating' as ActivityPhase,
+              detail: 'Writing a reply…',
+              startedAt: prev.startedAt ?? Date.now()
+            }
+      )
+      setMessages((prev) => {
+        let next = prev.map((m) =>
+          m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
+        )
+        next = [...next]
+        const last = next[next.length - 1]
+        if (last?.kind === 'assistant' && last.streaming) {
+          next[next.length - 1] = {
+            ...last,
+            content: last.content + content
+          }
+        } else {
+          next.push({
+            kind: 'assistant',
+            id: uid(),
+            content,
+            createdAt: nowIso(),
+            streaming: true,
+            model: turnModelRef.current ?? undefined
+          })
+        }
+        messagesRef.current = next
+        return next
+      })
+    }
+
+    const flushStreamBuf = (): void => {
+      if (buf.raf != null) {
+        window.cancelAnimationFrame(buf.raf)
+        buf.raf = null
+      }
+      const thinking = buf.thinking
+      const chunk = buf.chunk
+      const sessionId = buf.sessionId
+      const turnId = buf.turnId
+      buf.thinking = ''
+      buf.chunk = ''
+      if (!thinking && !chunk) return
+      if (!sessionId || !turnId) return
+      if (sessionId !== activeSessionIdRef.current) return
+      if (turnId !== activeTurnIdRef.current) return
+      if (thinking) applyThinkingDelta(thinking)
+      if (chunk) applyChunkDelta(chunk)
+    }
+
+    const scheduleStreamFlush = (sessionId: string, turnId: string): void => {
+      buf.sessionId = sessionId
+      buf.turnId = turnId
+      if (buf.raf != null) return
+      buf.raf = window.requestAnimationFrame(flushStreamBuf)
+    }
+
     const unsub = window.api.chat.onEvent((event: ChatEvent) => {
+      if (
+        (event.type === 'done' || event.type === 'error') &&
+        event.turnId &&
+        pendingAiTitleRef.current?.turnId === event.turnId
+      ) {
+        requestAiTitleRef.current()
+      }
+
       const sessionId = activeSessionIdRef.current
       if (!sessionId) return
 
@@ -237,6 +417,16 @@ export default function App(): React.JSX.Element {
 
       const stillCurrent = (): boolean =>
         turnOk && sessionId === activeSessionIdRef.current
+
+      if (event.type === 'thinking' || event.type === 'chunk') {
+        if (!stillCurrent() || !event.turnId) return
+        if (event.type === 'thinking') buf.thinking += event.content
+        else buf.chunk += event.content
+        scheduleStreamFlush(sessionId, event.turnId)
+        return
+      }
+
+      flushStreamBuf()
 
       const endBusy = (): void => {
         if (!turnOk) return
@@ -256,75 +446,6 @@ export default function App(): React.JSX.Element {
           thinking: prev.thinking,
           startedAt: prev.startedAt ?? Date.now()
         }))
-      } else if (event.type === 'thinking') {
-        if (!stillCurrent()) return
-        setActivity((prev) => ({
-          ...prev,
-          phase: 'thinking',
-          detail: prev.detail ?? 'Model is reasoning…',
-          thinking: (prev.thinking ?? '') + event.content,
-          startedAt: prev.startedAt ?? Date.now()
-        }))
-        if (!showThinkingRef.current) return
-        setMessages((prev) => {
-          if (!stillCurrent()) return prev
-          const next = [...prev]
-          const last = next[next.length - 1]
-          if (last?.kind === 'thinking' && last.streaming) {
-            next[next.length - 1] = {
-              ...last,
-              content: last.content + event.content
-            }
-          } else {
-            next.push({
-              kind: 'thinking',
-              id: uid(),
-              content: event.content,
-              createdAt: nowIso(),
-              streaming: true,
-              model: turnModelRef.current ?? undefined
-            })
-          }
-          messagesRef.current = next
-          return next
-        })
-      } else if (event.type === 'chunk') {
-        if (!stillCurrent()) return
-        setActivity((prev) =>
-          prev.phase === 'generating'
-            ? prev
-            : {
-                ...prev,
-                phase: 'generating' as ActivityPhase,
-                detail: 'Writing a reply…',
-                startedAt: prev.startedAt ?? Date.now()
-              }
-        )
-        setMessages((prev) => {
-          if (!stillCurrent()) return prev
-          let next = prev.map((m) =>
-            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
-          )
-          next = [...next]
-          const last = next[next.length - 1]
-          if (last?.kind === 'assistant' && last.streaming) {
-            next[next.length - 1] = {
-              ...last,
-              content: last.content + event.content
-            }
-          } else {
-            next.push({
-              kind: 'assistant',
-              id: uid(),
-              content: event.content,
-              createdAt: nowIso(),
-              streaming: true,
-              model: turnModelRef.current ?? undefined
-            })
-          }
-          messagesRef.current = next
-          return next
-        })
       } else if (event.type === 'assistant_done') {
         if (!stillCurrent()) return
         endBusy()
@@ -565,13 +686,20 @@ export default function App(): React.JSX.Element {
         })
       }
     })
-    return unsub
+    return () => {
+      if (buf.raf != null) {
+        window.cancelAnimationFrame(buf.raf)
+        buf.raf = null
+      }
+      unsub()
+    }
   }, [])
 
   const handleSend = async (payload: {
     content: string
     images?: string[]
     attachmentLabels?: string[]
+    invokedSkill?: string
   }): Promise<void> => {
     if (!selectedModel || busy) return
     if (!payload.content.trim() && !payload.images?.length) return
@@ -618,6 +746,16 @@ export default function App(): React.JSX.Element {
     if (title === 'New chat') {
       title = titleFromPrompt(uiContent)
       sessionTitleRef.current = title
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId ? { ...session, title } : session
+        )
+      )
+      pendingAiTitleRef.current = {
+        sessionId,
+        prompt: uiContent,
+        turnId
+      }
     }
     persistSession(sessionId, nextMessages, nextHistory, title)
 
@@ -632,7 +770,8 @@ export default function App(): React.JSX.Element {
       model: selectedModel,
       messages: nextHistory,
       turnId,
-      contextUsed: contextUsage?.used
+      contextUsed: contextUsage?.used,
+      invokedSkill: payload.invokedSkill
     })
   }
 
@@ -648,13 +787,23 @@ export default function App(): React.JSX.Element {
     const sessionId = activeSessionIdRef.current
     bumpChatEpoch()
     activeTurnIdRef.current = null
+    cancelAiTitle()
     historyRef.current = []
     syncMessages([])
     setBusy(false)
     setActivity(IDLE_ACTIVITY)
     sessionTitleRef.current = 'New chat'
     setContextUsage(null)
-    if (sessionId) persistSession(sessionId, [], [], 'New chat')
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId ? { ...session, title: 'New chat' } : session
+      )
+    )
+    if (persistTimer.current !== null) {
+      window.clearTimeout(persistTimer.current)
+      persistTimer.current = null
+    }
+    if (sessionId) void writeSession(sessionId, [], [], 'New chat')
   }
 
   const leaveCurrentSession = useCallback(async (): Promise<void> => {
@@ -683,6 +832,9 @@ export default function App(): React.JSX.Element {
   }
 
   const handleDeleteSession = async (id: string): Promise<void> => {
+    if (pendingAiTitleRef.current?.sessionId === id) {
+      cancelAiTitle()
+    }
     if (id === activeSessionIdRef.current) {
       await leaveCurrentSession()
     }
@@ -732,6 +884,10 @@ export default function App(): React.JSX.Element {
           setMcpVisited(true)
           setView('mcp')
         }}
+        onOpenSkills={() => {
+          setSkillsVisited(true)
+          setView('skills')
+        }}
         onOpenSettings={() => setSettingsOpen(true)}
       />
       {modelsVisited ? (
@@ -765,9 +921,21 @@ export default function App(): React.JSX.Element {
           />
         </div>
       ) : null}
+      {skillsVisited ? (
+        <div
+          className={
+            view === 'skills' ? 'flex min-h-0 min-w-0 flex-1' : 'hidden'
+          }
+        >
+          <SkillsPage active={view === 'skills'} />
+        </div>
+      ) : null}
       {view === 'chat' ? (
         <Chat
           key={activeSessionId ?? 'chat'}
+          title={
+            sessions.find((s) => s.id === activeSessionId)?.title ?? 'New chat'
+          }
           messages={messages}
           busy={busy}
           activity={activity}

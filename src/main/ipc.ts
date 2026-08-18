@@ -1,10 +1,13 @@
-import { BrowserWindow, type IpcMain } from 'electron'
+import { BrowserWindow, dialog, type IpcMain } from 'electron'
 import type {
+  AgentSkillInput,
   ChatSendPayload,
   ChatSession,
+  HtmlPreviewCreatePayload,
   LibrarySearchParams,
   McpServerConfig,
-  PullProgressEvent
+  PullProgressEvent,
+  SkillImportResult
 } from '../shared/types'
 import { abortChat, runAgentTurn } from './agent'
 import {
@@ -24,8 +27,22 @@ import {
   updateSession,
   upsertServer
 } from './config-store'
+import {
+  generateSessionTitle,
+  snippetFromPrompt
+} from './session-title'
 import { mcpManager } from './mcp-manager'
 import { getLibraryModel, getLibraryReadme, searchLibrary } from './ollama-library'
+import {
+  deleteSkill,
+  importSkillFromFolder,
+  listSkills,
+  openSkillDir,
+  openSkillsRoot,
+  setSkillEnabled,
+  upsertSkill
+} from './skills'
+import { addCatalogSkill, listCatalogSkills } from './skill-catalog'
 import {
   abortPull,
   deleteModel,
@@ -34,6 +51,10 @@ import {
   pullModel,
   showModel
 } from './ollama'
+import {
+  createHtmlPreview,
+  destroyHtmlPreview
+} from './html-preview'
 
 function emitPullProgress(event: PullProgressEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -140,6 +161,37 @@ export function registerIpc(ipcMain: IpcMain): void {
 
   ipcMain.handle('mcp:listTools', () => mcpManager.listAllTools())
 
+  ipcMain.handle('skills:list', () => listSkills())
+  ipcMain.handle('skills:upsert', (_e, input: AgentSkillInput) => upsertSkill(input))
+  ipcMain.handle('skills:setEnabled', (_e, id: string, enabled: boolean) =>
+    setSkillEnabled(id, enabled)
+  )
+  ipcMain.handle('skills:delete', (_e, id: string) => {
+    deleteSkill(id)
+  })
+  ipcMain.handle('skills:listCatalog', () => listCatalogSkills())
+  ipcMain.handle('skills:addFromCatalog', (_e, id: string) => addCatalogSkill(id))
+  ipcMain.handle('skills:openRoot', () => openSkillsRoot())
+  ipcMain.handle('skills:openDir', (_e, id: string) => openSkillDir(id))
+  ipcMain.handle(
+    'skills:importFromFolder',
+    async (e): Promise<SkillImportResult> => {
+      const win = BrowserWindow.fromWebContents(e.sender)
+      const opts = {
+        title: 'Add skill from folder',
+        properties: ['openDirectory' as const]
+      }
+      const result = win
+        ? await dialog.showOpenDialog(win, opts)
+        : await dialog.showOpenDialog(opts)
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true }
+      }
+      const skill = importSkillFromFolder(result.filePaths[0])
+      return { canceled: false, skill }
+    }
+  )
+
   ipcMain.handle('sessions:list', () => ensureActiveSession())
   ipcMain.handle('sessions:create', () => {
     createSession()
@@ -158,6 +210,25 @@ export function registerIpc(ipcMain: IpcMain): void {
     }
   )
   ipcMain.handle('sessions:delete', (_e, id: string) => deleteSession(id))
+  ipcMain.handle(
+    'sessions:generateTitle',
+    async (_e, id: string, prompt: string) => {
+      const fallback = snippetFromPrompt(prompt ?? '')
+      const title = await generateSessionTitle(prompt ?? '', fallback)
+      try {
+        const current = getSessionsState().sessions.find((s) => s.id === id)
+        // Skip if the chat was cleared or deleted while the title model ran.
+        if (!current) return title
+        if (current.uiMessages.length === 0 && current.title === 'New chat') {
+          return title
+        }
+        updateSession(id, { title })
+      } catch {
+        // Session may have been deleted while the title model ran.
+      }
+      return title
+    }
+  )
 
   ipcMain.handle('chat:send', async (_e, payload: ChatSendPayload) => {
     void runAgentTurn(payload)
@@ -165,5 +236,13 @@ export function registerIpc(ipcMain: IpcMain): void {
 
   ipcMain.handle('chat:abort', () => {
     abortChat()
+  })
+
+  ipcMain.handle(
+    'htmlPreview:create',
+    (_e, payload: HtmlPreviewCreatePayload) => createHtmlPreview(payload)
+  )
+  ipcMain.handle('htmlPreview:destroy', (_e, id: string) => {
+    destroyHtmlPreview(id)
   })
 }

@@ -1,9 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AgentSkill,
+  AgentSkillInput,
   AppConfig,
+  CatalogSkill,
   ChatEvent,
   ChatSendPayload,
   ChatSession,
+  HtmlPreviewCreatePayload,
+  HtmlPreviewCreateResult,
   LibraryModelDetail,
   LibrarySearchParams,
   LibrarySearchResult,
@@ -13,7 +18,8 @@ import type {
   OllamaModelDetails,
   OllamaStatus,
   PullProgressEvent,
-  SessionsState
+  SessionsState,
+  SkillImportResult
 } from '../shared/types'
 
 export type ServerWithStatus = McpServerConfig & { connected: boolean }
@@ -73,6 +79,24 @@ const api = {
     listTools: (): Promise<McpToolInfo[]> => ipcRenderer.invoke('mcp:listTools')
   },
 
+  skills: {
+    list: (): Promise<AgentSkill[]> => ipcRenderer.invoke('skills:list'),
+    upsert: (input: AgentSkillInput): Promise<AgentSkill> =>
+      ipcRenderer.invoke('skills:upsert', input),
+    setEnabled: (id: string, enabled: boolean): Promise<AgentSkill> =>
+      ipcRenderer.invoke('skills:setEnabled', id, enabled),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke('skills:delete', id),
+    listCatalog: (): Promise<CatalogSkill[]> =>
+      ipcRenderer.invoke('skills:listCatalog'),
+    addFromCatalog: (id: string): Promise<void> =>
+      ipcRenderer.invoke('skills:addFromCatalog', id),
+    openRoot: (): Promise<void> => ipcRenderer.invoke('skills:openRoot'),
+    openDir: (id: string): Promise<void> =>
+      ipcRenderer.invoke('skills:openDir', id),
+    importFromFolder: (): Promise<SkillImportResult> =>
+      ipcRenderer.invoke('skills:importFromFolder')
+  },
+
   sessions: {
     list: (): Promise<SessionsState> => ipcRenderer.invoke('sessions:list'),
     create: (): Promise<SessionsState> => ipcRenderer.invoke('sessions:create'),
@@ -83,7 +107,9 @@ const api = {
       patch: Partial<Pick<ChatSession, 'title' | 'uiMessages' | 'history'>>
     ): Promise<SessionsState> => ipcRenderer.invoke('sessions:update', id, patch),
     delete: (id: string): Promise<SessionsState> =>
-      ipcRenderer.invoke('sessions:delete', id)
+      ipcRenderer.invoke('sessions:delete', id),
+    generateTitle: (id: string, prompt: string): Promise<string> =>
+      ipcRenderer.invoke('sessions:generateTitle', id, prompt)
   },
 
   chat: {
@@ -99,6 +125,13 @@ const api = {
         ipcRenderer.removeListener('chat:event', handler)
       }
     }
+  },
+
+  htmlPreview: {
+    create: (payload: HtmlPreviewCreatePayload): Promise<HtmlPreviewCreateResult> =>
+      ipcRenderer.invoke('htmlPreview:create', payload),
+    destroy: (id: string): Promise<void> =>
+      ipcRenderer.invoke('htmlPreview:destroy', id)
   }
 }
 

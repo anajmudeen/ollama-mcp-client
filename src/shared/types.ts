@@ -236,6 +236,8 @@ export interface ChatSendPayload {
   turnId: string
   /** Last Ollama prompt+eval count from this session (drives compaction). */
   contextUsed?: number
+  /** Skill invoked via `/name` in the composer. */
+  invokedSkill?: string
 }
 
 export type UiMessage =
@@ -313,4 +315,43 @@ export interface ChatSession {
 export interface SessionsState {
   sessions: ChatSession[]
   activeSessionId: string | null
+}
+
+export interface AgentSkill {
+  id: string
+  name: string
+  description: string
+  body: string
+  enabled: boolean
+}
+
+export type SkillImportResult =
+  | { canceled: true }
+  | { canceled: false; skill: AgentSkill }
+
+export interface AgentSkillInput {
+  id?: string
+  name: string
+  description: string
+  body: string
+  enabled?: boolean
+}
+
+export interface CatalogSkill {
+  id: string
+  name: string
+  description: string
+  url: string
+  source: string
+}
+
+export interface HtmlPreviewCreatePayload {
+  html: string
+  allowScripts: boolean
+  allowRemoteScripts: boolean
+}
+
+export interface HtmlPreviewCreateResult {
+  id: string
+  url: string
 }

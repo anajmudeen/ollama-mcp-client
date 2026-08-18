@@ -20,7 +20,9 @@ import { citeIdsFromHash, linkNumericCitations } from '../lib/linkNumericCitatio
 import { linkApaCitations } from '../lib/linkApaCitations'
 import { rehypeKatexInHtml } from '../lib/rehypeKatexInHtml'
 import { rehypeNumberedRefs } from '../lib/rehypeNumberedRefs'
+import { isHtmlDocumentFence } from '../lib/htmlFence'
 import { CodeBlock } from './CodeBlock'
+import { HtmlPreview } from './HtmlPreview'
 import { MermaidDiagram } from './MermaidDiagram'
 
 interface MarkdownContentProps {
@@ -283,6 +285,21 @@ function fencedCodeFromPre(
   return { language: match?.[1] ?? '', source }
 }
 
+function renderFence(
+  language: string,
+  source: string,
+  streaming: boolean | undefined,
+  compact?: boolean
+): React.JSX.Element {
+  if (language === 'mermaid') {
+    return <MermaidDiagram source={source} streaming={streaming} />
+  }
+  if (!streaming && isHtmlDocumentFence(language, source)) {
+    return <HtmlPreview source={source} language={language} />
+  }
+  return <CodeBlock code={source} language={language} compact={compact} />
+}
+
 function markdownComponents(
   streaming: boolean | undefined,
   rootRef: { current: HTMLDivElement | null },
@@ -348,11 +365,8 @@ function markdownComponents(
     },
     pre({ children }) {
       const fence = fencedCodeFromPre(children)
-      if (fence?.language === 'mermaid') {
-        return <MermaidDiagram source={fence.source} streaming={streaming} />
-      }
       if (fence) {
-        return <CodeBlock code={fence.source} language={fence.language} />
+        return renderFence(fence.language, fence.source, streaming)
       }
       return <pre>{children}</pre>
     },
@@ -361,17 +375,11 @@ function markdownComponents(
       if (!className) {
         const serialized = parseSerializedFence(text)
         if (serialized) {
-          if (serialized.language === 'mermaid') {
-            return (
-              <MermaidDiagram source={serialized.source} streaming={streaming} />
-            )
-          }
-          return (
-            <CodeBlock
-              code={serialized.source}
-              language={serialized.language}
-              compact
-            />
+          return renderFence(
+            serialized.language,
+            serialized.source,
+            streaming,
+            true
           )
         }
       }

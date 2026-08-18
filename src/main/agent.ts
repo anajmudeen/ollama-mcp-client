@@ -10,6 +10,12 @@ import {
 import { mcpManager } from './mcp-manager'
 import { generateImageBase64 } from './ollama-image'
 import {
+  LOAD_SKILL_NAME,
+  loadSkillByName,
+  loadSkillTool,
+  skillContextSystemMessage
+} from './skills'
+import {
   chatStream,
   detectVisionSupport,
   getModelInfo,
@@ -217,7 +223,8 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
     emitTurn({ type: 'done' })
   }
 
-  const tools = toolsFromMcp()
+  const skillTool = loadSkillTool()
+  const tools = [...(skillTool ? [skillTool] : []), ...toolsFromMcp()]
   const turnStartedAt = Date.now()
   const tid = shortTurnId(turnId)
 
@@ -327,7 +334,11 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
     )
   }
 
-  const messages: OllamaChatMessage[] = toOllamaMessages(workingMessages)
+  const catalog = skillContextSystemMessage(payload.invokedSkill)
+  const messages: OllamaChatMessage[] = [
+    ...(catalog ? [{ role: 'system', content: catalog }] : []),
+    ...toOllamaMessages(workingMessages)
+  ]
   console.log(
     `[agent] prompt ready id=${tid} messages=${messages.length} chars≈${approxChars(messages)}`
   )
@@ -391,6 +402,32 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       let firstThinkingAt: number | null = null
       let firstContentAt: number | null = null
       let firstToolCallAt: number | null = null
+      let thinkBuf = ''
+      let contentBuf = ''
+      let streamEmitTimer: ReturnType<typeof setImmediate> | null = null
+
+      const flushStreamEmits = (): void => {
+        if (streamEmitTimer != null) {
+          clearImmediate(streamEmitTimer)
+          streamEmitTimer = null
+        }
+        if (thinkBuf) {
+          const text = thinkBuf
+          thinkBuf = ''
+          emitTurn({ type: 'thinking', content: text })
+        }
+        if (contentBuf) {
+          const text = contentBuf
+          contentBuf = ''
+          emitTurn({ type: 'chunk', content: text })
+        }
+      }
+
+      const queueStreamEmit = (): void => {
+        if (streamEmitTimer == null) {
+          streamEmitTimer = setImmediate(flushStreamEmits)
+        }
+      }
 
       const { content, toolCalls, promptEvalCount, evalCount, evalDurationNs } =
         await chatStream({
@@ -420,7 +457,8 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
                 detail: 'Model is reasoning…'
               })
             }
-            emitTurn({ type: 'thinking', content: thinking })
+            thinkBuf += thinking
+            queueStreamEmit()
           }
 
           const text = chunk.message?.content
@@ -431,6 +469,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
               console.log(
                 `[agent] iter=${iteration} first-content +${ms(iterStartedAt)} id=${tid}`
               )
+              flushStreamEmits()
               emitTurn({
                 type: 'status',
                 phase: 'generating',
@@ -438,7 +477,8 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
               })
             }
             streamedContent += text
-            emitTurn({ type: 'chunk', content: text })
+            contentBuf += text
+            queueStreamEmit()
           }
 
           if (chunk.message?.tool_calls?.length && !sawContent) {
@@ -447,21 +487,30 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
               console.log(
                 `[agent] iter=${iteration} first-tool-call +${ms(iterStartedAt)} id=${tid}`
               )
+              flushStreamEmits()
+              emitTurn({
+                type: 'status',
+                phase: 'tool',
+                detail: 'Choosing tools…'
+              })
             }
-            emitTurn({
-              type: 'status',
-              phase: 'tool',
-              detail: 'Choosing tools…'
-            })
           }
         }
       })
 
       if (abort.signal.aborted || activeTurnId !== turnId) {
+        if (streamEmitTimer != null) {
+          clearImmediate(streamEmitTimer)
+          streamEmitTimer = null
+        }
+        thinkBuf = ''
+        contentBuf = ''
         console.log(`[agent] aborted after stream iter=${iteration} id=${tid}`)
         emitTurn({ type: 'error', message: 'Aborted' })
         return
       }
+
+      flushStreamEmits()
 
       const finalContent = content || streamedContent
       if (toolCalls.length > 0) {
@@ -576,7 +625,10 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
         console.log(`[agent] tool start id=${tid} name=${tc.name}`)
         const toolStartedAt = Date.now()
-        const { ok, result } = await mcpManager.callTool(tc.name, tc.arguments)
+        const { ok, result } =
+          tc.name === LOAD_SKILL_NAME
+            ? loadSkillByName(String(tc.arguments.name ?? ''))
+            : await mcpManager.callTool(tc.name, tc.arguments)
         const modelResult = truncateForModel(result)
         console.log(
           `[agent] tool end id=${tid} name=${tc.name} ok=${ok} +${ms(toolStartedAt)} resultChars=${result.length}` +
