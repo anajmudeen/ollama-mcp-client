@@ -146,6 +146,35 @@ export function SkillsPage({ active }: { active: boolean }): React.JSX.Element {
     }
   }
 
+  const handleOpenRoot = async (): Promise<void> => {
+    setError(null)
+    try {
+      await window.api.skills.openRoot()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const handleOpenDir = async (skill: AgentSkill): Promise<void> => {
+    setError(null)
+    try {
+      await window.api.skills.openDir(skill.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const handleImportFolder = async (): Promise<void> => {
+    setError(null)
+    try {
+      const result = await window.api.skills.importFromFolder()
+      if (result.canceled) return
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   const enabledCount = skills.filter((s) => s.enabled).length
 
   return (
@@ -190,13 +219,29 @@ export function SkillsPage({ active }: { active: boolean }): React.JSX.Element {
               {skills.length} skill{skills.length === 1 ? '' : 's'} · {enabledCount}{' '}
               enabled
             </p>
-            <button
-              type="button"
-              onClick={openNew}
-              className="rounded-lg bg-[#2d6cb5] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#3a7cc9]"
-            >
-              + New skill
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleOpenRoot()}
+                className="rounded-lg border border-[#2a3a4d] px-3 py-1.5 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+              >
+                Open folder
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleImportFolder()}
+                className="rounded-lg border border-[#2a3a4d] px-3 py-1.5 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+              >
+                Add from folder…
+              </button>
+              <button
+                type="button"
+                onClick={openNew}
+                className="rounded-lg bg-[#2d6cb5] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#3a7cc9]"
+              >
+                + New skill
+              </button>
+            </div>
           </div>
         ) : (
           <div className="titlebar-no-drag mt-4 flex flex-wrap items-end justify-between gap-2">
@@ -285,6 +330,14 @@ export function SkillsPage({ active }: { active: boolean }): React.JSX.Element {
                       </label>
                     </div>
                     <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleOpenDir(skill)}
+                        disabled={busy}
+                        className="rounded border border-[#2a3a4d] px-2.5 py-1 text-xs text-[#c5d0dc] hover:bg-[#1a2430] disabled:opacity-50"
+                      >
+                        Open folder
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEdit(skill)}
