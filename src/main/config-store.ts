@@ -16,14 +16,17 @@ const DEFAULT_CONFIG: AppConfig = {
   showThinking: false
 }
 
-interface StoreSchema extends AppConfig, SessionsState {}
+interface StoreSchema extends AppConfig, SessionsState {
+  skillEnabled: Record<string, boolean>
+}
 
 const store = new Store<StoreSchema>({
   name: 'config',
   defaults: {
     ...DEFAULT_CONFIG,
     sessions: [],
-    activeSessionId: null
+    activeSessionId: null,
+    skillEnabled: {}
   }
 })
 
@@ -221,6 +224,22 @@ export function deleteSession(id: string): SessionsState {
   store.set('sessions', sessions)
   store.set('activeSessionId', activeSessionId)
   return getSessionsState()
+}
+
+export function getSkillEnabledMap(): Record<string, boolean> {
+  return { ...store.get('skillEnabled', {}) }
+}
+
+export function setSkillEnabledFlag(id: string, enabled: boolean): void {
+  const map = getSkillEnabledMap()
+  map[id] = enabled
+  store.set('skillEnabled', map)
+}
+
+export function removeSkillEnabledFlag(id: string): void {
+  const map = getSkillEnabledMap()
+  delete map[id]
+  store.set('skillEnabled', map)
 }
 
 export function ensureActiveSession(): SessionsState {

@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AgentSkill,
+  AgentSkillInput,
   AppConfig,
+  CatalogSkill,
   ChatEvent,
   ChatSendPayload,
   ChatSession,
@@ -71,6 +74,19 @@ const api = {
     connect: (id: string): Promise<McpToolInfo[]> => ipcRenderer.invoke('mcp:connect', id),
     disconnect: (id: string): Promise<void> => ipcRenderer.invoke('mcp:disconnect', id),
     listTools: (): Promise<McpToolInfo[]> => ipcRenderer.invoke('mcp:listTools')
+  },
+
+  skills: {
+    list: (): Promise<AgentSkill[]> => ipcRenderer.invoke('skills:list'),
+    upsert: (input: AgentSkillInput): Promise<AgentSkill> =>
+      ipcRenderer.invoke('skills:upsert', input),
+    setEnabled: (id: string, enabled: boolean): Promise<AgentSkill> =>
+      ipcRenderer.invoke('skills:setEnabled', id, enabled),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke('skills:delete', id),
+    listCatalog: (): Promise<CatalogSkill[]> =>
+      ipcRenderer.invoke('skills:listCatalog'),
+    addFromCatalog: (id: string): Promise<void> =>
+      ipcRenderer.invoke('skills:addFromCatalog', id)
   },
 
   sessions: {

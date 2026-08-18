@@ -1,5 +1,6 @@
 import { BrowserWindow, type IpcMain } from 'electron'
 import type {
+  AgentSkillInput,
   ChatSendPayload,
   ChatSession,
   LibrarySearchParams,
@@ -30,6 +31,13 @@ import {
 } from './session-title'
 import { mcpManager } from './mcp-manager'
 import { getLibraryModel, getLibraryReadme, searchLibrary } from './ollama-library'
+import {
+  deleteSkill,
+  listSkills,
+  setSkillEnabled,
+  upsertSkill
+} from './skills'
+import { addCatalogSkill, listCatalogSkills } from './skill-catalog'
 import {
   abortPull,
   deleteModel,
@@ -143,6 +151,17 @@ export function registerIpc(ipcMain: IpcMain): void {
   })
 
   ipcMain.handle('mcp:listTools', () => mcpManager.listAllTools())
+
+  ipcMain.handle('skills:list', () => listSkills())
+  ipcMain.handle('skills:upsert', (_e, input: AgentSkillInput) => upsertSkill(input))
+  ipcMain.handle('skills:setEnabled', (_e, id: string, enabled: boolean) =>
+    setSkillEnabled(id, enabled)
+  )
+  ipcMain.handle('skills:delete', (_e, id: string) => {
+    deleteSkill(id)
+  })
+  ipcMain.handle('skills:listCatalog', () => listCatalogSkills())
+  ipcMain.handle('skills:addFromCatalog', (_e, id: string) => addCatalogSkill(id))
 
   ipcMain.handle('sessions:list', () => ensureActiveSession())
   ipcMain.handle('sessions:create', () => {

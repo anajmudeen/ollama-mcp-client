@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { McpToolInfo, OllamaModel, UiMessage } from '../../../shared/types'
+import type { AgentSkill, McpToolInfo, OllamaModel, UiMessage } from '../../../shared/types'
 import type { ActivityState } from './ActivityIndicator'
 import { DownloadImageButton } from './DownloadImageButton'
 import { ActivityIndicator } from './ActivityIndicator'
@@ -7,6 +7,7 @@ import { CopyButton } from './CopyButton'
 import { ImageLightbox } from './ImageLightbox'
 import { MarkdownContent } from './MarkdownContent'
 import { MessageMeta } from './MessageMeta'
+import { SkillSlashMenu, SLASH_PREVIEW_COUNT } from './SkillSlashMenu'
 import { ThinkingCard } from './ThinkingCard'
 import { ToolCallCard } from './ToolCallCard'
 import {
@@ -15,6 +16,11 @@ import {
   fileToAttachment,
   formatBytes
 } from '../lib/attachments'
+import {
+  filterSkills,
+  parseInvokedSkill,
+  slashQuery
+} from '../lib/slashSkills'
 import {
   type ContextSlice,
   buildContextSlices,
@@ -43,6 +49,7 @@ interface ChatProps {
     content: string
     images?: string[]
     attachmentLabels?: string[]
+    invokedSkill?: string
   }) => void
   onAbort: () => void
   onClear: () => void
@@ -69,6 +76,10 @@ export function Chat({
   onOpenSettings
 }: ChatProps): React.JSX.Element {
   const [draft, setDraft] = useState('')
+  const [slashSkills, setSlashSkills] = useState<AgentSkill[]>([])
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashExpanded, setSlashExpanded] = useState(false)
+  const [slashDismissed, setSlashDismissed] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
@@ -133,6 +144,20 @@ export function Chat({
 
   const canCompose = canSend && !busy
   const hasDraft = Boolean(draft.trim()) || attachments.length > 0
+  const slashToken = slashQuery(draft)
+  const slashMatches = useMemo(
+    () =>
+      slashToken == null ? [] : filterSkills(slashSkills, slashToken),
+    [slashSkills, slashToken]
+  )
+  const slashOpen =
+    slashToken != null &&
+    !slashDismissed &&
+    slashSkills.length > 0 &&
+    slashMatches.length > 0
+  const slashVisible = slashExpanded
+    ? slashMatches
+    : slashMatches.slice(0, SLASH_PREVIEW_COUNT)
   const selectedMeta = models.find((m) => m.name === selectedModel)
   const modelHasVision = Boolean(
     selectedMeta?.tags?.some((t) => t.toLowerCase() === 'vision') ||
@@ -273,6 +298,28 @@ export function Chat({
   }, [modelOpen])
 
   useEffect(() => {
+    let cancelled = false
+    const load = (): void => {
+      void window.api.skills.list().then((list) => {
+        if (!cancelled) setSlashSkills(list.filter((s) => s.enabled))
+      })
+    }
+    load()
+    const onFocus = (): void => load()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [slashToken])
+
+  useEffect(() => {
+    setSlashIndex(0)
+    setSlashExpanded(false)
+    setSlashDismissed(false)
+  }, [slashToken])
+
+  useEffect(() => {
     if (!selectedModel || !ollamaOk) {
       setModelLimit(null)
       setModelSystem('')
@@ -355,13 +402,24 @@ export function Chat({
       buildContextSlices({
         used: contextUsed,
         systemPrompt: modelSystem,
+        skillsText: slashSkills
+          .map(
+            (s) =>
+              `### Skill: ${s.name}\n${s.description}\n\n${s.body}`.trim()
+          )
+          .join('\n\n'),
         tools,
         messages,
         draft,
         attachments
       }),
-    [attachments, contextUsed, draft, messages, modelSystem, tools]
+    [attachments, contextUsed, draft, messages, modelSystem, slashSkills, tools]
   )
+
+  const applySlashSkill = (skill: AgentSkill): void => {
+    setDraft(`/${skill.name} `)
+    setSlashDismissed(true)
+  }
 
   const submit = (e?: React.FormEvent): void => {
     e?.preventDefault()
@@ -378,11 +436,13 @@ export function Chat({
     }
     const built = buildMessageFromAttachments(draft, attachments)
     if (!built.content && !built.images?.length) return
+    const invoked = parseInvokedSkill(built.content, slashSkills)
     stickToBottomRef.current = true
     onSend({
       content: built.content,
       images: built.images,
-      attachmentLabels: built.labels
+      attachmentLabels: built.labels,
+      invokedSkill: invoked.skillName
     })
     setDraft('')
     setAttachments([])
@@ -673,6 +733,16 @@ export function Chat({
           </p>
         )}
         <div className="composer-shell relative rounded-[28px] border border-[#2a3a4d] bg-[#1a1f26] px-4 pb-3 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] focus-within:border-[#3d5168]">
+          {slashOpen ? (
+            <SkillSlashMenu
+              skills={slashMatches}
+              activeIndex={slashIndex}
+              expanded={slashExpanded}
+              onHover={setSlashIndex}
+              onSelect={applySlashSkill}
+              onShowMore={() => setSlashExpanded(true)}
+            />
+          ) : null}
           {!modelIsImageGen && attachments.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
               {attachments.map((file) => (
@@ -714,6 +784,33 @@ export function Chat({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
+              if (slashOpen && slashVisible.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setSlashIndex((i) => (i + 1) % slashVisible.length)
+                  return
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setSlashIndex(
+                    (i) => (i - 1 + slashVisible.length) % slashVisible.length
+                  )
+                  return
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setSlashDismissed(true)
+                  return
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  const skill = slashVisible[slashIndex]
+                  if (skill) {
+                    e.preventDefault()
+                    applySlashSkill(skill)
+                    return
+                  }
+                }
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 submit()
@@ -733,7 +830,9 @@ export function Chat({
                 ? 'Waiting for the model to finish…'
                 : modelIsImageGen
                   ? 'Describe the image to generate…'
-                  : 'Send a message'
+                  : slashSkills.length > 0
+                    ? 'Send a message, or / for skills'
+                    : 'Send a message'
             }
             disabled={!ollamaOk}
             className="max-h-40 min-h-[56px] w-full resize-none bg-transparent px-1 pb-12 pt-1 text-[15px] leading-relaxed text-[#e7ecf1] outline-none placeholder:text-[#6b7a8c] disabled:opacity-50"
