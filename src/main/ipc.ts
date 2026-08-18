@@ -24,6 +24,10 @@ import {
   updateSession,
   upsertServer
 } from './config-store'
+import {
+  generateSessionTitle,
+  snippetFromPrompt
+} from './session-title'
 import { mcpManager } from './mcp-manager'
 import { getLibraryModel, getLibraryReadme, searchLibrary } from './ollama-library'
 import {
@@ -158,6 +162,25 @@ export function registerIpc(ipcMain: IpcMain): void {
     }
   )
   ipcMain.handle('sessions:delete', (_e, id: string) => deleteSession(id))
+  ipcMain.handle(
+    'sessions:generateTitle',
+    async (_e, id: string, prompt: string) => {
+      const fallback = snippetFromPrompt(prompt ?? '')
+      const title = await generateSessionTitle(prompt ?? '', fallback)
+      try {
+        const current = getSessionsState().sessions.find((s) => s.id === id)
+        // Skip if the chat was cleared or deleted while the title model ran.
+        if (!current) return title
+        if (current.uiMessages.length === 0 && current.title === 'New chat') {
+          return title
+        }
+        updateSession(id, { title })
+      } catch {
+        // Session may have been deleted while the title model ran.
+      }
+      return title
+    }
+  )
 
   ipcMain.handle('chat:send', async (_e, payload: ChatSendPayload) => {
     void runAgentTurn(payload)

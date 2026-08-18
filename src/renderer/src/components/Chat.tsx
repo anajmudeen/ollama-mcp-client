@@ -26,6 +26,7 @@ import {
 } from '../lib/contextUsage'
 
 interface ChatProps {
+  title: string
   messages: UiMessage[]
   busy: boolean
   activity: ActivityState
@@ -49,6 +50,7 @@ interface ChatProps {
 }
 
 export function Chat({
+  title,
   messages,
   busy,
   activity,
@@ -415,9 +417,9 @@ export function Chat({
   return (
     <main className="flex min-w-0 flex-1 flex-col">
       <header className="titlebar-drag titlebar-overlay-pad flex items-center justify-between border-b border-[#243041] px-5 py-3">
-        <div>
-          <div className="flex items-center gap-2 text-sm font-medium text-[#f0f4f8]">
-            Chat
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-[#f0f4f8]">
+            <span className="truncate">{title || 'Chat'}</span>
             {busy && (
               <span className="header-live inline-flex items-center gap-1.5 rounded-full border border-[#2a3a4d] bg-[#161d27] px-2 py-0.5 text-[10px] font-normal uppercase tracking-wider text-[#8b9aab]">
                 <span className="header-live-dot h-1.5 w-1.5 rounded-full bg-[var(--activity-accent,#6eb5ff)]" />

@@ -75,6 +75,13 @@ export default function App(): React.JSX.Element {
       title?: string
     ) => void
   >(() => {})
+  const pendingAiTitleRef = useRef<{
+    sessionId: string
+    prompt: string
+    turnId: string
+  } | null>(null)
+  const titleGenEpochRef = useRef(0)
+  const requestAiTitleRef = useRef<() => void>(() => {})
 
   const syncMessages = useCallback((next: UiMessage[]) => {
     messagesRef.current = next
@@ -107,14 +114,17 @@ export default function App(): React.JSX.Element {
       id: string,
       uiMessages: UiMessage[],
       history: ChatMessage[],
-      title: string
+      title?: string
     ): Promise<void> => {
       try {
-        const state = await window.api.sessions.update(id, {
-          title,
+        const patch: Partial<
+          Pick<ChatSession, 'title' | 'uiMessages' | 'history'>
+        > = {
           uiMessages,
           history
-        })
+        }
+        if (title !== undefined) patch.title = title
+        const state = await window.api.sessions.update(id, patch)
         // Refresh list only — never reload the open chat from this response
         // (that races with an in-progress switch).
         setSessions(state.sessions)
@@ -133,8 +143,7 @@ export default function App(): React.JSX.Element {
       title?: string
     ) => {
       if (!id) return
-      const nextTitle = title ?? sessionTitleRef.current
-      if (title && id === activeSessionIdRef.current) {
+      if (title !== undefined && id === activeSessionIdRef.current) {
         sessionTitleRef.current = title
       }
 
@@ -143,7 +152,11 @@ export default function App(): React.JSX.Element {
       }
       persistTimer.current = window.setTimeout(() => {
         persistTimer.current = null
-        void writeSession(id, uiMessages, history, nextTitle)
+        const titleNow =
+          id === activeSessionIdRef.current
+            ? sessionTitleRef.current
+            : undefined
+        void writeSession(id, uiMessages, history, titleNow)
       }, 250)
     },
     [writeSession]
@@ -152,6 +165,43 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     persistSessionRef.current = persistSession
   }, [persistSession])
+
+  const applyGeneratedTitle = useCallback((id: string, title: string) => {
+    setSessions((prev) =>
+      prev.map((session) => (session.id === id ? { ...session, title } : session))
+    )
+    if (id === activeSessionIdRef.current) {
+      sessionTitleRef.current = title
+    }
+  }, [])
+
+  const requestAiTitle = useCallback((): void => {
+    const pending = pendingAiTitleRef.current
+    if (!pending) return
+    pendingAiTitleRef.current = null
+    const epoch = titleGenEpochRef.current
+    void (async () => {
+      try {
+        const title = await window.api.sessions.generateTitle(
+          pending.sessionId,
+          pending.prompt
+        )
+        if (epoch !== titleGenEpochRef.current) return
+        applyGeneratedTitle(pending.sessionId, title)
+      } catch (err) {
+        console.error('Failed to generate session title', err)
+      }
+    })()
+  }, [applyGeneratedTitle])
+
+  const cancelAiTitle = useCallback((): void => {
+    pendingAiTitleRef.current = null
+    titleGenEpochRef.current += 1
+  }, [])
+
+  useEffect(() => {
+    requestAiTitleRef.current = requestAiTitle
+  }, [requestAiTitle])
 
   useEffect(() => {
     showThinkingRef.current = showThinking
@@ -227,6 +277,14 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     const unsub = window.api.chat.onEvent((event: ChatEvent) => {
+      if (
+        (event.type === 'done' || event.type === 'error') &&
+        event.turnId &&
+        pendingAiTitleRef.current?.turnId === event.turnId
+      ) {
+        requestAiTitleRef.current()
+      }
+
       const sessionId = activeSessionIdRef.current
       if (!sessionId) return
 
@@ -618,6 +676,16 @@ export default function App(): React.JSX.Element {
     if (title === 'New chat') {
       title = titleFromPrompt(uiContent)
       sessionTitleRef.current = title
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId ? { ...session, title } : session
+        )
+      )
+      pendingAiTitleRef.current = {
+        sessionId,
+        prompt: uiContent,
+        turnId
+      }
     }
     persistSession(sessionId, nextMessages, nextHistory, title)
 
@@ -648,13 +716,23 @@ export default function App(): React.JSX.Element {
     const sessionId = activeSessionIdRef.current
     bumpChatEpoch()
     activeTurnIdRef.current = null
+    cancelAiTitle()
     historyRef.current = []
     syncMessages([])
     setBusy(false)
     setActivity(IDLE_ACTIVITY)
     sessionTitleRef.current = 'New chat'
     setContextUsage(null)
-    if (sessionId) persistSession(sessionId, [], [], 'New chat')
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId ? { ...session, title: 'New chat' } : session
+      )
+    )
+    if (persistTimer.current !== null) {
+      window.clearTimeout(persistTimer.current)
+      persistTimer.current = null
+    }
+    if (sessionId) void writeSession(sessionId, [], [], 'New chat')
   }
 
   const leaveCurrentSession = useCallback(async (): Promise<void> => {
@@ -683,6 +761,9 @@ export default function App(): React.JSX.Element {
   }
 
   const handleDeleteSession = async (id: string): Promise<void> => {
+    if (pendingAiTitleRef.current?.sessionId === id) {
+      cancelAiTitle()
+    }
     if (id === activeSessionIdRef.current) {
       await leaveCurrentSession()
     }
@@ -768,6 +849,9 @@ export default function App(): React.JSX.Element {
       {view === 'chat' ? (
         <Chat
           key={activeSessionId ?? 'chat'}
+          title={
+            sessions.find((s) => s.id === activeSessionId)?.title ?? 'New chat'
+          }
           messages={messages}
           busy={busy}
           activity={activity}

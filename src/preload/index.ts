@@ -83,7 +83,9 @@ const api = {
       patch: Partial<Pick<ChatSession, 'title' | 'uiMessages' | 'history'>>
     ): Promise<SessionsState> => ipcRenderer.invoke('sessions:update', id, patch),
     delete: (id: string): Promise<SessionsState> =>
-      ipcRenderer.invoke('sessions:delete', id)
+      ipcRenderer.invoke('sessions:delete', id),
+    generateTitle: (id: string, prompt: string): Promise<string> =>
+      ipcRenderer.invoke('sessions:generateTitle', id, prompt)
   },
 
   chat: {
