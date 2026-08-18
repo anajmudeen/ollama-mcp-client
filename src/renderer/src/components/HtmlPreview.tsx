@@ -226,6 +226,7 @@ export function HtmlPreview({
               title="HTML preview"
               src={url ?? undefined}
               sandbox={scriptsOn ? 'allow-scripts' : ''}
+              allow="accelerometer *; gyroscope *; magnetometer *"
               referrerPolicy="no-referrer"
               onError={() => setError('Preview failed to load')}
             />
