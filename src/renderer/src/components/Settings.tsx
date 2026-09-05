@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { TelegramMirrorMode, TelegramStatus } from '../../../shared/types'
 
 interface SettingsProps {
   open: boolean
@@ -7,6 +8,15 @@ interface SettingsProps {
   ollamaError?: string
   baseUrl: string
   showThinking: boolean
+  telegramEnabled: boolean
+  telegramMirrorMode: TelegramMirrorMode
+  telegramAllowedUserIds: number[]
+  telegramStatus: TelegramStatus
+  telegramTokenDraft: string
+  onSetTelegramToken: (token: string | null) => void
+  onSetTelegramEnabled: (enabled: boolean) => void
+  onSetTelegramMirrorMode: (mode: TelegramMirrorMode) => void
+  onSetTelegramAllowedUserIds: (ids: number[]) => void
   onRefreshOllama: () => void
   onSetBaseUrl: (url: string) => void
   onSetShowThinking: (enabled: boolean) => void
@@ -19,15 +29,37 @@ export function Settings({
   ollamaError,
   baseUrl,
   showThinking,
+  telegramEnabled,
+  telegramMirrorMode,
+  telegramAllowedUserIds,
+  telegramStatus,
+  telegramTokenDraft,
+  onSetTelegramToken,
+  onSetTelegramEnabled,
+  onSetTelegramMirrorMode,
+  onSetTelegramAllowedUserIds,
   onRefreshOllama,
   onSetBaseUrl,
   onSetShowThinking
 }: SettingsProps): React.JSX.Element | null {
   const [urlDraft, setUrlDraft] = useState(baseUrl)
+  const [showToken, setShowToken] = useState(false)
+  const [tokenDraft, setTokenDraft] = useState(telegramTokenDraft)
+  const [allowedIdsDraft, setAllowedIdsDraft] = useState(
+    telegramAllowedUserIds.join(', ')
+  )
 
   useEffect(() => {
     setUrlDraft(baseUrl)
   }, [baseUrl])
+
+  useEffect(() => {
+    setTokenDraft(telegramTokenDraft)
+  }, [telegramTokenDraft])
+
+  useEffect(() => {
+    setAllowedIdsDraft(telegramAllowedUserIds.join(', '))
+  }, [telegramAllowedUserIds])
 
   useEffect(() => {
     if (!open) return
@@ -97,6 +129,111 @@ export function Settings({
               <button
                 type="button"
                 onClick={() => onSetBaseUrl(urlDraft)}
+                className="rounded border border-[#2a3a4d] px-2 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+              >
+                Save
+              </button>
+            </div>
+          </section>
+
+          <section className="mb-6">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#8b9aab]">
+              Telegram
+            </h3>
+            <p className="mb-3 text-xs text-[#6b7a8c]">
+              Create a bot via @BotFather, paste the token here, then send /start from Telegram.
+            </p>
+            <label className="mb-1 block text-xs text-[#8b9aab]">Bot token</label>
+            <div className="mb-3 flex gap-1">
+              <input
+                type={showToken ? 'text' : 'password'}
+                value={tokenDraft}
+                onChange={(e) => setTokenDraft(e.target.value)}
+                onBlur={() => {
+                  if (tokenDraft !== telegramTokenDraft) {
+                    onSetTelegramToken(tokenDraft.trim() || null)
+                  }
+                }}
+                placeholder="123456:ABC-DEF…"
+                className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 text-xs text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken((v) => !v)}
+                className="rounded border border-[#2a3a4d] px-2 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+              >
+                {showToken ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={telegramEnabled}
+                onChange={(e) => onSetTelegramEnabled(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#2a3a4d] bg-[#161d27] text-[#2d6cb5] focus:ring-[#2d6cb5]/40"
+              />
+              <span>
+                <span className="block text-sm text-[#e7ecf1]">Enable Telegram bot</span>
+                <span className="mt-0.5 block text-xs text-[#6b7a8c]">
+                  Mirror chat activity to Telegram when a valid token is saved.
+                </span>
+              </span>
+            </label>
+            <div className="mb-3 flex items-center gap-2 text-sm">
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  telegramStatus.running && !telegramStatus.error
+                    ? 'bg-emerald-400'
+                    : 'bg-rose-400'
+                }`}
+              />
+              <span className="text-[#c5d0dc]">
+                {telegramStatus.error
+                  ? telegramStatus.error
+                  : telegramStatus.running && telegramStatus.botUsername
+                    ? `Running as @${telegramStatus.botUsername}`
+                    : 'Stopped'}
+              </span>
+            </div>
+            <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={telegramMirrorMode === 'full'}
+                onChange={(e) =>
+                  onSetTelegramMirrorMode(e.target.checked ? 'full' : 'final')
+                }
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#2a3a4d] bg-[#161d27] text-[#2d6cb5] focus:ring-[#2d6cb5]/40"
+              />
+              <span>
+                <span className="block text-sm text-[#e7ecf1]">
+                  Stream tool calls &amp; thinking
+                </span>
+                <span className="mt-0.5 block text-xs text-[#6b7a8c]">
+                  When off, only the final assistant reply is mirrored to Telegram.
+                </span>
+              </span>
+            </label>
+            <label className="mb-1 block text-xs text-[#8b9aab]">
+              Allowed user IDs
+            </label>
+            <div className="flex gap-1">
+              <input
+                value={allowedIdsDraft}
+                onChange={(e) => setAllowedIdsDraft(e.target.value)}
+                placeholder="123456789, 987654321"
+                className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 text-xs text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const ids = allowedIdsDraft
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                    .map((s) => Number(s))
+                    .filter((n) => Number.isFinite(n))
+                  onSetTelegramAllowedUserIds(ids)
+                }}
                 className="rounded border border-[#2a3a4d] px-2 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
               >
                 Save
