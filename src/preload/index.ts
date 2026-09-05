@@ -19,7 +19,9 @@ import type {
   OllamaStatus,
   PullProgressEvent,
   SessionsState,
-  SkillImportResult
+  SkillImportResult,
+  TelegramMirrorMode,
+  TelegramStatus
 } from '../shared/types'
 
 export type ServerWithStatus = McpServerConfig & { connected: boolean }
@@ -109,7 +111,16 @@ const api = {
     delete: (id: string): Promise<SessionsState> =>
       ipcRenderer.invoke('sessions:delete', id),
     generateTitle: (id: string, prompt: string): Promise<string> =>
-      ipcRenderer.invoke('sessions:generateTitle', id, prompt)
+      ipcRenderer.invoke('sessions:generateTitle', id, prompt),
+    onChanged: (callback: (state: SessionsState) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, state: SessionsState): void => {
+        callback(state)
+      }
+      ipcRenderer.on('sessions:changed', handler)
+      return () => {
+        ipcRenderer.removeListener('sessions:changed', handler)
+      }
+    }
   },
 
   chat: {
@@ -132,6 +143,19 @@ const api = {
       ipcRenderer.invoke('htmlPreview:create', payload),
     destroy: (id: string): Promise<void> =>
       ipcRenderer.invoke('htmlPreview:destroy', id)
+  },
+
+  telegram: {
+    getStatus: (): Promise<TelegramStatus> =>
+      ipcRenderer.invoke('telegram:getStatus'),
+    setToken: (token: string | null): Promise<TelegramStatus> =>
+      ipcRenderer.invoke('telegram:setToken', token),
+    setEnabled: (enabled: boolean): Promise<TelegramStatus> =>
+      ipcRenderer.invoke('telegram:setEnabled', enabled),
+    setAllowedUserIds: (ids: number[]): Promise<number[]> =>
+      ipcRenderer.invoke('telegram:setAllowedUserIds', ids),
+    setMirrorMode: (mode: TelegramMirrorMode): Promise<TelegramMirrorMode> =>
+      ipcRenderer.invoke('telegram:setMirrorMode', mode)
   }
 }
 

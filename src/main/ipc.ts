@@ -7,7 +7,8 @@ import type {
   LibrarySearchParams,
   McpServerConfig,
   PullProgressEvent,
-  SkillImportResult
+  SkillImportResult,
+  TelegramMirrorMode
 } from '../shared/types'
 import { abortChat, runAgentTurn } from './agent'
 import {
@@ -24,6 +25,10 @@ import {
   setSelectedModel,
   setServerEnabled,
   setShowThinking,
+  setTelegramAllowedUserIds,
+  setTelegramBotToken,
+  setTelegramEnabled,
+  setTelegramMirrorMode,
   updateSession,
   upsertServer
 } from './config-store'
@@ -55,6 +60,12 @@ import {
   createHtmlPreview,
   destroyHtmlPreview
 } from './html-preview'
+import { broadcastSessionsChanged } from './sessions-broadcast'
+import {
+  getTelegramBotStatus,
+  restartTelegramBot,
+  stopTelegramBot
+} from './telegram-bot'
 
 function emitPullProgress(event: PullProgressEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -195,9 +206,15 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('sessions:list', () => ensureActiveSession())
   ipcMain.handle('sessions:create', () => {
     createSession()
-    return getSessionsState()
+    const state = getSessionsState()
+    broadcastSessionsChanged()
+    return state
   })
-  ipcMain.handle('sessions:setActive', (_e, id: string) => setActiveSession(id))
+  ipcMain.handle('sessions:setActive', (_e, id: string) => {
+    const state = setActiveSession(id)
+    broadcastSessionsChanged()
+    return state
+  })
   ipcMain.handle(
     'sessions:update',
     (
@@ -209,7 +226,11 @@ export function registerIpc(ipcMain: IpcMain): void {
       return getSessionsState()
     }
   )
-  ipcMain.handle('sessions:delete', (_e, id: string) => deleteSession(id))
+  ipcMain.handle('sessions:delete', (_e, id: string) => {
+    const state = deleteSession(id)
+    broadcastSessionsChanged()
+    return state
+  })
   ipcMain.handle(
     'sessions:generateTitle',
     async (_e, id: string, prompt: string) => {
@@ -244,5 +265,24 @@ export function registerIpc(ipcMain: IpcMain): void {
   )
   ipcMain.handle('htmlPreview:destroy', (_e, id: string) => {
     destroyHtmlPreview(id)
+  })
+
+  ipcMain.handle('telegram:getStatus', () => getTelegramBotStatus())
+  ipcMain.handle('telegram:setToken', async (_e, token: string | null) => {
+    setTelegramBotToken(token)
+    await restartTelegramBot()
+    return getTelegramBotStatus()
+  })
+  ipcMain.handle('telegram:setEnabled', async (_e, enabled: boolean) => {
+    setTelegramEnabled(enabled)
+    if (enabled) await restartTelegramBot()
+    else await stopTelegramBot()
+    return getTelegramBotStatus()
+  })
+  ipcMain.handle('telegram:setAllowedUserIds', (_e, ids: number[]) => {
+    return setTelegramAllowedUserIds(ids)
+  })
+  ipcMain.handle('telegram:setMirrorMode', (_e, mode: TelegramMirrorMode) => {
+    return setTelegramMirrorMode(mode)
   })
 }
