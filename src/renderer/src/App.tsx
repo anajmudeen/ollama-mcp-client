@@ -16,6 +16,10 @@ import { ModelsPage } from './components/ModelsPage'
 import { Settings } from './components/Settings'
 import { Sidebar } from './components/Sidebar'
 import { SkillsPage } from './components/SkillsPage'
+import {
+  closeStreamingThinking,
+  closeToolMessage
+} from './lib/segmentTiming'
 
 function uid(): string {
   return crypto.randomUUID()
@@ -327,7 +331,8 @@ export default function App(): React.JSX.Element {
             content,
             createdAt: nowIso(),
             streaming: true,
-            model: turnModelRef.current ?? undefined
+            model: turnModelRef.current ?? undefined,
+            startedAt: Date.now()
           })
         }
         messagesRef.current = next
@@ -347,9 +352,7 @@ export default function App(): React.JSX.Element {
             }
       )
       setMessages((prev) => {
-        let next = prev.map((m) =>
-          m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
-        )
+        let next = closeStreamingThinking(prev, turnStartedAtRef.current)
         next = [...next]
         const last = next[next.length - 1]
         if (last?.kind === 'assistant' && last.streaming) {
@@ -469,9 +472,7 @@ export default function App(): React.JSX.Element {
         const finishedAt = nowIso()
         setMessages((prev) => {
           if (sessionId !== activeSessionIdRef.current) return prev
-          const next = [...prev].map((m) =>
-            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
-          )
+          const next = closeStreamingThinking(prev, turnStartedAtRef.current)
           const last = next[next.length - 1]
           if (last?.kind === 'assistant' && last.streaming) {
             next[next.length - 1] = {
@@ -521,9 +522,7 @@ export default function App(): React.JSX.Element {
         const finishedAt = nowIso()
         setMessages((prev) => {
           if (sessionId !== activeSessionIdRef.current) return prev
-          const next = [...prev].map((m) =>
-            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
-          )
+          const next = closeStreamingThinking(prev, turnStartedAtRef.current)
           const last = next[next.length - 1]
           if (last?.kind === 'assistant' && last.streaming) {
             next[next.length - 1] = {
@@ -560,10 +559,8 @@ export default function App(): React.JSX.Element {
         }))
         setMessages((prev) => {
           if (!stillCurrent()) return prev
-          const next = prev.map((m) =>
-            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
-          )
-          const last = next[next.length - 1]
+          const closed = closeStreamingThinking(prev, turnStartedAtRef.current)
+          const last = closed[closed.length - 1]
           const responseMs =
             turnStartedAtRef.current != null
               ? Date.now() - turnStartedAtRef.current
@@ -571,7 +568,7 @@ export default function App(): React.JSX.Element {
           const withClosed =
             last?.kind === 'assistant' && last.streaming
               ? [
-                  ...next.slice(0, -1),
+                  ...closed.slice(0, -1),
                   {
                     ...last,
                     streaming: false,
@@ -579,7 +576,7 @@ export default function App(): React.JSX.Element {
                     responseMs: last.responseMs ?? responseMs
                   }
                 ]
-              : [...next]
+              : [...closed]
           withClosed.push({
             kind: 'tool',
             id: event.id,
@@ -587,7 +584,8 @@ export default function App(): React.JSX.Element {
             arguments: event.arguments,
             status: 'running',
             createdAt: nowIso(),
-            model: turnModelRef.current ?? undefined
+            model: turnModelRef.current ?? undefined,
+            startedAt: Date.now()
           })
           messagesRef.current = withClosed
           persistSessionRef.current(sessionId, withClosed, historyRef.current)
@@ -599,11 +597,14 @@ export default function App(): React.JSX.Element {
           if (!stillCurrent()) return prev
           const next = prev.map((m) =>
             m.kind === 'tool' && m.id === event.id
-              ? {
-                  ...m,
-                  status: event.ok ? ('done' as const) : ('error' as const),
-                  result: event.result
-                }
+              ? closeToolMessage(
+                  {
+                    ...m,
+                    status: event.ok ? ('done' as const) : ('error' as const),
+                    result: event.result
+                  },
+                  turnStartedAtRef.current
+                )
               : m
           )
           messagesRef.current = next
@@ -670,15 +671,18 @@ export default function App(): React.JSX.Element {
         const finishedAt = nowIso()
         setMessages((prev) => {
           if (sessionId !== activeSessionIdRef.current) return prev
-          const next = prev.map((m) =>
-            m.kind === 'assistant' && m.streaming
-              ? {
-                  ...m,
-                  streaming: false,
-                  createdAt: finishedAt,
-                  responseMs: m.responseMs ?? responseMs
-                }
-              : m
+          const next = closeStreamingThinking(
+            prev.map((m) =>
+              m.kind === 'assistant' && m.streaming
+                ? {
+                    ...m,
+                    streaming: false,
+                    createdAt: finishedAt,
+                    responseMs: m.responseMs ?? responseMs
+                  }
+                : m
+            ),
+            turnStartedAtRef.current
           )
           messagesRef.current = next
           persistSessionRef.current(sessionId, next, historyRef.current)
