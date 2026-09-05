@@ -276,6 +276,12 @@ export type UiMessage =
       createdAt: string
       streaming?: boolean
       model?: string
+      /** Renderer-only: segment start epoch ms (live timer). */
+      startedAt?: number
+      /** Segment duration once thinking finishes. */
+      durationMs?: number
+      /** Wall-clock from user send to thinking finish. */
+      elapsedMs?: number
     }
   | {
       kind: 'tool'
@@ -286,6 +292,12 @@ export type UiMessage =
       createdAt: string
       result?: string
       model?: string
+      /** Renderer-only: segment start epoch ms (live timer). */
+      startedAt?: number
+      /** Segment duration once tool finishes. */
+      durationMs?: number
+      /** Wall-clock from user send to tool finish. */
+      elapsedMs?: number
     }
   | {
       kind: 'error'
