@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
-import { BrowserWindow } from 'electron'
 import type { ChatEvent, ChatMessage, ChatSendPayload } from '../shared/types'
+import { emitChatEvent } from './chat-events'
 import { compactIfNeeded, shouldCompact } from './context-compact'
 import {
   estimateChatMessagesTokens,
@@ -36,9 +36,7 @@ let activeAbort: AbortController | null = null
 let activeTurnId: string | null = null
 
 function emit(event: ChatEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('chat:event', event)
-  }
+  emitChatEvent(event)
 }
 
 function ms(startedAt: number, endedAt = Date.now()): string {
