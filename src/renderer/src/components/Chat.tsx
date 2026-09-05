@@ -663,7 +663,9 @@ export function Chat({
                 streaming={m.streaming}
                 createdAt={m.createdAt}
                 model={m.model}
-                startedAt={m.streaming ? activity.startedAt : undefined}
+                startedAt={m.startedAt}
+                durationMs={m.durationMs}
+                elapsedMs={m.elapsedMs}
               />
             )
           }
@@ -677,6 +679,9 @@ export function Chat({
                 result={m.result}
                 createdAt={m.createdAt}
                 model={m.model}
+                startedAt={m.startedAt}
+                durationMs={m.durationMs}
+                elapsedMs={m.elapsedMs}
               />
             )
           }
