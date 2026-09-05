@@ -1,4 +1,4 @@
-import type { McpToolInfo, UiMessage } from '../../../shared/types'
+import type { AgentSkill, McpToolInfo, UiMessage } from '../../../shared/types'
 import { estimateTokensFromChars, estimateTokensFromText } from '../../../shared/contextUsage'
 import type { ChatAttachment } from './attachments'
 
@@ -38,6 +38,71 @@ export function estimateToolSchemaTokens(tools: McpToolInfo[]): number {
     if (t.inputSchema) chars += JSON.stringify(t.inputSchema).length
   }
   return estimateTokensFromChars(chars)
+}
+
+/** Matches `loadSkillTool()` overhead sent with enabled skills in the agent. */
+function estimateLoadSkillToolTokens(): number {
+  const tool = {
+    type: 'function',
+    function: {
+      name: 'load_skill',
+      description:
+        'Load the full instructions for an enabled skill by name. Call this when a listed skill is relevant, then follow its instructions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Skill name from the catalog'
+          }
+        },
+        required: ['name']
+      }
+    }
+  }
+  return estimateTokensFromChars(JSON.stringify(tool).length)
+}
+
+export function estimateAgentToolTokens(
+  tools: McpToolInfo[],
+  skillsEnabled: boolean
+): number {
+  const mcp = estimateToolSchemaTokens(tools)
+  if (!skillsEnabled) return mcp
+  return mcp + estimateLoadSkillToolTokens()
+}
+
+export function buildSkillsContextText(skills: AgentSkill[]): string {
+  return skills
+    .map((s) => `### Skill: ${s.name}\n${s.description}\n\n${s.body}`.trim())
+    .join('\n\n')
+}
+
+export function estimateSummarizedTokens(messages: UiMessage[]): number {
+  return messages.reduce((n, m) => {
+    if (m.kind !== 'notice' || !m.summary) return n
+    return n + estimateTokensFromText(m.summary)
+  }, 0)
+}
+
+/** Live estimate of tokens that will be sent on the next prompt. */
+export function estimateLivePromptTokens(options: {
+  systemPrompt?: string
+  skills: AgentSkill[]
+  tools: McpToolInfo[]
+  messages: UiMessage[]
+  draft: string
+  attachments: ChatAttachment[]
+}): number {
+  const skillsText = buildSkillsContextText(options.skills)
+  return (
+    estimateTokensFromText(options.systemPrompt ?? '') +
+    estimateTokensFromText(skillsText) +
+    estimateAgentToolTokens(options.tools, options.skills.length > 0) +
+    estimateSummarizedTokens(options.messages) +
+    estimateMessageTokens(options.messages) +
+    estimateDraftTokens(options.draft, options.attachments)
+  )
 }
 
 export function estimateDraftTokens(
@@ -89,11 +154,11 @@ export function buildContextSlices(options: {
 }): ContextSlice[] {
   const system = estimateTokensFromText(options.systemPrompt ?? '')
   const skills = estimateTokensFromText(options.skillsText ?? '')
-  const tools = estimateToolSchemaTokens(options.tools)
-  const summarized = options.messages.reduce((n, m) => {
-    if (m.kind !== 'notice' || !m.summary) return n
-    return n + estimateTokensFromText(m.summary)
-  }, 0)
+  const tools = estimateAgentToolTokens(
+    options.tools,
+    (options.skillsText ?? '').length > 0
+  )
+  const summarized = estimateSummarizedTokens(options.messages)
   const draft = estimateDraftTokens(options.draft, options.attachments)
   const parts: Array<{ id: ContextSlice['id']; tokens: number }> = [
     { id: 'system', tokens: system },

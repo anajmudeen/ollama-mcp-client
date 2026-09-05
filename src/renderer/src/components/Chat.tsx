@@ -24,10 +24,10 @@ import {
 import {
   type ContextSlice,
   buildContextSlices,
+  buildSkillsContextText,
   contextUsageColor,
   estimateDraftTokens,
-  estimateMessageTokens,
-  estimateToolSchemaTokens,
+  estimateLivePromptTokens,
   formatTokenCount
 } from '../lib/contextUsage'
 
@@ -384,36 +384,54 @@ export function Chat({
     return last.contextUsed
   }, [messages])
 
+  const skillsText = useMemo(
+    () => buildSkillsContextText(slashSkills),
+    [slashSkills]
+  )
+
   const contextUsed = useMemo(() => {
+    const live = estimateLivePromptTokens({
+      systemPrompt: modelSystem,
+      skills: slashSkills,
+      tools,
+      messages,
+      draft,
+      attachments
+    })
+    // During an active turn, Ollama's prompt counts are a better floor than char/4.
     const draftTokens = estimateDraftTokens(draft, attachments)
     const reported =
       contextUsage && contextUsage.used > 0 ? contextUsage.used : 0
     const measured = Math.max(reported, lastReplyContext ?? 0)
-    if (measured > 0) return measured + draftTokens
-    return (
-      estimateMessageTokens(messages) +
-      estimateToolSchemaTokens(tools) +
-      draftTokens
-    )
-  }, [attachments, contextUsage, draft, lastReplyContext, messages, tools])
+    if (busy && measured > 0) {
+      return Math.max(live, measured + draftTokens)
+    }
+    // Idle meter: reflect the next prompt (skills/MCP toggles must update immediately).
+    return live
+  }, [
+    attachments,
+    busy,
+    contextUsage,
+    draft,
+    lastReplyContext,
+    messages,
+    modelSystem,
+    slashSkills,
+    tools
+  ])
 
   const contextSlices = useMemo(
     () =>
       buildContextSlices({
         used: contextUsed,
         systemPrompt: modelSystem,
-        skillsText: slashSkills
-          .map(
-            (s) =>
-              `### Skill: ${s.name}\n${s.description}\n\n${s.body}`.trim()
-          )
-          .join('\n\n'),
+        skillsText,
         tools,
         messages,
         draft,
         attachments
       }),
-    [attachments, contextUsed, draft, messages, modelSystem, slashSkills, tools]
+    [attachments, contextUsed, draft, messages, modelSystem, skillsText, tools]
   )
 
   const applySlashSkill = (skill: AgentSkill): void => {
