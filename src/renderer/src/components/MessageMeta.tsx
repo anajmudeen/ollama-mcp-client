@@ -5,6 +5,7 @@ import { contextUsageColor } from '../lib/contextUsage'
 interface MessageMetaProps {
   createdAt?: string
   responseMs?: number
+  elapsedMs?: number
   tokensPerSec?: number
   model?: string
   contextUsed?: number
@@ -52,6 +53,7 @@ export function formatTokensPerSec(n?: number): string {
 export function MessageMeta({
   createdAt,
   responseMs,
+  elapsedMs,
   tokensPerSec,
   model,
   contextUsed,
@@ -60,6 +62,7 @@ export function MessageMeta({
 }: MessageMetaProps): React.JSX.Element | null {
   const time = formatMessageTime(createdAt)
   const duration = formatResponseMs(responseMs)
+  const elapsed = formatResponseMs(elapsedMs)
   const speed = formatTokensPerSec(tokensPerSec)
   const modelLabel = model?.trim() || ''
   const hasContext =
@@ -71,7 +74,7 @@ export function MessageMeta({
     ? Math.max(0, (contextUsed / contextLimit) * 100)
     : 0
   const barPct = Math.min(100, pct)
-  if (!time && !duration && !speed && !modelLabel && !hasContext) return null
+  if (!time && !duration && !elapsed && !speed && !modelLabel && !hasContext) return null
 
   const parts: ReactNode[] = []
   const push = (node: ReactNode): void => {
@@ -101,8 +104,15 @@ export function MessageMeta({
   }
   if (duration) {
     push(
-      <span key="duration" title="Response time" className="text-[#8b9aab]">
+      <span key="duration" title="Total time" className="text-[#8b9aab]">
         {duration}
+      </span>
+    )
+  }
+  if (elapsed) {
+    push(
+      <span key="elapsed" title="Elapsed since send" className="text-[#8b9aab]">
+        {elapsed}
       </span>
     )
   }
