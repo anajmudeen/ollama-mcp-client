@@ -106,6 +106,17 @@ class McpManager {
     return tools
   }
 
+  resolveToolDisplay(
+    prefixedName: string
+  ): { serverName: string; toolName: string } | null {
+    for (const tool of this.listAllTools()) {
+      if (tool.prefixedName === prefixedName) {
+        return { serverName: tool.serverName, toolName: tool.name }
+      }
+    }
+    return null
+  }
+
   async refreshTools(serverId: string): Promise<McpToolInfo[]> {
     const conn = this.connections.get(serverId)
     if (!conn) return []

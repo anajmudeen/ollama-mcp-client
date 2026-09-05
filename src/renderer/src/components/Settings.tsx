@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { TelegramMirrorMode, TelegramStatus } from '../../../shared/types'
+import type { TelegramStatus } from '../../../shared/types'
 
 interface SettingsProps {
   open: boolean
@@ -9,13 +9,11 @@ interface SettingsProps {
   baseUrl: string
   showThinking: boolean
   telegramEnabled: boolean
-  telegramMirrorMode: TelegramMirrorMode
   telegramAllowedUserIds: number[]
   telegramStatus: TelegramStatus
   telegramTokenDraft: string
   onSetTelegramToken: (token: string | null) => void
   onSetTelegramEnabled: (enabled: boolean) => void
-  onSetTelegramMirrorMode: (mode: TelegramMirrorMode) => void
   onSetTelegramAllowedUserIds: (ids: number[]) => void
   onRefreshOllama: () => void
   onSetBaseUrl: (url: string) => void
@@ -30,13 +28,11 @@ export function Settings({
   baseUrl,
   showThinking,
   telegramEnabled,
-  telegramMirrorMode,
   telegramAllowedUserIds,
   telegramStatus,
   telegramTokenDraft,
   onSetTelegramToken,
   onSetTelegramEnabled,
-  onSetTelegramMirrorMode,
   onSetTelegramAllowedUserIds,
   onRefreshOllama,
   onSetBaseUrl,
@@ -195,26 +191,10 @@ export function Settings({
                     : 'Stopped'}
               </span>
             </div>
-            <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2.5">
-              <input
-                type="checkbox"
-                checked={telegramMirrorMode === 'full'}
-                onChange={(e) =>
-                  onSetTelegramMirrorMode(e.target.checked ? 'full' : 'final')
-                }
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#2a3a4d] bg-[#161d27] text-[#2d6cb5] focus:ring-[#2d6cb5]/40"
-              />
-              <span>
-                <span className="block text-sm text-[#e7ecf1]">
-                  Show live status on Telegram
-                </span>
-                <span className="mt-0.5 block text-xs text-[#6b7a8c]">
-                  When on, one status line updates live (thinking, tool calls with
-                  full tool names, writing). When off, only &quot;Processing…&quot;
-                  until the final reply.
-                </span>
-              </span>
-            </label>
+            <p className="mb-3 text-xs text-[#6b7a8c]">
+              While the model works, Telegram shows a live status line (thinking,
+              tool calls, writing), then the final reply.
+            </p>
             <label className="mb-1 block text-xs text-[#8b9aab]">
               Allowed user IDs
             </label>

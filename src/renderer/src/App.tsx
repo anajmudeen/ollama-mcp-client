@@ -6,7 +6,6 @@ import type {
   ChatSession,
   McpToolInfo,
   OllamaModel,
-  TelegramMirrorMode,
   TelegramStatus,
   UiMessage
 } from '../../shared/types'
@@ -57,8 +56,6 @@ export default function App(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showThinking, setShowThinking] = useState(false)
   const [telegramEnabled, setTelegramEnabled] = useState(false)
-  const [telegramMirrorMode, setTelegramMirrorMode] =
-    useState<TelegramMirrorMode>('full')
   const [telegramAllowedUserIds, setTelegramAllowedUserIds] = useState<number[]>(
     []
   )
@@ -316,7 +313,6 @@ export default function App(): React.JSX.Element {
       setShowThinking(Boolean(config.showThinking))
       showThinkingRef.current = Boolean(config.showThinking)
       setTelegramEnabled(Boolean(config.telegramEnabled))
-      setTelegramMirrorMode(config.telegramMirrorMode)
       setTelegramAllowedUserIds(config.telegramAllowedUserIds)
       setTelegramStatus(await window.api.telegram.getStatus())
       const sessionState = await window.api.sessions.list()
@@ -934,13 +930,6 @@ export default function App(): React.JSX.Element {
     setTelegramStatus(status)
   }
 
-  const handleSetTelegramMirrorMode = async (
-    mode: TelegramMirrorMode
-  ): Promise<void> => {
-    setTelegramMirrorMode(mode)
-    await window.api.telegram.setMirrorMode(mode)
-  }
-
   const handleSetTelegramAllowedUserIds = async (ids: number[]): Promise<void> => {
     const saved = await window.api.telegram.setAllowedUserIds(ids)
     setTelegramAllowedUserIds(saved)
@@ -1043,13 +1032,11 @@ export default function App(): React.JSX.Element {
         baseUrl={baseUrl}
         showThinking={showThinking}
         telegramEnabled={telegramEnabled}
-        telegramMirrorMode={telegramMirrorMode}
         telegramAllowedUserIds={telegramAllowedUserIds}
         telegramStatus={telegramStatus}
         telegramTokenDraft={telegramTokenDraft}
         onSetTelegramToken={(token) => void handleSetTelegramToken(token)}
         onSetTelegramEnabled={(enabled) => void handleSetTelegramEnabled(enabled)}
-        onSetTelegramMirrorMode={(mode) => void handleSetTelegramMirrorMode(mode)}
         onSetTelegramAllowedUserIds={(ids) =>
           void handleSetTelegramAllowedUserIds(ids)
         }

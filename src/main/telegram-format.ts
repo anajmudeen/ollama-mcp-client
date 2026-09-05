@@ -1,3 +1,5 @@
+import { mcpManager } from './mcp-manager'
+
 export const TELEGRAM_MAX_MESSAGE_CHARS = 4096
 export const TELEGRAM_TOOL_RESULT_CHARS = 500
 
@@ -114,16 +116,25 @@ export function shortToolLabel(name: string): string {
   return idx >= 0 ? name.slice(idx + 2) : name
 }
 
+export function formatTelegramToolDisplayLabel(prefixedName: string): string {
+  const resolved = mcpManager.resolveToolDisplay(prefixedName)
+  if (resolved) {
+    return `${resolved.serverName} · ${resolved.toolName}`
+  }
+  return shortToolLabel(prefixedName)
+}
+
 export function formatTelegramActivityThinking(): string {
   return '💭 Thinking…'
 }
 
 export function formatTelegramActivityToolStart(name: string): string {
-  return `🔧 Calling ${name}…`
+  return `🔧 Calling ${formatTelegramToolDisplayLabel(name)}…`
 }
 
 export function formatTelegramActivityToolDone(name: string, ok: boolean): string {
-  return ok ? `✅ ${name}` : `❌ ${name} failed`
+  const label = formatTelegramToolDisplayLabel(name)
+  return ok ? `✅ ${label}` : `❌ ${label} failed`
 }
 
 export function formatTelegramActivityWriting(): string {

@@ -11,9 +11,7 @@ import {
   getTelegramAllowedUserIds,
   getTelegramBotToken,
   getTelegramEnabled,
-  getTelegramMirrorMode,
-  setActiveSession,
-  setTelegramMirrorMode
+  setActiveSession
 } from './config-store'
 import { broadcastSessionsChanged } from './sessions-broadcast'
 import {
@@ -145,7 +143,6 @@ function registerHandlers(instance: Telegraf): void {
   })
 
   instance.command('help', async (ctx) => {
-    const mirrorMode = getTelegramMirrorMode()
     await ctx.reply(
       [
         'Commands:',
@@ -156,10 +153,8 @@ function registerHandlers(instance: Telegraf): void {
         '/switch <n|title> — switch active session',
         '/delete <n|title> — delete a session',
         '/current — show active session info',
-        '/mirror on|off|status — mirror mode (full vs final reply only)',
         '',
-        `Current session: ${activeSessionTitle()}`,
-        `Mirror mode: ${mirrorMode}`
+        `Current session: ${activeSessionTitle()}`
       ].join('\n')
     )
   })
@@ -261,23 +256,8 @@ function registerHandlers(instance: Telegraf): void {
   })
 
   instance.command('mirror', async (ctx) => {
-    const text = ctx.message && 'text' in ctx.message ? ctx.message.text : ''
-    const arg = text.replace(/^\/mirror(@\w+)?\s*/i, '').trim().toLowerCase()
-
-    if (arg === 'on') {
-      setTelegramMirrorMode('full')
-      await ctx.reply('Mirror mode: full (tools, thinking, and streaming)')
-      return
-    }
-    if (arg === 'off') {
-      setTelegramMirrorMode('final')
-      await ctx.reply('Mirror mode: final (assistant replies only)')
-      return
-    }
-
-    const mode = getTelegramMirrorMode()
     await ctx.reply(
-      `Mirror mode: ${mode}\n\nUse /mirror on or /mirror off to change.`
+      'Live status is always on: one line updates for thinking, tool calls, and writing, then the final reply.'
     )
   })
 
