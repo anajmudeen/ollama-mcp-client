@@ -155,11 +155,8 @@ export function startTelegramMirror(fns: TelegramSendFns): () => void {
 }
 
 export function setStreamMessageId(userId: number, messageId: number): void {
-  const state = streamByUser.get(userId) ?? {
-    messageId: null,
-    buffer: '',
-    lastEditAt: 0
-  }
+  const state = streamByUser.get(userId)
+  if (!state || state.messageId != null) return
   state.messageId = messageId
   state.lastEditAt = Date.now()
   streamByUser.set(userId, state)
