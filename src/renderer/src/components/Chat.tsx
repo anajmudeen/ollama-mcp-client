@@ -935,8 +935,11 @@ export function Chat({
                     const otherTags = m.tags.filter(
                       (tag) => !PRIMARY_TAGS.has(tag.toLowerCase())
                     )
+                    const tooltipParts: string[] = []
+                    if (m.size > 0) tooltipParts.push(formatBytes(m.size))
+                    if (otherTags.length > 0) tooltipParts.push(otherTags.join(' · '))
                     const tooltipText =
-                      otherTags.length > 0 ? otherTags.join(' · ') : undefined
+                      tooltipParts.length > 0 ? tooltipParts.join(' · ') : undefined
 
                     return (
                       <button
