@@ -6,6 +6,7 @@ import type {
   ChatSession,
   McpServerConfig,
   SessionsState,
+  TelegramMirrorMode,
   UiMessage
 } from '../shared/types'
 
@@ -13,7 +14,11 @@ const DEFAULT_CONFIG: AppConfig = {
   ollamaBaseUrl: 'http://127.0.0.1:11434',
   selectedModel: null,
   servers: [],
-  showThinking: false
+  showThinking: false,
+  telegramBotToken: null,
+  telegramEnabled: false,
+  telegramAllowedUserIds: [],
+  telegramMirrorMode: 'full'
 }
 
 interface StoreSchema extends AppConfig, SessionsState {
@@ -35,7 +40,17 @@ export function getConfig(): AppConfig {
     ollamaBaseUrl: store.get('ollamaBaseUrl', DEFAULT_CONFIG.ollamaBaseUrl),
     selectedModel: store.get('selectedModel', DEFAULT_CONFIG.selectedModel),
     servers: store.get('servers', DEFAULT_CONFIG.servers),
-    showThinking: store.get('showThinking', DEFAULT_CONFIG.showThinking)
+    showThinking: store.get('showThinking', DEFAULT_CONFIG.showThinking),
+    telegramBotToken: store.get('telegramBotToken', DEFAULT_CONFIG.telegramBotToken),
+    telegramEnabled: store.get('telegramEnabled', DEFAULT_CONFIG.telegramEnabled),
+    telegramAllowedUserIds: store.get(
+      'telegramAllowedUserIds',
+      DEFAULT_CONFIG.telegramAllowedUserIds
+    ),
+    telegramMirrorMode: store.get(
+      'telegramMirrorMode',
+      DEFAULT_CONFIG.telegramMirrorMode
+    )
   }
 }
 
@@ -64,6 +79,50 @@ export function getShowThinking(): boolean {
 export function setShowThinking(enabled: boolean): boolean {
   store.set('showThinking', enabled)
   return enabled
+}
+
+export function getTelegramBotToken(): string | null {
+  return store.get('telegramBotToken', DEFAULT_CONFIG.telegramBotToken)
+}
+
+export function setTelegramBotToken(token: string | null): string | null {
+  const trimmed = token?.trim() || null
+  store.set('telegramBotToken', trimmed)
+  return trimmed
+}
+
+export function getTelegramEnabled(): boolean {
+  return store.get('telegramEnabled', DEFAULT_CONFIG.telegramEnabled)
+}
+
+export function setTelegramEnabled(enabled: boolean): boolean {
+  store.set('telegramEnabled', enabled)
+  return enabled
+}
+
+export function getTelegramAllowedUserIds(): number[] {
+  return [...store.get('telegramAllowedUserIds', DEFAULT_CONFIG.telegramAllowedUserIds)]
+}
+
+export function setTelegramAllowedUserIds(ids: number[]): number[] {
+  const unique = [...new Set(ids.filter((id) => Number.isFinite(id)))]
+  store.set('telegramAllowedUserIds', unique)
+  return unique
+}
+
+export function getTelegramMirrorMode(): TelegramMirrorMode {
+  return store.get('telegramMirrorMode', DEFAULT_CONFIG.telegramMirrorMode)
+}
+
+export function setTelegramMirrorMode(mode: TelegramMirrorMode): TelegramMirrorMode {
+  store.set('telegramMirrorMode', mode)
+  return mode
+}
+
+export function addTelegramAllowedUserId(id: number): number[] {
+  const ids = getTelegramAllowedUserIds()
+  if (!ids.includes(id)) ids.push(id)
+  return setTelegramAllowedUserIds(ids)
 }
 
 export function listServers(): McpServerConfig[] {

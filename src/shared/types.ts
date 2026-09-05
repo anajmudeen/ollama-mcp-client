@@ -31,12 +31,24 @@ export interface CatalogServer {
   install?: CatalogInstall
 }
 
+export type TelegramMirrorMode = 'full' | 'final'
+
 export interface AppConfig {
   ollamaBaseUrl: string
   selectedModel: string | null
   servers: McpServerConfig[]
   /** When true, model reasoning/thinking is shown in the chat transcript. */
   showThinking: boolean
+  telegramBotToken: string | null
+  telegramEnabled: boolean
+  telegramAllowedUserIds: number[]
+  telegramMirrorMode: TelegramMirrorMode
+}
+
+export interface TelegramStatus {
+  running: boolean
+  error?: string
+  botUsername?: string
 }
 
 export interface OllamaModel {
