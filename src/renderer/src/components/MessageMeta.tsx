@@ -1,11 +1,17 @@
 import type { ReactNode } from 'react'
 import { formatTokenCount } from '../../../shared/contextUsage'
 import { contextUsageColor } from '../lib/contextUsage'
+import { useSegmentTimer } from '../hooks/useSegmentTimer'
 
 interface MessageMetaProps {
   createdAt?: string
   responseMs?: number
   elapsedMs?: number
+  liveTotal?: boolean
+  segmentActive?: boolean
+  segmentStartedAt?: number
+  segmentDurationMs?: number
+  totalStartedAt?: number
   tokensPerSec?: number
   model?: string
   contextUsed?: number
@@ -54,6 +60,11 @@ export function MessageMeta({
   createdAt,
   responseMs,
   elapsedMs,
+  liveTotal,
+  segmentActive,
+  segmentStartedAt,
+  segmentDurationMs,
+  totalStartedAt,
   tokensPerSec,
   model,
   contextUsed,
@@ -61,7 +72,18 @@ export function MessageMeta({
   align = 'left'
 }: MessageMetaProps): React.JSX.Element | null {
   const time = formatMessageTime(createdAt)
-  const duration = formatResponseMs(responseMs)
+  const segment = useSegmentTimer({
+    active: Boolean(segmentActive),
+    startedAt: segmentStartedAt,
+    durationMs: segmentDurationMs
+  })
+  const total = useSegmentTimer({
+    active: Boolean(liveTotal && totalStartedAt),
+    startedAt: totalStartedAt,
+    durationMs: responseMs
+  })
+  const duration = liveTotal ? total : formatResponseMs(responseMs)
+  const segmentLabel = segmentActive ? segment : formatResponseMs(segmentDurationMs)
   const elapsed = formatResponseMs(elapsedMs)
   const speed = formatTokensPerSec(tokensPerSec)
   const modelLabel = model?.trim() || ''
@@ -74,7 +96,8 @@ export function MessageMeta({
     ? Math.max(0, (contextUsed / contextLimit) * 100)
     : 0
   const barPct = Math.min(100, pct)
-  if (!time && !duration && !elapsed && !speed && !modelLabel && !hasContext) return null
+  if (!time && !duration && !segmentLabel && !elapsed && !speed && !modelLabel && !hasContext)
+    return null
 
   const parts: ReactNode[] = []
   const push = (node: ReactNode): void => {
@@ -101,6 +124,13 @@ export function MessageMeta({
   }
   if (time) {
     push(<span key="time">{time}</span>)
+  }
+  if (segmentLabel) {
+    push(
+      <span key="segment" title="Reply time" className="text-[#8b9aab]">
+        {segmentLabel}
+      </span>
+    )
   }
   if (duration) {
     push(

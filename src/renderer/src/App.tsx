@@ -18,7 +18,8 @@ import { Sidebar } from './components/Sidebar'
 import { SkillsPage } from './components/SkillsPage'
 import {
   closeStreamingThinking,
-  closeToolMessage
+  closeToolMessage,
+  segmentDurationMs
 } from './lib/segmentTiming'
 
 function uid(): string {
@@ -367,7 +368,8 @@ export default function App(): React.JSX.Element {
             content,
             createdAt: nowIso(),
             streaming: true,
-            model: turnModelRef.current ?? undefined
+            model: turnModelRef.current ?? undefined,
+            startedAt: Date.now()
           })
         }
         messagesRef.current = next
@@ -480,6 +482,7 @@ export default function App(): React.JSX.Element {
               content: event.content || last.content,
               streaming: false,
               createdAt: finishedAt,
+              durationMs: segmentDurationMs(last.startedAt),
               responseMs,
               contextUsed: event.contextUsed ?? last.contextUsed,
               contextLimit: event.contextLimit ?? last.contextLimit,
@@ -531,6 +534,7 @@ export default function App(): React.JSX.Element {
               images: dataUrls,
               streaming: false,
               createdAt: finishedAt,
+              durationMs: segmentDurationMs(last.startedAt),
               responseMs
             }
           } else {
@@ -573,6 +577,7 @@ export default function App(): React.JSX.Element {
                     ...last,
                     streaming: false,
                     createdAt: nowIso(),
+                    durationMs: segmentDurationMs(last.startedAt),
                     responseMs: last.responseMs ?? responseMs
                   }
                 ]
@@ -678,6 +683,7 @@ export default function App(): React.JSX.Element {
                     ...m,
                     streaming: false,
                     createdAt: finishedAt,
+                    durationMs: segmentDurationMs(m.startedAt),
                     responseMs: m.responseMs ?? responseMs
                   }
                 : m

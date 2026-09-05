@@ -3,6 +3,7 @@ import type { AgentSkill, McpToolInfo, OllamaModel, UiMessage } from '../../../s
 import type { ActivityState } from './ActivityIndicator'
 import { DownloadImageButton } from './DownloadImageButton'
 import { ActivityIndicator } from './ActivityIndicator'
+import { AssistantReplyTimer } from './AssistantReplyTimer'
 import { CopyButton } from './CopyButton'
 import { ImageLightbox } from './ImageLightbox'
 import { MarkdownContent } from './MarkdownContent'
@@ -176,9 +177,14 @@ export function Chat({
   const hasStreamingAssistant = messages.some(
     (m) => m.kind === 'assistant' && m.streaming
   )
-  /** Hide generating spinner once reply text streams; keep it for image gen. */
+  const hasRunningTool = messages.some(
+    (m) => m.kind === 'tool' && m.status === 'running'
+  )
+  /** Hide activity once transcript cards own the phase (reply text, tool call). */
   const showActivity =
-    busy && !(activity.phase === 'generating' && hasStreamingAssistant)
+    busy &&
+    !(activity.phase === 'generating' && hasStreamingAssistant) &&
+    !(activity.phase === 'tool' && hasRunningTool)
   const hasImageAttachment = attachments.some((a) => a.kind === 'image')
   const modelNames = models.map((m) => m.name)
 
@@ -605,10 +611,21 @@ export function Chat({
             )
           }
           if (m.kind === 'assistant') {
+            const showReplyTimer =
+              Boolean(m.streaming && m.startedAt) || m.durationMs != null
             return (
               <div key={m.id} className="msg-enter group/assistant flex justify-start">
                 <div className="max-w-[85%]">
-                  <div className="relative rounded-2xl rounded-bl-md border border-[#2a3a4d] bg-[#161d27] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1]">
+                  <div
+                    className={`relative rounded-2xl rounded-bl-md border border-[#2a3a4d] bg-[#161d27] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1] ${
+                      showReplyTimer ? 'pt-6' : ''
+                    }`}
+                  >
+                    <AssistantReplyTimer
+                      active={Boolean(m.streaming)}
+                      startedAt={m.startedAt}
+                      durationMs={m.durationMs}
+                    />
                     {m.images && m.images.length > 0 && (
                       <div className="flex flex-col gap-2">
                         {m.images.map((src, i) => (
@@ -643,7 +660,9 @@ export function Chat({
                   </div>
                   <MessageMeta
                     createdAt={m.createdAt}
-                    responseMs={m.streaming ? undefined : m.responseMs}
+                    liveTotal={m.streaming}
+                    totalStartedAt={m.streaming ? activity.startedAt : undefined}
+                    responseMs={m.responseMs}
                     tokensPerSec={m.streaming ? undefined : m.tokensPerSec}
                     model={m.model}
                     contextUsed={m.streaming ? undefined : m.contextUsed}

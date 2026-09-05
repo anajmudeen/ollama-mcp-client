@@ -256,6 +256,10 @@ export type UiMessage =
       content: string
       createdAt: string
       streaming?: boolean
+      /** Renderer-only: reply segment start epoch ms (live timer). */
+      startedAt?: number
+      /** Reply segment duration once streaming finishes. */
+      durationMs?: number
       /** Wall-clock duration from user send to this reply finishing. */
       responseMs?: number
       /** Generated tokens per second for this reply. */

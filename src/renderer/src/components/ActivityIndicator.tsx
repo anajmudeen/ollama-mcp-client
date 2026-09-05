@@ -36,7 +36,7 @@ const PHASE_META: Record<
     ring: 'rgba(125, 211, 168, 0.35)'
   },
   synthesizing: {
-    label: 'Synthesizing',
+    label: 'Continuing',
     accent: '#b39ddb',
     ring: 'rgba(179, 157, 219, 0.35)'
   },
