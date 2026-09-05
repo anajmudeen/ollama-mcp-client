@@ -4,41 +4,92 @@ import {
   getTelegramAllowedUserIds,
   getTelegramMirrorMode
 } from './config-store'
-import { chunkTelegramText, formatToolResultLine, formatToolStartLine } from './telegram-format'
+import {
+  formatTelegramActivityDone,
+  formatTelegramActivityFromStatus,
+  formatTelegramActivityToolDone,
+  formatTelegramActivityToolStart,
+  formatTelegramActivityWriting
+} from './telegram-format'
 
 export interface TelegramSendFns {
   sendText: (userId: number, text: string) => Promise<void>
-  sendTextChunks: (userId: number, text: string) => Promise<void>
+  /** Assistant replies: Markdown → Telegram HTML. */
+  sendMarkdownChunks: (userId: number, markdown: string) => Promise<void>
+  sendStreamMessage: (userId: number, text: string) => Promise<number>
   editText: (userId: number, messageId: number, text: string) => Promise<void>
   sendPhoto: (userId: number, base64: string, caption?: string) => Promise<void>
   sendTyping: (userId: number) => Promise<void>
 }
 
-type StreamState = {
-  messageId: number | null
-  buffer: string
-  lastEditAt: number
+type UserMirrorState = {
+  statusMessageId: number | null
 }
 
-const streamByUser = new Map<number, StreamState>()
+const mirrorByUser = new Map<number, UserMirrorState>()
 let sendFns: TelegramSendFns | null = null
+let activeTurnId: string | null = null
+let eventChain: Promise<void> = Promise.resolve()
+
+function emptyState(): UserMirrorState {
+  return { statusMessageId: null }
+}
+
+function userState(userId: number): UserMirrorState {
+  let state = mirrorByUser.get(userId)
+  if (!state) {
+    state = emptyState()
+    mirrorByUser.set(userId, state)
+  }
+  return state
+}
 
 export function resetTelegramMirrorState(): void {
-  streamByUser.clear()
+  mirrorByUser.clear()
+  activeTurnId = null
+}
+
+/** Immediate feedback when a Telegram user sends a message (before the agent emits events). */
+export function beginTelegramActivity(turnId: string, text: string): void {
+  if (!sendFns) return
+  activeTurnId = turnId
+  mirrorByUser.clear()
+  void forEachAllowed(async (userId) => {
+    await sendFns!.sendTyping(userId)
+    await setActivityStatus(userId, text)
+  }).catch((err) => {
+    console.error('[telegram-mirror] begin activity error', err)
+  })
+}
+
+function resetForTurn(turnId: string | undefined): void {
+  if (!turnId || turnId === activeTurnId) return
+  activeTurnId = turnId
+  mirrorByUser.clear()
 }
 
 async function forEachAllowed(
   fn: (userId: number) => Promise<void>
 ): Promise<void> {
-  const ids = getTelegramAllowedUserIds()
-  for (const userId of ids) {
+  for (const userId of getTelegramAllowedUserIds()) {
     await fn(userId)
+  }
+}
+
+async function setActivityStatus(userId: number, text: string): Promise<void> {
+  if (!sendFns || !text) return
+  const state = userState(userId)
+  if (state.statusMessageId == null) {
+    state.statusMessageId = await sendFns.sendStreamMessage(userId, text)
+  } else {
+    await sendFns.editText(userId, state.statusMessageId, text)
   }
 }
 
 async function handleEvent(event: ChatEvent): Promise<void> {
   if (!sendFns) return
-  const mode = getTelegramMirrorMode()
+
+  if (event.turnId) resetForTurn(event.turnId)
 
   if (event.type === 'error') {
     await forEachAllowed((userId) =>
@@ -47,11 +98,25 @@ async function handleEvent(event: ChatEvent): Promise<void> {
     return
   }
 
+  const mode = getTelegramMirrorMode()
+
   if (mode === 'final') {
-    if (event.type === 'assistant_done' && event.content) {
-      await forEachAllowed((userId) =>
-        sendFns!.sendTextChunks(userId, event.content)
-      )
+    if (event.type === 'assistant_done') {
+      const finalText = event.content ?? ''
+      await forEachAllowed(async (userId) => {
+        const state = userState(userId)
+        if (state.statusMessageId != null) {
+          await sendFns!.editText(
+            userId,
+            state.statusMessageId,
+            formatTelegramActivityDone()
+          )
+        }
+        if (finalText) {
+          await sendFns!.sendMarkdownChunks(userId, finalText)
+        }
+        mirrorByUser.set(userId, emptyState())
+      })
     } else if (event.type === 'assistant_images') {
       for (const img of event.images) {
         await forEachAllowed((userId) => sendFns!.sendPhoto(userId, img))
@@ -60,77 +125,57 @@ async function handleEvent(event: ChatEvent): Promise<void> {
     return
   }
 
-  // full mode
+  // full mode: one short activity line (edited in place), then the final reply.
   switch (event.type) {
-    case 'status':
-      await forEachAllowed((userId) => sendFns!.sendTyping(userId))
-      if (event.detail) {
-        await forEachAllowed((userId) =>
-          sendFns!.sendText(userId, `⏳ ${event.detail}`)
-        )
-      }
-      break
-    case 'thinking':
-      if (event.content.trim()) {
-        await forEachAllowed((userId) =>
-          sendFns!.sendText(userId, `💭 ${event.content}`)
-        )
-      }
-      break
-    case 'tool_start':
-      await forEachAllowed((userId) =>
-        sendFns!.sendText(
-          userId,
-          formatToolStartLine(event.name, event.arguments)
-        )
-      )
-      break
-    case 'tool_result':
-      await forEachAllowed((userId) =>
-        sendFns!.sendText(
-          userId,
-          formatToolResultLine(event.name, event.ok, event.result)
-        )
-      )
-      break
-    case 'chunk': {
+    case 'status': {
+      const text = formatTelegramActivityFromStatus(event.phase, event.detail)
       await forEachAllowed(async (userId) => {
-        const state = streamByUser.get(userId) ?? {
-          messageId: null,
-          buffer: '',
-          lastEditAt: 0
-        }
-        state.buffer += event.content
-        streamByUser.set(userId, state)
-
-        const now = Date.now()
-        if (state.messageId == null) {
-          const chunks = chunkTelegramText(state.buffer)
-          await sendFns!.sendText(userId, chunks[0] ?? '…')
-          // messageId set by sendFns implementation via callback — see Task 6
-        } else if (now - state.lastEditAt >= 1000) {
-          state.lastEditAt = now
-          const chunks = chunkTelegramText(state.buffer)
-          await sendFns!.editText(userId, state.messageId, chunks[0] ?? '…')
-        }
+        await sendFns!.sendTyping(userId)
+        if (text) await setActivityStatus(userId, text)
       })
       break
     }
-    case 'assistant_done': {
+    case 'thinking':
+      // Backup when the model streams thinking without a status line first.
+      if (event.content.trim()) {
+        await forEachAllowed(async (userId) => {
+          await setActivityStatus(userId, '💭 Thinking…')
+        })
+      }
+      break
+    case 'tool_start':
       await forEachAllowed(async (userId) => {
-        const state = streamByUser.get(userId)
-        if (state?.messageId != null) {
-          const chunks = chunkTelegramText(event.content || state.buffer)
-          await sendFns!.editText(userId, state.messageId, chunks[0] ?? '')
-          if (chunks.length > 1) {
-            for (let i = 1; i < chunks.length; i++) {
-              await sendFns!.sendText(userId, chunks[i]!)
-            }
-          }
-        } else if (event.content) {
-          await sendFns!.sendTextChunks(userId, event.content)
+        await setActivityStatus(userId, formatTelegramActivityToolStart(event.name))
+      })
+      break
+    case 'tool_result':
+      await forEachAllowed(async (userId) => {
+        await setActivityStatus(
+          userId,
+          formatTelegramActivityToolDone(event.name, event.ok)
+        )
+      })
+      break
+    case 'chunk':
+      await forEachAllowed(async (userId) => {
+        await setActivityStatus(userId, formatTelegramActivityWriting())
+      })
+      break
+    case 'assistant_done': {
+      const finalText = event.content ?? ''
+      await forEachAllowed(async (userId) => {
+        const state = userState(userId)
+        if (state.statusMessageId != null) {
+          await sendFns!.editText(
+            userId,
+            state.statusMessageId,
+            formatTelegramActivityDone()
+          )
         }
-        streamByUser.delete(userId)
+        if (finalText) {
+          await sendFns!.sendMarkdownChunks(userId, finalText)
+        }
+        mirrorByUser.set(userId, emptyState())
       })
       break
     }
@@ -140,7 +185,8 @@ async function handleEvent(event: ChatEvent): Promise<void> {
       }
       break
     case 'done':
-      streamByUser.clear()
+      mirrorByUser.clear()
+      activeTurnId = null
       break
     default:
       break
@@ -150,14 +196,10 @@ async function handleEvent(event: ChatEvent): Promise<void> {
 export function startTelegramMirror(fns: TelegramSendFns): () => void {
   sendFns = fns
   return onChatEvent((event) => {
-    void handleEvent(event)
+    eventChain = eventChain
+      .then(() => handleEvent(event))
+      .catch((err) => {
+        console.error('[telegram-mirror] event error', err)
+      })
   })
-}
-
-export function setStreamMessageId(userId: number, messageId: number): void {
-  const state = streamByUser.get(userId)
-  if (!state || state.messageId != null) return
-  state.messageId = messageId
-  state.lastEditAt = Date.now()
-  streamByUser.set(userId, state)
 }

@@ -85,6 +85,7 @@ export default function App(): React.JSX.Element {
   const activeTurnIdRef = useRef<string | null>(null)
   const turnStartedAtRef = useRef<number | null>(null)
   const turnModelRef = useRef<string | null>(null)
+  const selectedModelRef = useRef<string | null>(null)
   const showThinkingRef = useRef(false)
   const persistSessionRef = useRef<
     (
@@ -239,6 +240,10 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     showThinkingRef.current = showThinking
   }, [showThinking])
+
+  useEffect(() => {
+    selectedModelRef.current = selectedModel
+  }, [selectedModel])
 
   const flushActiveSession = useCallback(async (): Promise<void> => {
     if (persistTimer.current !== null) {
@@ -437,6 +442,25 @@ export default function App(): React.JSX.Element {
 
       const sessionId = activeSessionIdRef.current
       if (!sessionId) return
+
+      // Telegram (or other main-process) turns never set activeTurnIdRef in the renderer.
+      if (
+        event.turnId &&
+        !activeTurnIdRef.current &&
+        event.type !== 'user' &&
+        event.type !== 'done'
+      ) {
+        activeTurnIdRef.current = event.turnId
+        turnStartedAtRef.current = Date.now()
+        turnModelRef.current = selectedModelRef.current
+        setBusy(true)
+        setActivity({
+          phase: 'thinking',
+          detail: 'Waiting for the model…',
+          thinking: '',
+          startedAt: Date.now()
+        })
+      }
 
       const turnOk =
         Boolean(event.turnId) &&

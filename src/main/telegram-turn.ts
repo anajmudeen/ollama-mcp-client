@@ -8,6 +8,7 @@ import {
   updateSession
 } from './config-store'
 import { broadcastSessionsChanged } from './sessions-broadcast'
+import { beginTelegramActivity } from './telegram-mirror'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -55,6 +56,8 @@ export async function runTelegramTurn(
     uiMessages: nextUi
   })
   broadcastSessionsChanged()
+
+  beginTelegramActivity(turnId, '⏳ Processing your message…')
 
   void runAgentTurn({
     model,

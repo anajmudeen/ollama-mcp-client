@@ -230,6 +230,12 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
     `[agent] turn start id=${tid} model=${payload.model} messages=${payload.messages.length} tools=${tools.length}`
   )
 
+  emitTurn({
+    type: 'status',
+    phase: 'thinking',
+    detail: 'Processing your request…'
+  })
+
   // Image-generation models use /api/generate instead of the chat/tools loop.
   const modelInfo = await getModelInfo(payload.model).catch(() => null)
   const contextLimit = await resolveContextLength(payload.model, modelInfo)

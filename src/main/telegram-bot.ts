@@ -16,10 +16,13 @@ import {
   setTelegramMirrorMode
 } from './config-store'
 import { broadcastSessionsChanged } from './sessions-broadcast'
-import { chunkTelegramText } from './telegram-format'
+import {
+  chunkTelegramHtml,
+  chunkTelegramText,
+  markdownToTelegramHtml
+} from './telegram-format'
 import {
   resetTelegramMirrorState,
-  setStreamMessageId,
   startTelegramMirror,
   type TelegramSendFns
 } from './telegram-mirror'
@@ -39,17 +42,35 @@ function isPrivateChat(ctx: Context): boolean {
 function createSendFns(telegram: Telegraf['telegram']): TelegramSendFns {
   return {
     sendText: async (userId, text) => {
-      const msg = await telegram.sendMessage(userId, text)
-      setStreamMessageId(userId, msg.message_id)
+      await telegram.sendMessage(userId, text)
     },
-    sendTextChunks: async (userId, text) => {
-      const chunks = chunkTelegramText(text)
-      for (const chunk of chunks) {
-        await telegram.sendMessage(userId, chunk)
+    sendMarkdownChunks: async (userId, markdown) => {
+      const html = markdownToTelegramHtml(markdown)
+      const chunks = chunkTelegramHtml(html)
+      const plainChunks = chunkTelegramText(markdown)
+      for (let i = 0; i < chunks.length; i++) {
+        const htmlChunk = chunks[i]!
+        try {
+          await telegram.sendMessage(userId, htmlChunk, { parse_mode: 'HTML' })
+        } catch {
+          await telegram.sendMessage(userId, plainChunks[i] ?? htmlChunk)
+        }
       }
     },
+    sendStreamMessage: async (userId, text) => {
+      const msg = await telegram.sendMessage(userId, text)
+      return msg.message_id
+    },
     editText: async (userId, messageId, text) => {
-      await telegram.editMessageText(userId, messageId, undefined, text)
+      try {
+        await telegram.editMessageText(userId, messageId, undefined, text)
+      } catch (err) {
+        // Telegram returns 400 when edit content is unchanged — safe to ignore.
+        const message = err instanceof Error ? err.message : String(err)
+        if (!message.includes('message is not modified')) {
+          throw err
+        }
+      }
     },
     sendPhoto: async (userId, base64, caption) => {
       await telegram.sendPhoto(userId, Input.fromBuffer(Buffer.from(base64, 'base64')), {
@@ -90,19 +111,23 @@ async function authMiddleware(ctx: Context, next: () => Promise<void>): Promise<
   const userId = ctx.from?.id
   if (userId == null) return
 
-  const text = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined
-  const isStart = text?.startsWith('/start') ?? false
-  const allowlist = getTelegramAllowedUserIds()
+  let allowlist = getTelegramAllowedUserIds()
 
-  if (isStart && allowlist.length === 0) {
-    addTelegramAllowedUserId(userId)
+  // First contact: claim owner when allowlist is still empty (/start or any message).
+  if (allowlist.length === 0) {
+    allowlist = addTelegramAllowedUserId(userId)
+    unauthorizedNotified.delete(userId)
     return next()
   }
 
   if (!allowlist.includes(userId)) {
     if (!unauthorizedNotified.has(userId)) {
       unauthorizedNotified.add(userId)
-      await ctx.reply('Unauthorized')
+      await ctx.reply(
+        `Unauthorized. Your Telegram user ID is ${userId}.\n\n` +
+          'Ask the bot owner to add this ID in the desktop app: Settings → Telegram → Allowed user IDs.\n' +
+          'Or send /start if you are setting up this bot for the first time.'
+      )
     }
     return
   }
@@ -260,6 +285,11 @@ function registerHandlers(instance: Telegraf): void {
     const text = ctx.message.text
     if (text.startsWith('/')) return
 
+    const userId = ctx.from?.id
+    if (userId != null) {
+      void ctx.sendChatAction('typing')
+    }
+
     const result = await runTelegramTurn(text)
     if (!result.ok) {
       await ctx.reply(result.error)
@@ -313,13 +343,23 @@ export async function startTelegramBot(): Promise<void> {
     registerHandlers(instance)
 
     stopMirror = startTelegramMirror(createSendFns(instance.telegram))
-    await instance.launch()
+
+    const me = await instance.telegram.getMe()
     bot = instance
     running = true
     lastError = undefined
-
-    const me = await instance.telegram.getMe()
     botUsername = me.username
+
+    // launch() runs until stop() — must not block app startup
+    void instance.launch().catch((err) => {
+      lastError = err instanceof Error ? err.message : String(err)
+      running = false
+      bot = null
+      stopMirror?.()
+      stopMirror = null
+      resetTelegramMirrorState()
+      console.error('[telegram] bot stopped:', lastError)
+    })
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err)
     running = false

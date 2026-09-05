@@ -206,10 +206,11 @@ export function Settings({
               />
               <span>
                 <span className="block text-sm text-[#e7ecf1]">
-                  Stream tool calls &amp; thinking
+                  Show activity status on Telegram
                 </span>
                 <span className="mt-0.5 block text-xs text-[#6b7a8c]">
-                  When off, only the final assistant reply is mirrored to Telegram.
+                  When on, Telegram gets short status lines while the model works, then the final reply.
+                  Off sends only the final reply.
                 </span>
               </span>
             </label>
