@@ -119,12 +119,11 @@ export function formatTelegramActivityThinking(): string {
 }
 
 export function formatTelegramActivityToolStart(name: string): string {
-  return `🔧 Calling ${shortToolLabel(name)}…`
+  return `🔧 Calling ${name}…`
 }
 
 export function formatTelegramActivityToolDone(name: string, ok: boolean): string {
-  const label = shortToolLabel(name)
-  return ok ? `✅ ${label}` : `❌ ${label} failed`
+  return ok ? `✅ ${name}` : `❌ ${name} failed`
 }
 
 export function formatTelegramActivityWriting(): string {

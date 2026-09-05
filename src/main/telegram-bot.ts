@@ -65,9 +65,9 @@ function createSendFns(telegram: Telegraf['telegram']): TelegramSendFns {
       try {
         await telegram.editMessageText(userId, messageId, undefined, text)
       } catch (err) {
-        // Telegram returns 400 when edit content is unchanged — safe to ignore.
         const message = err instanceof Error ? err.message : String(err)
         if (!message.includes('message is not modified')) {
+          console.error('[telegram] editMessageText failed:', message)
           throw err
         }
       }

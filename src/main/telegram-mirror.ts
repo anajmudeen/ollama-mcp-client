@@ -50,16 +50,17 @@ export function resetTelegramMirrorState(): void {
 }
 
 /** Immediate feedback when a Telegram user sends a message (before the agent emits events). */
-export function beginTelegramActivity(turnId: string, text: string): void {
+export async function beginTelegramActivity(
+  turnId: string,
+  text: string
+): Promise<void> {
   if (!sendFns) return
   activeTurnId = turnId
   mirrorByUser.clear()
-  void forEachAllowed(async (userId) => {
-    await sendFns!.sendTyping(userId)
+  for (const userId of getTelegramAllowedUserIds()) {
+    await sendFns.sendTyping(userId)
     await setActivityStatus(userId, text)
-  }).catch((err) => {
-    console.error('[telegram-mirror] begin activity error', err)
-  })
+  }
 }
 
 function resetForTurn(turnId: string | undefined): void {

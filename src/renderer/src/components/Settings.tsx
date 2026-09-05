@@ -206,11 +206,12 @@ export function Settings({
               />
               <span>
                 <span className="block text-sm text-[#e7ecf1]">
-                  Show activity status on Telegram
+                  Show live status on Telegram
                 </span>
                 <span className="mt-0.5 block text-xs text-[#6b7a8c]">
-                  When on, Telegram gets short status lines while the model works, then the final reply.
-                  Off sends only the final reply.
+                  When on, one status line updates live (thinking, tool calls with
+                  full tool names, writing). When off, only &quot;Processing…&quot;
+                  until the final reply.
                 </span>
               </span>
             </label>

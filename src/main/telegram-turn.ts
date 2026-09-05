@@ -57,7 +57,7 @@ export async function runTelegramTurn(
   })
   broadcastSessionsChanged()
 
-  beginTelegramActivity(turnId, '⏳ Processing your message…')
+  await beginTelegramActivity(turnId, '⏳ Processing your message…')
 
   void runAgentTurn({
     model,
