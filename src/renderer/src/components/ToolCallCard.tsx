@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from 'react'
+import { useSegmentTimer } from '../hooks/useSegmentTimer'
 import { MessageMeta } from './MessageMeta'
 
 interface ToolCallCardProps {
@@ -6,6 +7,9 @@ interface ToolCallCardProps {
   arguments: Record<string, unknown>
   status: 'running' | 'done' | 'error'
   result?: string
+  startedAt?: number
+  durationMs?: number
+  elapsedMs?: number
   createdAt?: string
   model?: string
 }
@@ -27,6 +31,9 @@ export function ToolCallCard({
   arguments: args,
   status,
   result,
+  startedAt,
+  durationMs,
+  elapsedMs,
   createdAt,
   model
 }: ToolCallCardProps): React.JSX.Element {
@@ -36,6 +43,11 @@ export function ToolCallCard({
     result && result.length > 4000 ? `${result.slice(0, 4000)}\n…` : result
   const shortName = name.includes('__') ? name.split('__').slice(1).join('__') : name
   const running = status === 'running'
+  const segmentLabel = useSegmentTimer({
+    active: running,
+    startedAt,
+    durationMs
+  })
 
   const style = {
     '--activity-accent': '#7dd3a8',
@@ -72,7 +84,14 @@ export function ToolCallCard({
                     <span>.</span>
                     <span>.</span>
                   </span>
-                  <span className="ml-auto truncate font-mono text-[11px] text-[#6b7a8c]">
+                  {segmentLabel ? (
+                    <span className="ml-auto font-mono text-[11px] tabular-nums text-[#6b7a8c]">
+                      {segmentLabel}
+                    </span>
+                  ) : null}
+                  <span
+                    className={`truncate font-mono text-[11px] text-[#6b7a8c] ${segmentLabel ? '' : 'ml-auto'}`}
+                  >
                     {shortName}
                   </span>
                 </div>
@@ -99,6 +118,11 @@ export function ToolCallCard({
               <span className={`text-[10px] uppercase ${STATUS_COLOR[status]}`}>
                 {STATUS_LABEL[status]}
               </span>
+              {segmentLabel ? (
+                <span className="font-mono text-[11px] tabular-nums text-[#6b7a8c]">
+                  {segmentLabel}
+                </span>
+              ) : null}
             </div>
             <span className="shrink-0 font-mono text-[11px] text-[#6b7a8c]">
               {open ? '−' : '+'}
@@ -127,7 +151,12 @@ export function ToolCallCard({
           </div>
         )}
       </div>
-      <MessageMeta createdAt={createdAt} model={model} align="left" />
+      <MessageMeta
+        createdAt={createdAt}
+        model={model}
+        elapsedMs={running ? undefined : elapsedMs}
+        align="left"
+      />
     </div>
   )
 }
