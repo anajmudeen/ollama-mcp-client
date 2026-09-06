@@ -71,7 +71,6 @@ export default function App(): React.JSX.Element {
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [busy, setBusy] = useState(false)
   const [activity, setActivity] = useState<ActivityState>(IDLE_ACTIVITY)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [showThinking, setShowThinking] = useState(false)
   const [maxToolIterations, setMaxToolIterations] = useState(30)
   const [telegramEnabled, setTelegramEnabled] = useState(false)
@@ -82,13 +81,14 @@ export default function App(): React.JSX.Element {
     running: false
   })
   const [telegramTokenDraft, setTelegramTokenDraft] = useState('')
-  const [view, setView] = useState<'chat' | 'models' | 'mcp' | 'skills' | 'schedules'>(
-    'chat'
-  )
+  const [view, setView] = useState<
+    'chat' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
+  >('chat')
   const [modelsVisited, setModelsVisited] = useState(false)
   const [mcpVisited, setMcpVisited] = useState(false)
   const [skillsVisited, setSkillsVisited] = useState(false)
   const [schedulesVisited, setSchedulesVisited] = useState(false)
+  const [settingsVisited, setSettingsVisited] = useState(false)
   const [scheduleToast, setScheduleToast] = useState<ScheduleNotificationPayload | null>(
     null
   )
@@ -1135,6 +1135,24 @@ export default function App(): React.JSX.Element {
     setTelegramAllowedUserIds(saved)
   }
 
+  const handleNavigate = (
+    target: 'chat' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
+  ): void => {
+    if (target === 'models') {
+      setModelsVisited(true)
+      void window.api.ollama.searchLibrary({ page: 1 }).catch(() => {})
+    } else if (target === 'mcp') {
+      setMcpVisited(true)
+    } else if (target === 'skills') {
+      setSkillsVisited(true)
+    } else if (target === 'schedules') {
+      setSchedulesVisited(true)
+    } else if (target === 'settings') {
+      setSettingsVisited(true)
+    }
+    setView(target)
+  }
+
   return (
     <div className="relative flex h-full overflow-hidden bg-[#0f1419] text-[#e7ecf1]">
       {scheduleToast && (
@@ -1167,25 +1185,7 @@ export default function App(): React.JSX.Element {
         onNewSession={() => void handleNewSession()}
         onSelectSession={(id) => void handleSelectSession(id)}
         onDeleteSession={(id) => void handleDeleteSession(id)}
-        onOpenModels={() => {
-          setModelsVisited(true)
-          setView('models')
-          // Warm the default library list cache while Models opens.
-          void window.api.ollama.searchLibrary({ page: 1 }).catch(() => {})
-        }}
-        onOpenMcp={() => {
-          setMcpVisited(true)
-          setView('mcp')
-        }}
-        onOpenSkills={() => {
-          setSkillsVisited(true)
-          setView('skills')
-        }}
-        onOpenSchedules={() => {
-          setSchedulesVisited(true)
-          setView('schedules')
-        }}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onNavigate={handleNavigate}
       />
       {modelsVisited ? (
         <div
@@ -1236,6 +1236,34 @@ export default function App(): React.JSX.Element {
           <SchedulesPage active={view === 'schedules'} sessions={sessions} />
         </div>
       ) : null}
+      {settingsVisited ? (
+        <div
+          className={
+            view === 'settings' ? 'flex min-h-0 min-w-0 flex-1' : 'hidden'
+          }
+        >
+          <Settings
+            ollamaOk={ollamaOk}
+            ollamaError={ollamaError}
+            baseUrl={baseUrl}
+            showThinking={showThinking}
+            maxToolIterations={maxToolIterations}
+            telegramEnabled={telegramEnabled}
+            telegramAllowedUserIds={telegramAllowedUserIds}
+            telegramStatus={telegramStatus}
+            telegramTokenDraft={telegramTokenDraft}
+            onSetTelegramToken={(token) => void handleSetTelegramToken(token)}
+            onSetTelegramEnabled={(enabled) => void handleSetTelegramEnabled(enabled)}
+            onSetTelegramAllowedUserIds={(ids) =>
+              void handleSetTelegramAllowedUserIds(ids)
+            }
+            onRefreshOllama={() => void refreshOllama()}
+            onSetBaseUrl={(u) => void handleSetBaseUrl(u)}
+            onSetShowThinking={(v) => void handleSetShowThinking(v)}
+            onSetMaxToolIterations={(v) => void handleSetMaxToolIterations(v)}
+          />
+        </div>
+      ) : null}
       {view === 'chat' ? (
         <Chat
           key={activeSessionId ?? 'chat'}
@@ -1263,31 +1291,9 @@ export default function App(): React.JSX.Element {
           onSend={(payload) => void handleSend(payload)}
           onAbort={() => void handleAbort()}
           onClear={handleClear}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => handleNavigate('settings')}
         />
       ) : null}
-      <Settings
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        ollamaOk={ollamaOk}
-        ollamaError={ollamaError}
-        baseUrl={baseUrl}
-        showThinking={showThinking}
-        maxToolIterations={maxToolIterations}
-        telegramEnabled={telegramEnabled}
-        telegramAllowedUserIds={telegramAllowedUserIds}
-        telegramStatus={telegramStatus}
-        telegramTokenDraft={telegramTokenDraft}
-        onSetTelegramToken={(token) => void handleSetTelegramToken(token)}
-        onSetTelegramEnabled={(enabled) => void handleSetTelegramEnabled(enabled)}
-        onSetTelegramAllowedUserIds={(ids) =>
-          void handleSetTelegramAllowedUserIds(ids)
-        }
-        onRefreshOllama={() => void refreshOllama()}
-        onSetBaseUrl={(u) => void handleSetBaseUrl(u)}
-        onSetShowThinking={(v) => void handleSetShowThinking(v)}
-        onSetMaxToolIterations={(v) => void handleSetMaxToolIterations(v)}
-      />
     </div>
   )
 }

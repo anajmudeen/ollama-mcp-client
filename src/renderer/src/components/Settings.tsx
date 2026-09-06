@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import type { TelegramStatus } from '../../../shared/types'
 
 interface SettingsProps {
-  open: boolean
-  onClose: () => void
   ollamaOk: boolean
   ollamaError?: string
   baseUrl: string
@@ -23,8 +21,6 @@ interface SettingsProps {
 }
 
 export function Settings({
-  open,
-  onClose,
   ollamaOk,
   ollamaError,
   baseUrl,
@@ -41,7 +37,7 @@ export function Settings({
   onSetBaseUrl,
   onSetShowThinking,
   onSetMaxToolIterations
-}: SettingsProps): React.JSX.Element | null {
+}: SettingsProps): React.JSX.Element {
   const [urlDraft, setUrlDraft] = useState(baseUrl)
   const [showToken, setShowToken] = useState(false)
   const [tokenDraft, setTokenDraft] = useState(telegramTokenDraft)
@@ -61,42 +57,22 @@ export function Settings({
     setAllowedIdsDraft(telegramAllowedUserIds.join(', '))
   }, [telegramAllowedUserIds])
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-[#2a3a4d] bg-[#161d27] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#243041] px-4 py-3">
-          <h2 className="text-base font-semibold text-[#f0f4f8]">Settings</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded border border-[#2a3a4d] px-2.5 py-1 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
-          >
-            Close
-          </button>
-        </div>
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0f1419]">
+      <header className="titlebar-drag titlebar-overlay-pad border-b border-[#243041] px-6 py-4">
+        <h1 className="text-lg font-semibold text-[#f0f4f8]">Settings</h1>
+        <p className="mt-1 text-sm text-[#8b9aab]">
+          Ollama connection, Telegram bot, and chat preferences.
+        </p>
+      </header>
 
-        <div className="overflow-y-auto px-4 py-4">
-          <section className="mb-6">
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="mx-auto max-w-xl">
+          <section className="mb-8">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#8b9aab]">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#8b9aab]">
                 Ollama
-              </h3>
+              </h2>
               <button
                 type="button"
                 onClick={onRefreshOllama}
@@ -124,23 +100,23 @@ export function Settings({
                 onBlur={() => {
                   if (urlDraft !== baseUrl) onSetBaseUrl(urlDraft)
                 }}
-                className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 text-xs text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
+                className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
               />
               <button
                 type="button"
                 onClick={() => onSetBaseUrl(urlDraft)}
-                className="rounded border border-[#2a3a4d] px-2 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+                className="rounded border border-[#2a3a4d] px-3 text-sm text-[#c5d0dc] hover:bg-[#1a2430]"
               >
                 Save
               </button>
             </div>
           </section>
 
-          <section className="mb-6">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#8b9aab]">
+          <section className="mb-8">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#8b9aab]">
               Telegram
-            </h3>
-            <p className="mb-3 text-xs text-[#6b7a8c]">
+            </h2>
+            <p className="mb-3 text-sm text-[#6b7a8c]">
               Create a bot via @BotFather, paste the token here, then send /start from Telegram.
             </p>
             <label className="mb-1 block text-xs text-[#8b9aab]">Bot token</label>
@@ -155,17 +131,17 @@ export function Settings({
                   }
                 }}
                 placeholder="123456:ABC-DEF…"
-                className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 text-xs text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
+                className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
               />
               <button
                 type="button"
                 onClick={() => setShowToken((v) => !v)}
-                className="rounded border border-[#2a3a4d] px-2 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+                className="rounded border border-[#2a3a4d] px-3 text-sm text-[#c5d0dc] hover:bg-[#1a2430]"
               >
                 {showToken ? 'Hide' : 'Show'}
               </button>
             </div>
-            <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2.5">
+            <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-lg border border-[#2a3a4d] bg-[#121820] px-3 py-2.5">
               <input
                 type="checkbox"
                 checked={telegramEnabled}
@@ -196,18 +172,16 @@ export function Settings({
               </span>
             </div>
             <p className="mb-3 text-xs text-[#6b7a8c]">
-              While the model works, Telegram shows a live status line (thinking,
-              tool calls, writing), then the final reply.
+              While the model works, Telegram shows a live status line (thinking, tool calls,
+              writing), then the final reply.
             </p>
-            <label className="mb-1 block text-xs text-[#8b9aab]">
-              Allowed user IDs
-            </label>
+            <label className="mb-1 block text-xs text-[#8b9aab]">Allowed user IDs</label>
             <div className="flex gap-1">
               <input
                 value={allowedIdsDraft}
                 onChange={(e) => setAllowedIdsDraft(e.target.value)}
                 placeholder="123456789, 987654321"
-                className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 text-xs text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
+                className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
               />
               <button
                 type="button"
@@ -220,7 +194,7 @@ export function Settings({
                     .filter((n) => Number.isFinite(n))
                   onSetTelegramAllowedUserIds(ids)
                 }}
-                className="rounded border border-[#2a3a4d] px-2 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+                className="rounded border border-[#2a3a4d] px-3 text-sm text-[#c5d0dc] hover:bg-[#1a2430]"
               >
                 Save
               </button>
@@ -228,10 +202,10 @@ export function Settings({
           </section>
 
           <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#8b9aab]">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#8b9aab]">
               Chat
-            </h3>
-            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2.5">
+            </h2>
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[#2a3a4d] bg-[#121820] px-3 py-2.5">
               <input
                 type="checkbox"
                 checked={Boolean(showThinking)}
@@ -241,16 +215,16 @@ export function Settings({
               <span>
                 <span className="block text-sm text-[#e7ecf1]">Show model thinking</span>
                 <span className="mt-0.5 block text-xs text-[#6b7a8c]">
-                  Keep reasoning traces in the chat (for models that emit thinking).
-                  Off by default so you only see replies and tool calls.
+                  Keep reasoning traces in the chat (for models that emit thinking). Off by
+                  default so you only see replies and tool calls.
                 </span>
               </span>
             </label>
             <label className="mt-3 block">
               <span className="mb-1 block text-sm text-[#e7ecf1]">Max tool iterations</span>
               <span className="mb-2 block text-xs text-[#6b7a8c]">
-                How many tool-call rounds the agent can run per message. A final summary
-                is added if the limit is reached.
+                How many tool-call rounds the agent can run per message. A final summary is
+                added if the limit is reached.
               </span>
               <input
                 type="number"
@@ -261,12 +235,12 @@ export function Settings({
                   const parsed = Number(e.target.value)
                   if (Number.isFinite(parsed)) onSetMaxToolIterations(parsed)
                 }}
-                className="w-24 rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
+                className="w-24 rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
               />
             </label>
           </section>
         </div>
       </div>
-    </div>
+    </main>
   )
 }
