@@ -211,7 +211,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
   activeTurnId = turnId
 
   const emitTurn = (event: Exclude<ChatEvent, { type: 'user' }>): void => {
-    emit({ ...event, turnId })
+    emit({ ...event, turnId, sessionId: payload.sessionId })
   }
 
   let emittedDone = false

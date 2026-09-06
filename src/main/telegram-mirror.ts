@@ -28,7 +28,8 @@ const mirrorByUser = new Map<number, UserMirrorState>()
 /** Skip redundant Telegram edits when status text is unchanged. */
 const lastStatusTextByUser = new Map<number, string>()
 let sendFns: TelegramSendFns | null = null
-let activeTurnId: string | null = null
+/** Only mirror turns started from Telegram (`beginTelegramActivity`). */
+let mirroredTurnId: string | null = null
 let eventChain: Promise<void> = Promise.resolve()
 
 function emptyState(): UserMirrorState {
@@ -47,7 +48,7 @@ function userState(userId: number): UserMirrorState {
 export function resetTelegramMirrorState(): void {
   mirrorByUser.clear()
   lastStatusTextByUser.clear()
-  activeTurnId = null
+  mirroredTurnId = null
 }
 
 /** Immediate feedback when a Telegram user sends a message (before the agent emits events). */
@@ -56,7 +57,7 @@ export async function beginTelegramActivity(
   text: string
 ): Promise<void> {
   if (!sendFns) return
-  activeTurnId = turnId
+  mirroredTurnId = turnId
   mirrorByUser.clear()
   lastStatusTextByUser.clear()
   for (const userId of getTelegramAllowedUserIds()) {
@@ -65,11 +66,10 @@ export async function beginTelegramActivity(
   }
 }
 
-function resetForTurn(turnId: string | undefined): void {
-  if (!turnId || turnId === activeTurnId) return
-  activeTurnId = turnId
-  mirrorByUser.clear()
-  lastStatusTextByUser.clear()
+function isMirroredEvent(event: ChatEvent): boolean {
+  if (!mirroredTurnId) return false
+  const turnId = 'turnId' in event ? event.turnId : undefined
+  return turnId === mirroredTurnId
 }
 
 async function forEachAllowed(
@@ -94,8 +94,7 @@ async function setActivityStatus(userId: number, text: string): Promise<void> {
 
 async function handleEvent(event: ChatEvent): Promise<void> {
   if (!sendFns) return
-
-  if (event.turnId) resetForTurn(event.turnId)
+  if (!isMirroredEvent(event)) return
 
   if (event.type === 'error') {
     await forEachAllowed((userId) =>
@@ -158,7 +157,9 @@ async function handleEvent(event: ChatEvent): Promise<void> {
     case 'done':
       mirrorByUser.clear()
       lastStatusTextByUser.clear()
-      activeTurnId = null
+      if (event.turnId === mirroredTurnId) {
+        mirroredTurnId = null
+      }
       break
     default:
       break

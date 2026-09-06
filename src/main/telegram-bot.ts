@@ -5,13 +5,13 @@ import {
   addTelegramAllowedUserId,
   createSession,
   deleteSession,
-  getActiveSessionId,
-  getSelectedModel,
   getSessionsState,
+  getTelegramActiveSessionId,
+  getSelectedModel,
   getTelegramAllowedUserIds,
   getTelegramBotToken,
   getTelegramEnabled,
-  setActiveSession
+  setTelegramActiveSession
 } from './config-store'
 import { broadcastSessionsChanged } from './sessions-broadcast'
 import {
@@ -81,11 +81,15 @@ function createSendFns(telegram: Telegraf['telegram']): TelegramSendFns {
   }
 }
 
+function telegramSessions() {
+  return getSessionsState().sessions.filter((s) => (s.origin ?? 'desktop') === 'telegram')
+}
+
 function resolveSessionArg(arg: string): string | null {
   const trimmed = arg.trim()
   if (!trimmed) return null
 
-  const sessions = getSessionsState().sessions
+  const sessions = telegramSessions()
   const index = Number.parseInt(trimmed, 10)
   if (Number.isFinite(index) && index >= 1 && index <= sessions.length) {
     return sessions[index - 1]!.id
@@ -98,7 +102,7 @@ function resolveSessionArg(arg: string): string | null {
 
 function activeSessionTitle(): string {
   const state = getSessionsState()
-  const activeId = getActiveSessionId() ?? state.activeSessionId
+  const activeId = getTelegramActiveSessionId() ?? state.telegramActiveSessionId
   const session = state.sessions.find((s) => s.id === activeId)
   return session?.title ?? 'No active session'
 }
@@ -138,7 +142,7 @@ function registerHandlers(instance: Telegraf): void {
     const userId = ctx.from?.id
     if (userId == null) return
     await ctx.reply(
-      `Welcome to Ollama MCP.\n\nYour Telegram user ID: ${userId}\n\nSend a message to chat with the active desktop session, or use /help for commands.`
+      `Welcome to Ollama MCP.\n\nYour Telegram user ID: ${userId}\n\nSend a message to chat, or use /help for commands. Telegram sessions are separate from desktop chats.`
     )
   })
 
@@ -148,10 +152,10 @@ function registerHandlers(instance: Telegraf): void {
         'Commands:',
         '/start — welcome and your user ID',
         '/help — this message',
-        '/new — create a new chat session',
-        '/sessions — list sessions (tap to switch)',
-        '/switch <n|title> — switch active session',
-        '/delete <n|title> — delete a session',
+        '/new — create a new Telegram chat session',
+        '/sessions — list Telegram sessions (tap to switch)',
+        '/switch <n|title> — switch Telegram session',
+        '/delete <n|title> — delete a Telegram session',
         '/current — show active session info',
         '',
         `Current session: ${activeSessionTitle()}`
@@ -160,20 +164,20 @@ function registerHandlers(instance: Telegraf): void {
   })
 
   instance.command('new', async (ctx) => {
-    const session = createSession()
+    const session = createSession('telegram')
     broadcastSessionsChanged()
-    await ctx.reply(`Created new session: ${session.title}`)
+    await ctx.reply(`Created new Telegram session: ${session.title}`)
   })
 
   instance.command('sessions', async (ctx) => {
     const state = getSessionsState()
-    const sessions = state.sessions.slice(0, 10)
+    const sessions = telegramSessions().slice(0, 10)
     if (sessions.length === 0) {
-      await ctx.reply('No sessions yet. Use /new to create one.')
+      await ctx.reply('No Telegram sessions yet. Use /new to create one.')
       return
     }
 
-    const activeId = getActiveSessionId() ?? state.activeSessionId
+    const activeId = getTelegramActiveSessionId() ?? state.telegramActiveSessionId
     const lines = sessions.map((s, i) => {
       const marker = s.id === activeId ? ' •' : ''
       return `${i + 1}. ${s.title}${marker}`
@@ -202,16 +206,16 @@ function registerHandlers(instance: Telegraf): void {
       return
     }
 
-    setActiveSession(sessionId)
+    setTelegramActiveSession(sessionId)
     broadcastSessionsChanged()
     const title = getSessionsState().sessions.find((s) => s.id === sessionId)?.title
     await ctx.reply(`Switched to: ${title ?? sessionId}`)
   })
 
   instance.command('delete', async (ctx) => {
-    const state = getSessionsState()
-    if (state.sessions.length <= 1) {
-      await ctx.reply('Cannot delete the only session.')
+    const sessions = telegramSessions()
+    if (sessions.length <= 1) {
+      await ctx.reply('Cannot delete the only Telegram session.')
       return
     }
 
@@ -228,7 +232,7 @@ function registerHandlers(instance: Telegraf): void {
       return
     }
 
-    const title = state.sessions.find((s) => s.id === sessionId)?.title ?? sessionId
+    const title = sessions.find((s) => s.id === sessionId)?.title ?? sessionId
     await ctx.reply(`Delete session "${title}"?`, {
       reply_markup: {
         inline_keyboard: [[{ text: 'Confirm delete', callback_data: `delete:${sessionId}` }]]
@@ -238,10 +242,10 @@ function registerHandlers(instance: Telegraf): void {
 
   instance.command('current', async (ctx) => {
     const state = getSessionsState()
-    const activeId = getActiveSessionId() ?? state.activeSessionId
+    const activeId = getTelegramActiveSessionId() ?? state.telegramActiveSessionId
     const session = state.sessions.find((s) => s.id === activeId)
     if (!session) {
-      await ctx.reply('No active session.')
+      await ctx.reply('No active Telegram session.')
       return
     }
 
@@ -286,7 +290,7 @@ function registerHandlers(instance: Telegraf): void {
     if (data.startsWith('switch:')) {
       const sessionId = data.slice('switch:'.length)
       try {
-        setActiveSession(sessionId)
+        setTelegramActiveSession(sessionId)
         broadcastSessionsChanged()
         const title = getSessionsState().sessions.find((s) => s.id === sessionId)?.title
         await ctx.answerCbQuery(`Switched to ${title ?? sessionId}`)

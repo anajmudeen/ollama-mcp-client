@@ -18,6 +18,11 @@ import { Settings } from './components/Settings'
 import { Sidebar } from './components/Sidebar'
 import { SkillsPage } from './components/SkillsPage'
 import {
+  applyBackgroundChatEvent,
+  createBackgroundSessionTurn,
+  type BackgroundSessionTurn
+} from './lib/backgroundChatEvents'
+import {
   closeStreamingThinking,
   closeToolMessage,
   segmentDurationMs
@@ -84,6 +89,16 @@ export default function App(): React.JSX.Element {
   const turnModelRef = useRef<string | null>(null)
   const selectedModelRef = useRef<string | null>(null)
   const showThinkingRef = useRef(false)
+  const sessionsRef = useRef<ChatSession[]>([])
+  const backgroundSessionsRef = useRef<Map<string, BackgroundSessionTurn>>(new Map())
+  const writeSessionRef = useRef<
+    (
+      id: string,
+      uiMessages: UiMessage[],
+      history: ChatMessage[],
+      title?: string
+    ) => Promise<void>
+  >(async () => {})
   const persistSessionRef = useRef<
     (
       id: string,
@@ -241,6 +256,14 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     selectedModelRef.current = selectedModel
   }, [selectedModel])
+
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
+
+  useEffect(() => {
+    writeSessionRef.current = writeSession
+  }, [writeSession])
 
   const flushActiveSession = useCallback(async (): Promise<void> => {
     if (persistTimer.current !== null) {
@@ -436,12 +459,38 @@ export default function App(): React.JSX.Element {
         requestAiTitleRef.current()
       }
 
+      const eventSessionId = event.sessionId
+
+      if (event.turnId && eventSessionId) {
+        if (eventSessionId !== activeSessionIdRef.current) {
+          let bg = backgroundSessionsRef.current.get(eventSessionId)
+          if (!bg) {
+            const session = sessionsRef.current.find((s) => s.id === eventSessionId)
+            if (!session) return
+            bg = createBackgroundSessionTurn(
+              session.uiMessages,
+              session.history,
+              selectedModelRef.current
+            )
+            backgroundSessionsRef.current.set(eventSessionId, bg)
+          }
+          applyBackgroundChatEvent(event, bg, (ui, hist) => {
+            void writeSessionRef.current(eventSessionId, ui, hist)
+          })
+          if (event.type === 'done' || event.type === 'error') {
+            backgroundSessionsRef.current.delete(eventSessionId)
+          }
+          return
+        }
+      }
+
       const sessionId = activeSessionIdRef.current
       if (!sessionId) return
 
-      // Telegram (or other main-process) turns never set activeTurnIdRef in the renderer.
+      // Adopt in-flight turns only for the session currently open in the UI.
       if (
         event.turnId &&
+        eventSessionId === sessionId &&
         !activeTurnIdRef.current &&
         event.type !== 'user' &&
         event.type !== 'done'
@@ -461,7 +510,8 @@ export default function App(): React.JSX.Element {
       const turnOk =
         Boolean(event.turnId) &&
         Boolean(activeTurnIdRef.current) &&
-        event.turnId === activeTurnIdRef.current
+        event.turnId === activeTurnIdRef.current &&
+        (!eventSessionId || eventSessionId === sessionId)
 
       const stillCurrent = (): boolean =>
         turnOk && sessionId === activeSessionIdRef.current
@@ -748,6 +798,9 @@ export default function App(): React.JSX.Element {
     }
   }, [])
 
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const activeSessionReadOnly = (activeSession?.origin ?? 'desktop') === 'telegram'
+
   const handleSend = async (payload: {
     content: string
     images?: string[]
@@ -755,6 +808,7 @@ export default function App(): React.JSX.Element {
     invokedSkill?: string
   }): Promise<void> => {
     if (!selectedModel || busy) return
+    if (activeSessionReadOnly) return
     if (!payload.content.trim() && !payload.images?.length) return
     const sessionId = activeSessionIdRef.current
     if (!sessionId) return
@@ -822,6 +876,7 @@ export default function App(): React.JSX.Element {
     await window.api.chat.send({
       model: selectedModel,
       messages: nextHistory,
+      sessionId,
       turnId,
       contextUsed: contextUsage?.used,
       invokedSkill: payload.invokedSkill
@@ -837,6 +892,7 @@ export default function App(): React.JSX.Element {
   }
 
   const handleClear = (): void => {
+    if (activeSessionReadOnly) return
     const sessionId = activeSessionIdRef.current
     bumpChatEpoch()
     activeTurnIdRef.current = null
@@ -879,12 +935,15 @@ export default function App(): React.JSX.Element {
   const handleSelectSession = async (id: string): Promise<void> => {
     setView('chat')
     if (id === activeSessionIdRef.current) return
+    backgroundSessionsRef.current.delete(id)
     await leaveCurrentSession()
     const state = await window.api.sessions.setActive(id)
     applySessionsState(state)
   }
 
   const handleDeleteSession = async (id: string): Promise<void> => {
+    const target = sessions.find((s) => s.id === id)
+    if ((target?.origin ?? 'desktop') === 'telegram') return
     if (pendingAiTitleRef.current?.sessionId === id) {
       cancelAiTitle()
     }
@@ -1010,7 +1069,8 @@ export default function App(): React.JSX.Element {
           busy={busy}
           activity={activity}
           showThinking={showThinking}
-          canSend={Boolean(selectedModel) && ollamaOk}
+          canSend={Boolean(selectedModel) && ollamaOk && !activeSessionReadOnly}
+          readOnly={activeSessionReadOnly}
           ollamaOk={ollamaOk}
           imageGenSupported={imageGenSupported}
           models={models}

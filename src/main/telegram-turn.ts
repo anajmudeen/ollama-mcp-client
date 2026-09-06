@@ -2,9 +2,9 @@ import { randomUUID } from 'crypto'
 import type { ChatMessage, UiMessage } from '../shared/types'
 import { runAgentTurn } from './agent'
 import {
-  getActiveSessionId,
+  ensureTelegramActiveSession,
   getSelectedModel,
-  getSessionsState,
+  getTelegramActiveSessionId,
   updateSession
 } from './config-store'
 import { broadcastSessionsChanged } from './sessions-broadcast'
@@ -25,12 +25,15 @@ export async function runTelegramTurn(
     return { ok: false, error: 'Select a model in the desktop app first.' }
   }
 
-  const state = getSessionsState()
-  const sessionId = getActiveSessionId() ?? state.activeSessionId
-  if (!sessionId) return { ok: false, error: 'No active session.' }
+  const state = ensureTelegramActiveSession()
+  const sessionId = getTelegramActiveSessionId() ?? state.telegramActiveSessionId
+  if (!sessionId) return { ok: false, error: 'No active Telegram session.' }
 
   const session = state.sessions.find((s) => s.id === sessionId)
-  if (!session) return { ok: false, error: 'Active session not found.' }
+  if (!session) return { ok: false, error: 'Active Telegram session not found.' }
+  if ((session.origin ?? 'desktop') !== 'telegram') {
+    return { ok: false, error: 'Active session is not a Telegram session.' }
+  }
 
   const turnId = randomUUID()
   const userHistory: ChatMessage = { role: 'user', content: trimmed }
@@ -62,7 +65,8 @@ export async function runTelegramTurn(
   void runAgentTurn({
     model,
     messages: nextHistory,
-    turnId
+    turnId,
+    sessionId
   })
 
   return { ok: true }

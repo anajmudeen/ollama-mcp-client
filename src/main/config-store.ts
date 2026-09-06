@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   ChatSession,
   McpServerConfig,
+  SessionOrigin,
   SessionsState,
   TelegramMirrorMode,
   UiMessage
@@ -25,12 +26,30 @@ interface StoreSchema extends AppConfig, SessionsState {
   skillEnabled: Record<string, boolean>
 }
 
+function sessionOrigin(session: ChatSession): SessionOrigin {
+  return session.origin ?? 'desktop'
+}
+
+function normalizeSession(session: ChatSession): ChatSession {
+  const origin = sessionOrigin(session)
+  return session.origin === origin ? session : { ...session, origin }
+}
+
+function isDesktopSession(session: ChatSession): boolean {
+  return sessionOrigin(session) === 'desktop'
+}
+
+function isTelegramSession(session: ChatSession): boolean {
+  return sessionOrigin(session) === 'telegram'
+}
+
 const store = new Store<StoreSchema>({
   name: 'config',
   defaults: {
     ...DEFAULT_CONFIG,
     sessions: [],
     activeSessionId: null,
+    telegramActiveSessionId: null,
     skillEnabled: {}
   }
 })
@@ -192,7 +211,7 @@ function sortSessions(sessions: ChatSession[]): ChatSession[] {
 }
 
 export function listSessions(): ChatSession[] {
-  const sessions = store.get('sessions', []).map(withActivityTimestamp)
+  const sessions = store.get('sessions', []).map(normalizeSession).map(withActivityTimestamp)
   return sortSessions(sessions)
 }
 
@@ -200,17 +219,14 @@ export function getActiveSessionId(): string | null {
   return store.get('activeSessionId', null)
 }
 
-export function getSessionsState(): SessionsState {
-  const sessions = listSessions()
-  let activeSessionId = getActiveSessionId()
-  if (activeSessionId && !sessions.some((s) => s.id === activeSessionId)) {
-    activeSessionId = sessions[0]?.id ?? null
-    store.set('activeSessionId', activeSessionId)
-  }
-  return { sessions, activeSessionId }
+export function getTelegramActiveSessionId(): string | null {
+  return store.get('telegramActiveSessionId', null)
 }
 
-export function createSession(): ChatSession {
+function ensureDesktopSessionExists(): void {
+  const sessions = listSessions()
+  if (sessions.some(isDesktopSession)) return
+
   const now = new Date().toISOString()
   const session: ChatSession = {
     id: randomUUID(),
@@ -218,12 +234,63 @@ export function createSession(): ChatSession {
     createdAt: now,
     updatedAt: now,
     uiMessages: [],
-    history: []
+    history: [],
+    origin: 'desktop'
+  }
+  store.set('sessions', [session, ...sessions])
+}
+
+export function getSessionsState(): SessionsState {
+  const sessions = listSessions()
+  let activeSessionId = getActiveSessionId()
+  let telegramActiveSessionId = getTelegramActiveSessionId()
+
+  if (activeSessionId && !sessions.some((s) => s.id === activeSessionId)) {
+    const desktopSessions = sessions.filter(isDesktopSession)
+    activeSessionId = desktopSessions[0]?.id ?? sessions[0]?.id ?? null
+    store.set('activeSessionId', activeSessionId)
+  }
+
+  const telegramSessions = sessions.filter(isTelegramSession)
+  if (
+    telegramActiveSessionId &&
+    !telegramSessions.some((s) => s.id === telegramActiveSessionId)
+  ) {
+    telegramActiveSessionId = telegramSessions[0]?.id ?? null
+    store.set('telegramActiveSessionId', telegramActiveSessionId)
+  }
+
+  return { sessions, activeSessionId, telegramActiveSessionId }
+}
+
+export function createSession(origin: SessionOrigin = 'desktop'): ChatSession {
+  const now = new Date().toISOString()
+  const session: ChatSession = {
+    id: randomUUID(),
+    title: 'New chat',
+    createdAt: now,
+    updatedAt: now,
+    uiMessages: [],
+    history: [],
+    origin
   }
   const sessions = [session, ...listSessions()]
   store.set('sessions', sessions)
-  store.set('activeSessionId', session.id)
+  if (origin === 'telegram') {
+    store.set('telegramActiveSessionId', session.id)
+  } else {
+    store.set('activeSessionId', session.id)
+  }
   return session
+}
+
+export function setTelegramActiveSession(id: string): SessionsState {
+  const session = listSessions().find((s) => s.id === id)
+  if (!session || !isTelegramSession(session)) {
+    throw new Error('Telegram session not found')
+  }
+  store.set('telegramActiveSessionId', id)
+  return getSessionsState()
 }
 
 export function setActiveSession(id: string): SessionsState {
@@ -261,9 +328,16 @@ export function updateSession(
 export function deleteSession(id: string): SessionsState {
   let sessions = listSessions().filter((s) => s.id !== id)
   let activeSessionId = getActiveSessionId()
+  let telegramActiveSessionId = getTelegramActiveSessionId()
 
   if (activeSessionId === id) {
-    activeSessionId = sessions[0]?.id ?? null
+    const desktopSessions = sessions.filter(isDesktopSession)
+    activeSessionId = desktopSessions[0]?.id ?? null
+  }
+
+  if (telegramActiveSessionId === id) {
+    const telegramSessions = sessions.filter(isTelegramSession)
+    telegramActiveSessionId = telegramSessions[0]?.id ?? null
   }
 
   if (sessions.length === 0) {
@@ -274,14 +348,17 @@ export function deleteSession(id: string): SessionsState {
       createdAt: now,
       updatedAt: now,
       uiMessages: [],
-      history: []
+      history: [],
+      origin: 'desktop'
     }
     sessions = [session]
     activeSessionId = session.id
+    telegramActiveSessionId = null
   }
 
   store.set('sessions', sessions)
   store.set('activeSessionId', activeSessionId)
+  store.set('telegramActiveSessionId', telegramActiveSessionId)
   return getSessionsState()
 }
 
@@ -302,10 +379,34 @@ export function removeSkillEnabledFlag(id: string): void {
 }
 
 export function ensureActiveSession(): SessionsState {
+  ensureDesktopSessionExists()
   const state = getSessionsState()
-  if (state.sessions.length === 0 || !state.activeSessionId) {
-    createSession()
+  if (!state.activeSessionId) {
+    const desktopSessions = state.sessions.filter(isDesktopSession)
+    const nextActive = desktopSessions[0]?.id ?? state.sessions[0]?.id ?? null
+    if (nextActive) {
+      store.set('activeSessionId', nextActive)
+      return getSessionsState()
+    }
+    createSession('desktop')
     return getSessionsState()
   }
   return state
+}
+
+export function ensureTelegramActiveSession(): SessionsState {
+  const state = getSessionsState()
+  const telegramSessions = state.sessions.filter(isTelegramSession)
+  if (
+    state.telegramActiveSessionId &&
+    telegramSessions.some((s) => s.id === state.telegramActiveSessionId)
+  ) {
+    return state
+  }
+  if (telegramSessions.length > 0) {
+    store.set('telegramActiveSessionId', telegramSessions[0]!.id)
+    return getSessionsState()
+  }
+  createSession('telegram')
+  return getSessionsState()
 }

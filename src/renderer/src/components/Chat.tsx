@@ -39,6 +39,7 @@ interface ChatProps {
   activity: ActivityState
   showThinking: boolean
   canSend: boolean
+  readOnly?: boolean
   ollamaOk: boolean
   imageGenSupported?: boolean
   models: OllamaModel[]
@@ -64,6 +65,7 @@ export function Chat({
   activity,
   showThinking,
   canSend,
+  readOnly = false,
   ollamaOk,
   imageGenSupported = true,
   models,
@@ -143,7 +145,7 @@ export function Chat({
     }, 320)
   }
 
-  const canCompose = canSend && !busy
+  const canCompose = canSend && !busy && !readOnly
   const hasDraft = Boolean(draft.trim()) || attachments.length > 0
   const slashToken = slashQuery(draft)
   const slashMatches = useMemo(
@@ -535,13 +537,15 @@ export function Chat({
               Stop
             </button>
           )}
-          <button
-            type="button"
-            onClick={onClear}
-            className="rounded border border-[#2a3a4d] px-3 py-1 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
-          >
-            Clear
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded border border-[#2a3a4d] px-3 py-1 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+            >
+              Clear
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpenSettings}
@@ -740,6 +744,11 @@ export function Chat({
       </div>
 
       <form onSubmit={submit} className="px-5 pb-5 pt-2">
+        {readOnly && (
+          <p className="mb-2 rounded-lg border border-[#2d4a6a]/50 bg-[#1a3050]/40 px-3 py-2 text-xs text-[#9ec5f0]">
+            Telegram session — view only on desktop. Send messages from Telegram.
+          </p>
+        )}
         {!ollamaOk && (
           <p className="mb-2 text-xs text-amber-300/90">
             Ollama is offline — check the sidebar connection.

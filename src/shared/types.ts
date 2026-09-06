@@ -194,19 +194,21 @@ export type ActivityPhase =
   | 'compacting'
 
 export type ChatEvent =
-  | { type: 'user'; content: string; turnId?: string }
+  | { type: 'user'; content: string; turnId?: string; sessionId?: string }
   | {
       type: 'status'
       phase: Exclude<ActivityPhase, 'idle'>
       detail?: string
       turnId?: string
+      sessionId?: string
     }
-  | { type: 'thinking'; content: string; turnId?: string }
-  | { type: 'chunk'; content: string; turnId?: string }
+  | { type: 'thinking'; content: string; turnId?: string; sessionId?: string }
+  | { type: 'chunk'; content: string; turnId?: string; sessionId?: string }
   | {
       type: 'assistant_done'
       content: string
       turnId?: string
+      sessionId?: string
       contextUsed?: number
       contextLimit?: number
       /** Generated tokens per second for this reply (Ollama eval_count / eval_duration). */
@@ -217,6 +219,7 @@ export type ChatEvent =
       images: string[]
       mime?: string
       turnId?: string
+      sessionId?: string
     }
   | {
       type: 'tool_start'
@@ -224,6 +227,7 @@ export type ChatEvent =
       name: string
       arguments: Record<string, unknown>
       turnId?: string
+      sessionId?: string
     }
   | {
       type: 'tool_result'
@@ -232,18 +236,26 @@ export type ChatEvent =
       ok: boolean
       result: string
       turnId?: string
+      sessionId?: string
     }
-  | { type: 'done'; turnId?: string }
-  | { type: 'error'; message: string; turnId?: string }
-  | { type: 'context'; used: number; limit: number; turnId?: string }
+  | { type: 'done'; turnId?: string; sessionId?: string }
+  | { type: 'error'; message: string; turnId?: string; sessionId?: string }
+  | { type: 'context'; used: number; limit: number; turnId?: string; sessionId?: string }
   /** Model history was compacted; renderer should replace session history. */
-  | { type: 'compacted'; messages: ChatMessage[]; turnId?: string }
+  | { type: 'compacted'; messages: ChatMessage[]; turnId?: string; sessionId?: string }
   /** Lightweight UI notice (e.g. summarization). */
-  | { type: 'notice'; content: string; summary?: string; turnId?: string }
+  | {
+      type: 'notice'
+      content: string
+      summary?: string
+      turnId?: string
+      sessionId?: string
+    }
 
 export interface ChatSendPayload {
   model: string
   messages: ChatMessage[]
+  sessionId: string
   /** Client-generated id so the UI can ignore stale events from aborted turns. */
   turnId: string
   /** Last Ollama prompt+eval count from this session (drives compaction). */
@@ -331,6 +343,8 @@ export type UiMessage =
       summary?: string
     }
 
+export type SessionOrigin = 'desktop' | 'telegram'
+
 export interface ChatSession {
   id: string
   title: string
@@ -338,11 +352,13 @@ export interface ChatSession {
   updatedAt: string
   uiMessages: UiMessage[]
   history: ChatMessage[]
+  origin?: SessionOrigin
 }
 
 export interface SessionsState {
   sessions: ChatSession[]
   activeSessionId: string | null
+  telegramActiveSessionId: string | null
 }
 
 export interface AgentSkill {
