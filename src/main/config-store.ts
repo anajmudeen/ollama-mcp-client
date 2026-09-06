@@ -17,6 +17,7 @@ const DEFAULT_CONFIG: AppConfig = {
   selectedModel: null,
   servers: [],
   showThinking: false,
+  maxToolIterations: 30,
   telegramBotToken: null,
   telegramEnabled: false,
   telegramAllowedUserIds: [],
@@ -63,6 +64,9 @@ export function getConfig(): AppConfig {
     selectedModel: store.get('selectedModel', DEFAULT_CONFIG.selectedModel),
     servers: store.get('servers', DEFAULT_CONFIG.servers),
     showThinking: store.get('showThinking', DEFAULT_CONFIG.showThinking),
+    maxToolIterations: clampMaxToolIterations(
+      store.get('maxToolIterations', DEFAULT_CONFIG.maxToolIterations)
+    ),
     telegramBotToken: store.get('telegramBotToken', DEFAULT_CONFIG.telegramBotToken),
     telegramEnabled: store.get('telegramEnabled', DEFAULT_CONFIG.telegramEnabled),
     telegramAllowedUserIds: store.get(
@@ -101,6 +105,26 @@ export function getShowThinking(): boolean {
 export function setShowThinking(enabled: boolean): boolean {
   store.set('showThinking', enabled)
   return enabled
+}
+
+export const MIN_MAX_TOOL_ITERATIONS = 8
+export const MAX_MAX_TOOL_ITERATIONS = 100
+
+export function clampMaxToolIterations(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_CONFIG.maxToolIterations
+  return Math.min(MAX_MAX_TOOL_ITERATIONS, Math.max(MIN_MAX_TOOL_ITERATIONS, Math.round(value)))
+}
+
+export function getMaxToolIterations(): number {
+  return clampMaxToolIterations(
+    store.get('maxToolIterations', DEFAULT_CONFIG.maxToolIterations)
+  )
+}
+
+export function setMaxToolIterations(value: number): number {
+  const clamped = clampMaxToolIterations(value)
+  store.set('maxToolIterations', clamped)
+  return clamped
 }
 
 export function getTelegramBotToken(): string | null {

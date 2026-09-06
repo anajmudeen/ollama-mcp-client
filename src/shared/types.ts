@@ -39,6 +39,8 @@ export interface AppConfig {
   servers: McpServerConfig[]
   /** When true, model reasoning/thinking is shown in the chat transcript. */
   showThinking: boolean
+  /** Max tool-call rounds per user turn (clamped 8–100). */
+  maxToolIterations: number
   telegramBotToken: string | null
   telegramEnabled: boolean
   telegramAllowedUserIds: number[]

@@ -31,6 +31,7 @@ import {
   setSelectedModel,
   setServerEnabled,
   setShowThinking,
+  setMaxToolIterations,
   setTelegramAllowedUserIds,
   setTelegramBotToken,
   setTelegramEnabled,
@@ -99,6 +100,9 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('config:get', () => getConfig())
   ipcMain.handle('config:setShowThinking', (_e, enabled: boolean) =>
     setShowThinking(enabled)
+  )
+  ipcMain.handle('config:setMaxToolIterations', (_e, value: number) =>
+    setMaxToolIterations(value)
   )
 
   ipcMain.handle('ollama:getStatus', () => getOllamaStatus())

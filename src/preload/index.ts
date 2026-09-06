@@ -33,6 +33,8 @@ const api = {
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke('config:get'),
   setShowThinking: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('config:setShowThinking', enabled),
+  setMaxToolIterations: (value: number): Promise<number> =>
+    ipcRenderer.invoke('config:setMaxToolIterations', value),
 
   ollama: {
     getStatus: (): Promise<OllamaStatus> => ipcRenderer.invoke('ollama:getStatus'),

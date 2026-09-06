@@ -8,6 +8,7 @@ interface SettingsProps {
   ollamaError?: string
   baseUrl: string
   showThinking: boolean
+  maxToolIterations: number
   telegramEnabled: boolean
   telegramAllowedUserIds: number[]
   telegramStatus: TelegramStatus
@@ -18,6 +19,7 @@ interface SettingsProps {
   onRefreshOllama: () => void
   onSetBaseUrl: (url: string) => void
   onSetShowThinking: (enabled: boolean) => void
+  onSetMaxToolIterations: (value: number) => void
 }
 
 export function Settings({
@@ -27,6 +29,7 @@ export function Settings({
   ollamaError,
   baseUrl,
   showThinking,
+  maxToolIterations,
   telegramEnabled,
   telegramAllowedUserIds,
   telegramStatus,
@@ -36,7 +39,8 @@ export function Settings({
   onSetTelegramAllowedUserIds,
   onRefreshOllama,
   onSetBaseUrl,
-  onSetShowThinking
+  onSetShowThinking,
+  onSetMaxToolIterations
 }: SettingsProps): React.JSX.Element | null {
   const [urlDraft, setUrlDraft] = useState(baseUrl)
   const [showToken, setShowToken] = useState(false)
@@ -241,6 +245,24 @@ export function Settings({
                   Off by default so you only see replies and tool calls.
                 </span>
               </span>
+            </label>
+            <label className="mt-3 block">
+              <span className="mb-1 block text-sm text-[#e7ecf1]">Max tool iterations</span>
+              <span className="mb-2 block text-xs text-[#6b7a8c]">
+                How many tool-call rounds the agent can run per message. A final summary
+                is added if the limit is reached.
+              </span>
+              <input
+                type="number"
+                min={8}
+                max={100}
+                value={maxToolIterations}
+                onChange={(e) => {
+                  const parsed = Number(e.target.value)
+                  if (Number.isFinite(parsed)) onSetMaxToolIterations(parsed)
+                }}
+                className="w-24 rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
+              />
             </label>
           </section>
         </div>
