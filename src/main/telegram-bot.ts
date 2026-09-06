@@ -214,8 +214,8 @@ function registerHandlers(instance: Telegraf): void {
 
   instance.command('delete', async (ctx) => {
     const sessions = telegramSessions()
-    if (sessions.length <= 1) {
-      await ctx.reply('Cannot delete the only Telegram session.')
+    if (sessions.length === 0) {
+      await ctx.reply('No Telegram sessions to delete.')
       return
     }
 
@@ -302,9 +302,18 @@ function registerHandlers(instance: Telegraf): void {
 
     if (data.startsWith('delete:')) {
       const sessionId = data.slice('delete:'.length)
-      deleteSession(sessionId)
-      broadcastSessionsChanged()
-      await ctx.answerCbQuery('Session deleted')
+      const session = getSessionsState().sessions.find((s) => s.id === sessionId)
+      if (!session || (session.origin ?? 'desktop') !== 'telegram') {
+        await ctx.answerCbQuery('Telegram session not found')
+        return
+      }
+      try {
+        deleteSession(sessionId)
+        broadcastSessionsChanged()
+        await ctx.answerCbQuery('Session deleted')
+      } catch {
+        await ctx.answerCbQuery('Could not delete session')
+      }
       return
     }
 

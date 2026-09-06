@@ -23,7 +23,8 @@ function nowIso(): string {
 export function applyBackgroundChatEvent(
   event: ChatEvent,
   state: BackgroundSessionTurn,
-  onPersist: (messages: UiMessage[], history: ChatMessage[]) => void
+  onPersist: (messages: UiMessage[], history: ChatMessage[]) => void,
+  showThinking = false
 ): void {
   const { turnStartedAt, turnModel } = state
   let { messages, history } = state
@@ -34,7 +35,32 @@ export function applyBackgroundChatEvent(
     onPersist(messages, history)
   }
 
-  if (event.type === 'thinking' || event.type === 'chunk' || event.type === 'status') {
+  if (event.type === 'thinking') {
+    if (!showThinking || !event.content) return
+    let next = [...messages]
+    const last = next[next.length - 1]
+    if (last?.kind === 'thinking' && last.streaming) {
+      next[next.length - 1] = {
+        ...last,
+        content: last.content + event.content
+      }
+    } else {
+      next.push({
+        kind: 'thinking',
+        id: uid(),
+        content: event.content,
+        createdAt: nowIso(),
+        streaming: true,
+        model: turnModel ?? undefined,
+        startedAt: Date.now()
+      })
+    }
+    messages = next
+    state.messages = messages
+    return
+  }
+
+  if (event.type === 'chunk' || event.type === 'status') {
     return
   }
 

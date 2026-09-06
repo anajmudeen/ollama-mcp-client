@@ -146,19 +146,17 @@ export function Sidebar({
                     )}
                   </span>
                 </button>
-                {(session.origin ?? 'desktop') !== 'telegram' && (
-                  <button
-                    type="button"
-                    title="Delete chat"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDeleteSession(session.id)
-                    }}
-                    className="absolute right-1.5 top-1.5 hidden h-6 w-6 items-center justify-center rounded text-[#8b9aab] hover:bg-[#2a1818] hover:text-rose-300 group-hover:flex"
-                  >
-                    ×
-                  </button>
-                )}
+                <button
+                  type="button"
+                  title="Delete chat"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDeleteSession(session.id)
+                  }}
+                  className="absolute right-1.5 top-1.5 hidden h-6 w-6 items-center justify-center rounded text-[#8b9aab] hover:bg-[#2a1818] hover:text-rose-300 group-hover:flex"
+                >
+                  ×
+                </button>
               </li>
             )
           })}

@@ -474,9 +474,14 @@ export default function App(): React.JSX.Element {
             )
             backgroundSessionsRef.current.set(eventSessionId, bg)
           }
-          applyBackgroundChatEvent(event, bg, (ui, hist) => {
-            void writeSessionRef.current(eventSessionId, ui, hist)
-          })
+          applyBackgroundChatEvent(
+            event,
+            bg,
+            (ui, hist) => {
+              void writeSessionRef.current(eventSessionId, ui, hist)
+            },
+            showThinkingRef.current
+          )
           if (event.type === 'done' || event.type === 'error') {
             backgroundSessionsRef.current.delete(eventSessionId)
           }
@@ -943,7 +948,7 @@ export default function App(): React.JSX.Element {
 
   const handleDeleteSession = async (id: string): Promise<void> => {
     const target = sessions.find((s) => s.id === id)
-    if ((target?.origin ?? 'desktop') === 'telegram') return
+    if (!target) return
     if (pendingAiTitleRef.current?.sessionId === id) {
       cancelAiTitle()
     }
