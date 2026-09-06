@@ -35,7 +35,18 @@ export function applyBackgroundChatEvent(
     onPersist(messages, history)
   }
 
+  const clearQueuedLabels = (): void => {
+    if (!messages.some((m) => m.kind === 'user' && m.queueStatus === 'queued')) return
+    messages = messages.map((m) =>
+      m.kind === 'user' && m.queueStatus === 'queued'
+        ? { ...m, queueStatus: undefined }
+        : m
+    )
+    state.messages = messages
+  }
+
   if (event.type === 'thinking') {
+    clearQueuedLabels()
     if (!showThinking || !event.content) return
     let next = [...messages]
     const last = next[next.length - 1]
@@ -61,6 +72,7 @@ export function applyBackgroundChatEvent(
   }
 
   if (event.type === 'chunk' || event.type === 'status') {
+    if (event.type === 'status') clearQueuedLabels()
     return
   }
 

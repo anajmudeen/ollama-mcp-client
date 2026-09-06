@@ -4,7 +4,9 @@ import type {
   AgentSkillInput,
   AppConfig,
   CatalogSkill,
+  ChatEnqueueResult,
   ChatEvent,
+  ChatQueueState,
   ChatSendPayload,
   ChatSession,
   HtmlPreviewCreatePayload,
@@ -128,7 +130,7 @@ const api = {
   },
 
   chat: {
-    send: (payload: ChatSendPayload): Promise<void> =>
+    send: (payload: ChatSendPayload): Promise<ChatEnqueueResult> =>
       ipcRenderer.invoke('chat:send', payload),
     abort: (): Promise<void> => ipcRenderer.invoke('chat:abort'),
     onEvent: (callback: (event: ChatEvent) => void): (() => void) => {
@@ -138,6 +140,21 @@ const api = {
       ipcRenderer.on('chat:event', handler)
       return () => {
         ipcRenderer.removeListener('chat:event', handler)
+      }
+    }
+  },
+
+  queue: {
+    getState: (): Promise<ChatQueueState> => ipcRenderer.invoke('queue:getState'),
+    removeSession: (sessionId: string): Promise<ChatQueueState> =>
+      ipcRenderer.invoke('queue:removeSession', sessionId),
+    onChanged: (callback: (state: ChatQueueState) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, state: ChatQueueState): void => {
+        callback(state)
+      }
+      ipcRenderer.on('queue:changed', handler)
+      return () => {
+        ipcRenderer.removeListener('queue:changed', handler)
       }
     }
   },

@@ -1,9 +1,19 @@
-import type { ChatSession } from '../../../shared/types'
+import type { ChatSession, ChatQueueState, SessionQueueStatus } from '../../../shared/types'
 import appIcon from '../assets/icon-128.png'
+
+function queueStatusForSession(
+  sessionId: string,
+  state: ChatQueueState
+): SessionQueueStatus {
+  if (state.running?.sessionId === sessionId) return 'running'
+  if (state.queued.some((q) => q.sessionId === sessionId)) return 'queued'
+  return 'idle'
+}
 
 interface SidebarProps {
   sessions: ChatSession[]
   activeSessionId: string | null
+  queueState: ChatQueueState
   view: 'chat' | 'models' | 'mcp' | 'skills' | 'schedules'
   onNewSession: () => void
   onSelectSession: (id: string) => void
@@ -32,6 +42,7 @@ function formatRelativeTime(iso: string): string {
 export function Sidebar({
   sessions,
   activeSessionId,
+  queueState,
   view,
   onNewSession,
   onSelectSession,
@@ -134,6 +145,7 @@ export function Sidebar({
           )}
           {sessions.map((session) => {
             const active = session.id === activeSessionId
+            const qStatus = queueStatusForSession(session.id, queueState)
             return (
               <li key={session.id} className="group relative">
                 <button
@@ -150,8 +162,20 @@ export function Sidebar({
                     {session.title || 'New chat'}
                   </span>
                   <span
-                    className={`text-[10px] ${active ? 'text-[#7aa4d4]' : 'text-[#6b7a8c]'}`}
+                    className={`flex items-center gap-1.5 text-[10px] ${active ? 'text-[#7aa4d4]' : 'text-[#6b7a8c]'}`}
                   >
+                    {qStatus === 'running' && (
+                      <span
+                        className="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-400"
+                        title="Running"
+                      />
+                    )}
+                    {qStatus === 'queued' && (
+                      <span
+                        className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
+                        title="Queued"
+                      />
+                    )}
                     {formatRelativeTime(
                       session.uiMessages.at(-1)?.createdAt ??
                         session.updatedAt ??

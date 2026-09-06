@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { ChatMessage, UiMessage } from '../shared/types'
-import { runAgentTurn } from './agent'
+import { enqueueTurn } from './chat-queue'
 import {
   ensureTelegramActiveSession,
   getSelectedModel,
@@ -62,12 +62,15 @@ export async function runTelegramTurn(
 
   await beginTelegramActivity(turnId, '⏳ Processing your message…')
 
-  void runAgentTurn({
+  const enqueued = await enqueueTurn({
     model,
     messages: nextHistory,
     turnId,
     sessionId
   })
+  if (!enqueued.ok) {
+    return { ok: false, error: enqueued.error }
+  }
 
   return { ok: true }
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { ChatEvent, TelegramSchedule } from '../shared/types'
-import { isAgentBusy, runAgentTurn } from './agent'
+import { isAgentBusy } from './agent'
+import { enqueueTurn } from './chat-queue'
 import { onChatEvent } from './chat-events'
 import {
   ensureTelegramActiveSession,
@@ -174,12 +175,21 @@ export async function executeSchedule(
     await beginTelegramActivity(turnId, `⏳ Scheduled: ${schedule.name}…`)
   }
 
-  void runAgentTurn({
+  const enqueued = await enqueueTurn({
     model,
     messages: nextHistory,
     turnId,
     sessionId
   })
+  if (!enqueued.ok) {
+    patchScheduleRun(scheduleId, {
+      lastRunAt: nowIso(),
+      lastRunStatus: 'error',
+      lastRunError: enqueued.error
+    })
+    broadcastSchedulesChanged()
+    return { ok: false, error: enqueued.error }
+  }
 
   const result = await waitForTurnResult(turnId)
 

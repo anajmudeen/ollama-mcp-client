@@ -3,10 +3,12 @@ import type {
   ActivityPhase,
   ChatEvent,
   ChatMessage,
+  ChatQueueState,
   ChatSession,
   McpToolInfo,
   OllamaModel,
   ScheduleNotificationPayload,
+  SessionQueueStatus,
   TelegramStatus,
   UiMessage
 } from '../../shared/types'
@@ -39,6 +41,15 @@ function nowIso(): string {
 }
 
 const IDLE_ACTIVITY: ActivityState = { phase: 'idle' }
+
+function sessionQueueStatus(
+  sessionId: string,
+  state: ChatQueueState
+): SessionQueueStatus {
+  if (state.running?.sessionId === sessionId) return 'running'
+  if (state.queued.some((q) => q.sessionId === sessionId)) return 'queued'
+  return 'idle'
+}
 
 function titleFromPrompt(text: string): string {
   const cleaned = text.replace(/\s+/g, ' ').trim()
@@ -81,6 +92,10 @@ export default function App(): React.JSX.Element {
   const [scheduleToast, setScheduleToast] = useState<ScheduleNotificationPayload | null>(
     null
   )
+  const [queueState, setQueueState] = useState<ChatQueueState>({
+    running: null,
+    queued: []
+  })
   const [contextUsage, setContextUsage] = useState<{
     used: number
     limit: number
@@ -137,6 +152,7 @@ export default function App(): React.JSX.Element {
     turnId: null,
     raf: null
   })
+  const queueStateRef = useRef<ChatQueueState>({ running: null, queued: [] })
 
   const syncMessages = useCallback((next: UiMessage[]) => {
     messagesRef.current = next
@@ -354,6 +370,55 @@ export default function App(): React.JSX.Element {
       await refreshOllama()
     })()
   }, [applySessionsState, refreshOllama, refreshServers])
+
+  useEffect(() => {
+    queueStateRef.current = queueState
+  }, [queueState])
+
+  const clearQueuedLabels = useCallback((sessionId: string): void => {
+    if (sessionId !== activeSessionIdRef.current) return
+    const next = messagesRef.current.map((m) =>
+      m.kind === 'user' && m.queueStatus === 'queued'
+        ? { ...m, queueStatus: undefined }
+        : m
+    )
+    syncMessages(next)
+    persistSessionRef.current(sessionId, next, historyRef.current)
+  }, [syncMessages])
+
+  const adoptRunningTurn = useCallback(
+    (sessionId: string, turnId: string): void => {
+      if (sessionId !== activeSessionIdRef.current) return
+      activeTurnIdRef.current = turnId
+      turnStartedAtRef.current = Date.now()
+      turnModelRef.current = selectedModelRef.current
+      setBusy(true)
+      setActivity({
+        phase: 'thinking',
+        detail: 'Waiting for the model…',
+        thinking: '',
+        startedAt: Date.now()
+      })
+      clearQueuedLabels(sessionId)
+    },
+    [clearQueuedLabels]
+  )
+
+  useEffect(() => {
+    void window.api.queue.getState().then((state) => {
+      setQueueState(state)
+      queueStateRef.current = state
+    })
+    const unsubQueue = window.api.queue.onChanged((state) => {
+      setQueueState(state)
+      queueStateRef.current = state
+      const activeId = activeSessionIdRef.current
+      if (activeId && state.running?.sessionId === activeId) {
+        adoptRunningTurn(activeId, state.running.turnId)
+      }
+    })
+    return unsubQueue
+  }, [adoptRunningTurn])
 
   useEffect(() => {
     const unsubSchedules = window.api.schedules.onNotification((payload) => {
@@ -828,6 +893,9 @@ export default function App(): React.JSX.Element {
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const activeSessionReadOnly = (activeSession?.origin ?? 'desktop') === 'telegram'
+  const activeSessionQueueStatus = activeSessionId
+    ? sessionQueueStatus(activeSessionId, queueState)
+    : 'idle'
 
   const handleSend = async (payload: {
     content: string
@@ -835,16 +903,15 @@ export default function App(): React.JSX.Element {
     attachmentLabels?: string[]
     invokedSkill?: string
   }): Promise<void> => {
-    if (!selectedModel || busy) return
+    if (!selectedModel) return
     if (activeSessionReadOnly) return
     if (!payload.content.trim() && !payload.images?.length) return
     const sessionId = activeSessionIdRef.current
     if (!sessionId) return
+    if (sessionQueueStatus(sessionId, queueStateRef.current) !== 'idle') return
 
+    const willQueue = queueStateRef.current.running !== null
     const turnId = uid()
-    activeTurnIdRef.current = turnId
-    turnStartedAtRef.current = Date.now()
-    turnModelRef.current = selectedModel
 
     const userMsg: ChatMessage = {
       role: 'user',
@@ -872,7 +939,8 @@ export default function App(): React.JSX.Element {
         content: uiContent,
         createdAt: nowIso(),
         attachmentLabels: payload.attachmentLabels,
-        model: selectedModel
+        model: selectedModel,
+        ...(willQueue ? { queueStatus: 'queued' as const } : {})
       }
     ]
     syncMessages(nextMessages)
@@ -894,14 +962,20 @@ export default function App(): React.JSX.Element {
     }
     persistSession(sessionId, nextMessages, nextHistory, title)
 
-    setBusy(true)
-    setActivity({
-      phase: 'thinking',
-      detail: 'Waiting for the model…',
-      thinking: '',
-      startedAt: Date.now()
-    })
-    await window.api.chat.send({
+    if (!willQueue) {
+      activeTurnIdRef.current = turnId
+      turnStartedAtRef.current = Date.now()
+      turnModelRef.current = selectedModel
+      setBusy(true)
+      setActivity({
+        phase: 'thinking',
+        detail: 'Waiting for the model…',
+        thinking: '',
+        startedAt: Date.now()
+      })
+    }
+
+    const result = await window.api.chat.send({
       model: selectedModel,
       messages: nextHistory,
       sessionId,
@@ -909,6 +983,13 @@ export default function App(): React.JSX.Element {
       contextUsed: contextUsage?.used,
       invokedSkill: payload.invokedSkill
     })
+    if (!result.ok) {
+      const reverted = nextMessages.slice(0, -1)
+      historyRef.current = historyRef.current.slice(0, -1)
+      syncMessages(reverted)
+      persistSession(sessionId, reverted, historyRef.current, title)
+      return
+    }
   }
 
   const handleAbort = async (): Promise<void> => {
@@ -922,6 +1003,7 @@ export default function App(): React.JSX.Element {
   const handleClear = (): void => {
     if (activeSessionReadOnly) return
     const sessionId = activeSessionIdRef.current
+    if (sessionId) void window.api.queue.removeSession(sessionId)
     bumpChatEpoch()
     activeTurnIdRef.current = null
     cancelAiTitle()
@@ -944,9 +1026,19 @@ export default function App(): React.JSX.Element {
   }
 
   const leaveCurrentSession = useCallback(async (): Promise<void> => {
+    const sessionId = activeSessionIdRef.current
+    if (sessionId && activeTurnIdRef.current) {
+      backgroundSessionsRef.current.set(
+        sessionId,
+        createBackgroundSessionTurn(
+          messagesRef.current,
+          historyRef.current,
+          turnModelRef.current
+        )
+      )
+    }
     bumpChatEpoch()
     activeTurnIdRef.current = null
-    await window.api.chat.abort()
     setBusy(false)
     setActivity(IDLE_ACTIVITY)
     setContextUsage(null)
@@ -963,10 +1055,26 @@ export default function App(): React.JSX.Element {
   const handleSelectSession = async (id: string): Promise<void> => {
     setView('chat')
     if (id === activeSessionIdRef.current) return
-    backgroundSessionsRef.current.delete(id)
     await leaveCurrentSession()
     const state = await window.api.sessions.setActive(id)
-    applySessionsState(state)
+    const bg = backgroundSessionsRef.current.get(id)
+    if (bg) {
+      backgroundSessionsRef.current.delete(id)
+      setSessions(state.sessions)
+      setActiveSessionId(id)
+      activeSessionIdRef.current = id
+      messagesRef.current = bg.messages
+      setMessages(bg.messages)
+      historyRef.current = bg.history
+      const session = state.sessions.find((s) => s.id === id)
+      sessionTitleRef.current = session?.title ?? 'New chat'
+    } else {
+      applySessionsState(state)
+    }
+    const running = queueStateRef.current.running
+    if (running?.sessionId === id) {
+      adoptRunningTurn(id, running.turnId)
+    }
   }
 
   const handleDeleteSession = async (id: string): Promise<void> => {
@@ -1054,6 +1162,7 @@ export default function App(): React.JSX.Element {
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
+        queueState={queueState}
         view={view}
         onNewSession={() => void handleNewSession()}
         onSelectSession={(id) => void handleSelectSession(id)}
@@ -1137,7 +1246,12 @@ export default function App(): React.JSX.Element {
           busy={busy}
           activity={activity}
           showThinking={showThinking}
-          canSend={Boolean(selectedModel) && ollamaOk && !activeSessionReadOnly}
+          canSend={
+            Boolean(selectedModel) &&
+            ollamaOk &&
+            !activeSessionReadOnly &&
+            activeSessionQueueStatus === 'idle'
+          }
           readOnly={activeSessionReadOnly}
           ollamaOk={ollamaOk}
           imageGenSupported={imageGenSupported}

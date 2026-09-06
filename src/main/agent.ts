@@ -210,7 +210,6 @@ export function isAgentBusy(): boolean {
 }
 
 export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
-  abortChat()
   const abort = new AbortController()
   activeAbort = abort
   const turnId = payload.turnId

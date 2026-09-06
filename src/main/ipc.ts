@@ -11,7 +11,12 @@ import type {
   TelegramMirrorMode,
   TelegramSchedule
 } from '../shared/types'
-import { abortChat, runAgentTurn } from './agent'
+import {
+  abortCurrentTurn,
+  enqueueTurn,
+  getQueueState,
+  removeSessionTurns
+} from './chat-queue'
 import {
   createSession,
   createScheduleRecord,
@@ -240,6 +245,7 @@ export function registerIpc(ipcMain: IpcMain): void {
     }
   )
   ipcMain.handle('sessions:delete', (_e, id: string) => {
+    removeSessionTurns(id)
     const state = deleteSession(id)
     broadcastSessionsChanged()
     return state
@@ -264,12 +270,17 @@ export function registerIpc(ipcMain: IpcMain): void {
     }
   )
 
-  ipcMain.handle('chat:send', async (_e, payload: ChatSendPayload) => {
-    void runAgentTurn(payload)
-  })
+  ipcMain.handle('chat:send', (_e, payload: ChatSendPayload) => enqueueTurn(payload))
 
   ipcMain.handle('chat:abort', () => {
-    abortChat()
+    abortCurrentTurn()
+  })
+
+  ipcMain.handle('queue:getState', () => getQueueState())
+
+  ipcMain.handle('queue:removeSession', (_e, sessionId: string) => {
+    removeSessionTurns(sessionId)
+    return getQueueState()
   })
 
   ipcMain.handle(

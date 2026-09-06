@@ -266,6 +266,17 @@ export interface ChatSendPayload {
   invokedSkill?: string
 }
 
+export type SessionQueueStatus = 'idle' | 'running' | 'queued'
+
+export interface ChatQueueState {
+  running: { sessionId: string; turnId: string } | null
+  queued: Array<{ sessionId: string; turnId: string }>
+}
+
+export type ChatEnqueueResult =
+  | { ok: true; queued: boolean }
+  | { ok: false; error: string }
+
 export type UiMessage =
   | {
       kind: 'user'
@@ -275,6 +286,8 @@ export type UiMessage =
       attachmentLabels?: string[]
       /** Model selected for this turn. */
       model?: string
+      /** Waiting for global agent queue. */
+      queueStatus?: 'queued'
     }
   | {
       kind: 'assistant'

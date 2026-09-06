@@ -609,6 +609,11 @@ export function Chat({
                     )}
                     <div className="whitespace-pre-wrap">{m.content}</div>
                   </div>
+                  {m.queueStatus === 'queued' && (
+                    <p className="mt-1 text-right text-[11px] text-amber-300/90">
+                      Waiting in queue…
+                    </p>
+                  )}
                   <MessageMeta createdAt={m.createdAt} model={m.model} align="right" />
                 </div>
               </div>
