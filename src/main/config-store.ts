@@ -8,6 +8,7 @@ import type {
   SessionOrigin,
   SessionsState,
   TelegramMirrorMode,
+  TelegramSchedule,
   UiMessage
 } from '../shared/types'
 
@@ -24,6 +25,7 @@ const DEFAULT_CONFIG: AppConfig = {
 
 interface StoreSchema extends AppConfig, SessionsState {
   skillEnabled: Record<string, boolean>
+  schedules: TelegramSchedule[]
 }
 
 function sessionOrigin(session: ChatSession): SessionOrigin {
@@ -50,7 +52,8 @@ const store = new Store<StoreSchema>({
     sessions: [],
     activeSessionId: null,
     telegramActiveSessionId: null,
-    skillEnabled: {}
+    skillEnabled: {},
+    schedules: []
   }
 })
 
@@ -409,4 +412,64 @@ export function ensureTelegramActiveSession(): SessionsState {
   }
   createSession('telegram')
   return getSessionsState()
+}
+
+export function listSchedules(): TelegramSchedule[] {
+  return [...store.get('schedules', [])]
+}
+
+export function getSchedule(id: string): TelegramSchedule | null {
+  return listSchedules().find((s) => s.id === id) ?? null
+}
+
+export function upsertSchedule(
+  schedule: TelegramSchedule
+): TelegramSchedule[] {
+  const schedules = listSchedules()
+  const idx = schedules.findIndex((s) => s.id === schedule.id)
+  if (idx >= 0) {
+    schedules[idx] = schedule
+  } else {
+    schedules.push(schedule)
+  }
+  store.set('schedules', schedules)
+  return schedules
+}
+
+export function createScheduleRecord(
+  input: Omit<TelegramSchedule, 'id' | 'createdAt' | 'updatedAt' | 'enabled'> & {
+    enabled?: boolean
+  }
+): TelegramSchedule {
+  const now = new Date().toISOString()
+  const schedule: TelegramSchedule = {
+    ...input,
+    id: randomUUID(),
+    enabled: input.enabled ?? true,
+    createdAt: now,
+    updatedAt: now
+  }
+  upsertSchedule(schedule)
+  return schedule
+}
+
+export function deleteScheduleRecord(id: string): TelegramSchedule[] {
+  const schedules = listSchedules().filter((s) => s.id !== id)
+  store.set('schedules', schedules)
+  return schedules
+}
+
+export function patchScheduleRun(
+  id: string,
+  patch: Pick<TelegramSchedule, 'lastRunAt' | 'lastRunStatus' | 'lastRunError'>
+): TelegramSchedule | null {
+  const schedule = getSchedule(id)
+  if (!schedule) return null
+  const updated: TelegramSchedule = {
+    ...schedule,
+    ...patch,
+    updatedAt: new Date().toISOString()
+  }
+  upsertSchedule(updated)
+  return updated
 }

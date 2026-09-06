@@ -4,13 +4,14 @@ import appIcon from '../assets/icon-128.png'
 interface SidebarProps {
   sessions: ChatSession[]
   activeSessionId: string | null
-  view: 'chat' | 'models' | 'mcp' | 'skills'
+  view: 'chat' | 'models' | 'mcp' | 'skills' | 'schedules'
   onNewSession: () => void
   onSelectSession: (id: string) => void
   onDeleteSession: (id: string) => void
   onOpenModels: () => void
   onOpenMcp: () => void
   onOpenSkills: () => void
+  onOpenSchedules: () => void
   onOpenSettings: () => void
 }
 
@@ -38,6 +39,7 @@ export function Sidebar({
   onOpenModels,
   onOpenMcp,
   onOpenSkills,
+  onOpenSchedules,
   onOpenSettings
 }: SidebarProps): React.JSX.Element {
   return (
@@ -108,6 +110,17 @@ export function Sidebar({
           }`}
         >
           Skills
+        </button>
+        <button
+          type="button"
+          onClick={onOpenSchedules}
+          className={`titlebar-no-drag mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+            view === 'schedules'
+              ? 'border-[#2d6cb5]/50 bg-[#1a3050] text-[#9ec5f0]'
+              : 'border-[#2a3a4d] bg-[#0f1419] text-[#e7ecf1] hover:bg-[#1a2430]'
+          }`}
+        >
+          Schedules
         </button>
       </div>
 

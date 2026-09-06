@@ -18,9 +18,11 @@ import type {
   OllamaModelDetails,
   OllamaStatus,
   PullProgressEvent,
+  ScheduleNotificationPayload,
   SessionsState,
   SkillImportResult,
   TelegramMirrorMode,
+  TelegramSchedule,
   TelegramStatus
 } from '../shared/types'
 
@@ -156,6 +158,48 @@ const api = {
       ipcRenderer.invoke('telegram:setAllowedUserIds', ids),
     setMirrorMode: (mode: TelegramMirrorMode): Promise<TelegramMirrorMode> =>
       ipcRenderer.invoke('telegram:setMirrorMode', mode)
+  },
+
+  schedules: {
+    list: (): Promise<TelegramSchedule[]> => ipcRenderer.invoke('schedules:list'),
+    create: (
+      input: Omit<
+        TelegramSchedule,
+        'id' | 'createdAt' | 'updatedAt' | 'lastRunAt' | 'lastRunStatus' | 'lastRunError'
+      >
+    ): Promise<TelegramSchedule> => ipcRenderer.invoke('schedules:create', input),
+    update: (schedule: TelegramSchedule): Promise<TelegramSchedule> =>
+      ipcRenderer.invoke('schedules:update', schedule),
+    delete: (id: string): Promise<TelegramSchedule[]> =>
+      ipcRenderer.invoke('schedules:delete', id),
+    runNow: (id: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('schedules:runNow', id),
+    onChanged: (callback: (schedules: TelegramSchedule[]) => void): (() => void) => {
+      const handler = (
+        _: Electron.IpcRendererEvent,
+        schedules: TelegramSchedule[]
+      ): void => {
+        callback(schedules)
+      }
+      ipcRenderer.on('schedules:changed', handler)
+      return () => {
+        ipcRenderer.removeListener('schedules:changed', handler)
+      }
+    },
+    onNotification: (
+      callback: (payload: ScheduleNotificationPayload) => void
+    ): (() => void) => {
+      const handler = (
+        _: Electron.IpcRendererEvent,
+        payload: ScheduleNotificationPayload
+      ): void => {
+        callback(payload)
+      }
+      ipcRenderer.on('schedules:notification', handler)
+      return () => {
+        ipcRenderer.removeListener('schedules:notification', handler)
+      }
+    }
   }
 }
 

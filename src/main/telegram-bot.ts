@@ -5,15 +5,20 @@ import {
   addTelegramAllowedUserId,
   createSession,
   deleteSession,
+  getSchedule,
   getSessionsState,
   getTelegramActiveSessionId,
   getSelectedModel,
   getTelegramAllowedUserIds,
   getTelegramBotToken,
   getTelegramEnabled,
-  setTelegramActiveSession
+  listSchedules,
+  setTelegramActiveSession,
+  upsertSchedule
 } from './config-store'
 import { broadcastSessionsChanged } from './sessions-broadcast'
+import { reloadScheduleRunner, runScheduleNow } from './schedule-runner'
+import { broadcastSchedulesChanged } from './schedules-broadcast'
 import {
   chunkTelegramHtml,
   chunkTelegramText,
@@ -100,6 +105,21 @@ function resolveSessionArg(arg: string): string | null {
   return match?.id ?? null
 }
 
+function resolveScheduleArg(arg: string): string | null {
+  const trimmed = arg.trim()
+  if (!trimmed) return null
+
+  const schedules = listSchedules()
+  const index = Number.parseInt(trimmed, 10)
+  if (Number.isFinite(index) && index >= 1 && index <= schedules.length) {
+    return schedules[index - 1]!.id
+  }
+
+  const lower = trimmed.toLowerCase()
+  const match = schedules.find((s) => s.name.toLowerCase().includes(lower))
+  return match?.id ?? null
+}
+
 function activeSessionTitle(): string {
   const state = getSessionsState()
   const activeId = getTelegramActiveSessionId() ?? state.telegramActiveSessionId
@@ -157,6 +177,10 @@ function registerHandlers(instance: Telegraf): void {
         '/switch <n|title> — switch Telegram session',
         '/delete <n|title> — delete a Telegram session',
         '/current — show active session info',
+        '/schedule list — list scheduled tasks',
+        '/schedule run <n|name> — run a schedule now',
+        '/schedule pause <n|name> — pause a schedule',
+        '/schedule resume <n|name> — resume a schedule',
         '',
         `Current session: ${activeSessionTitle()}`
       ].join('\n')
@@ -257,6 +281,92 @@ function registerHandlers(instance: Telegraf): void {
         `Model: ${model ?? '(not selected — choose one in the desktop app)'}`
       ].join('\n')
     )
+  })
+
+  instance.command('schedule', async (ctx) => {
+    const text = ctx.message && 'text' in ctx.message ? ctx.message.text : ''
+    const body = text.replace(/^\/schedule(@\w+)?\s*/i, '').trim()
+    const [sub, ...rest] = body.split(/\s+/)
+    const arg = rest.join(' ').trim()
+    const action = (sub || 'list').toLowerCase()
+
+    if (action === 'list') {
+      const schedules = listSchedules()
+      if (schedules.length === 0) {
+        await ctx.reply('No schedules. Create them in the desktop app: Schedules page.')
+        return
+      }
+      const lines = schedules.map((s, i) => {
+        const status = s.enabled ? 'on' : 'paused'
+        const last = s.lastRunAt
+          ? ` · last ${new Date(s.lastRunAt).toLocaleString()}`
+          : ''
+        return `${i + 1}. ${s.name} (${status})${last}`
+      })
+      await ctx.reply(lines.join('\n'))
+      return
+    }
+
+    if (!arg) {
+      await ctx.reply('Usage: /schedule run|pause|resume <number|name>')
+      return
+    }
+
+    const scheduleId = resolveScheduleArg(arg)
+    if (!scheduleId) {
+      await ctx.reply('Schedule not found.')
+      return
+    }
+
+    const schedule = getSchedule(scheduleId)
+    if (!schedule) {
+      await ctx.reply('Schedule not found.')
+      return
+    }
+
+    if (action === 'run') {
+      const result = await runScheduleNow(scheduleId)
+      if (!result.ok) {
+        await ctx.reply(result.error ?? 'Run failed.')
+        return
+      }
+      await ctx.reply(`Started: ${schedule.name}`)
+      return
+    }
+
+    if (action === 'pause') {
+      if (!schedule.enabled) {
+        await ctx.reply(`Already paused: ${schedule.name}`)
+        return
+      }
+      upsertSchedule({
+        ...schedule,
+        enabled: false,
+        updatedAt: new Date().toISOString()
+      })
+      reloadScheduleRunner()
+      broadcastSchedulesChanged()
+      await ctx.reply(`Paused: ${schedule.name}`)
+      return
+    }
+
+    if (action === 'resume') {
+      if (schedule.enabled) {
+        await ctx.reply(`Already running: ${schedule.name}`)
+        return
+      }
+      upsertSchedule({
+        ...schedule,
+        enabled: true,
+        updatedAt: new Date().toISOString()
+      })
+      reloadScheduleRunner()
+      broadcastSchedulesChanged()
+      await ctx.reply(`Resumed: ${schedule.name}`)
+      return
+    }
+
+    await ctx.reply('Usage: /schedule list|run|pause|resume …')
   })
 
   instance.command('mirror', async (ctx) => {

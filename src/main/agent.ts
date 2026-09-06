@@ -203,6 +203,10 @@ export function abortChat(): void {
   activeTurnId = null
 }
 
+export function isAgentBusy(): boolean {
+  return activeTurnId != null
+}
+
 export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
   abortChat()
   const abort = new AbortController()

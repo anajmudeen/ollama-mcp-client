@@ -8,17 +8,23 @@ import type {
   McpServerConfig,
   PullProgressEvent,
   SkillImportResult,
-  TelegramMirrorMode
+  TelegramMirrorMode,
+  TelegramSchedule
 } from '../shared/types'
 import { abortChat, runAgentTurn } from './agent'
 import {
   createSession,
+  createScheduleRecord,
+  deleteScheduleRecord,
   deleteSession,
   ensureActiveSession,
   getConfig,
+  getSchedule,
   getSelectedModel,
   getSessionsState,
+  listSchedules,
   listServers,
+  patchScheduleRun,
   removeServer,
   setActiveSession,
   setOllamaBaseUrl,
@@ -30,6 +36,7 @@ import {
   setTelegramEnabled,
   setTelegramMirrorMode,
   updateSession,
+  upsertSchedule,
   upsertServer
 } from './config-store'
 import {
@@ -61,6 +68,8 @@ import {
   destroyHtmlPreview
 } from './html-preview'
 import { broadcastSessionsChanged } from './sessions-broadcast'
+import { reloadScheduleRunner, runScheduleNow } from './schedule-runner'
+import { broadcastSchedulesChanged } from './schedules-broadcast'
 import {
   getTelegramBotStatus,
   restartTelegramBot,
@@ -284,5 +293,52 @@ export function registerIpc(ipcMain: IpcMain): void {
   })
   ipcMain.handle('telegram:setMirrorMode', (_e, mode: TelegramMirrorMode) => {
     return setTelegramMirrorMode(mode)
+  })
+
+  ipcMain.handle('schedules:list', () => listSchedules())
+
+  ipcMain.handle(
+    'schedules:create',
+    (
+      _e,
+      input: Omit<TelegramSchedule, 'id' | 'createdAt' | 'updatedAt' | 'lastRunAt' | 'lastRunStatus' | 'lastRunError'>
+    ) => {
+      let sessionId = input.sessionId
+      if (!sessionId) {
+        if (input.delivery.mode === 'notification') {
+          const session = createSession('desktop')
+          session.title = `Schedule: ${input.name}`
+          updateSession(session.id, { title: session.title })
+          sessionId = session.id
+          broadcastSessionsChanged()
+        }
+      }
+      const schedule = createScheduleRecord({ ...input, sessionId })
+      reloadScheduleRunner()
+      broadcastSchedulesChanged()
+      return schedule
+    }
+  )
+
+  ipcMain.handle('schedules:update', (_e, schedule: TelegramSchedule) => {
+    const updated: TelegramSchedule = {
+      ...schedule,
+      updatedAt: new Date().toISOString()
+    }
+    upsertSchedule(updated)
+    reloadScheduleRunner()
+    broadcastSchedulesChanged()
+    return updated
+  })
+
+  ipcMain.handle('schedules:delete', (_e, id: string) => {
+    deleteScheduleRecord(id)
+    reloadScheduleRunner()
+    broadcastSchedulesChanged()
+    return listSchedules()
+  })
+
+  ipcMain.handle('schedules:runNow', async (_e, id: string) => {
+    return runScheduleNow(id)
   })
 }

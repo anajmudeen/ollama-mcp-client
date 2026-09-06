@@ -6,6 +6,7 @@ import type {
   ChatSession,
   McpToolInfo,
   OllamaModel,
+  ScheduleNotificationPayload,
   TelegramStatus,
   UiMessage
 } from '../../shared/types'
@@ -16,6 +17,7 @@ import { McpCatalogPage } from './components/McpCatalogPage'
 import { ModelsPage } from './components/ModelsPage'
 import { Settings } from './components/Settings'
 import { Sidebar } from './components/Sidebar'
+import { SchedulesPage } from './components/SchedulesPage'
 import { SkillsPage } from './components/SkillsPage'
 import {
   applyBackgroundChatEvent,
@@ -68,10 +70,16 @@ export default function App(): React.JSX.Element {
     running: false
   })
   const [telegramTokenDraft, setTelegramTokenDraft] = useState('')
-  const [view, setView] = useState<'chat' | 'models' | 'mcp' | 'skills'>('chat')
+  const [view, setView] = useState<'chat' | 'models' | 'mcp' | 'skills' | 'schedules'>(
+    'chat'
+  )
   const [modelsVisited, setModelsVisited] = useState(false)
   const [mcpVisited, setMcpVisited] = useState(false)
   const [skillsVisited, setSkillsVisited] = useState(false)
+  const [schedulesVisited, setSchedulesVisited] = useState(false)
+  const [scheduleToast, setScheduleToast] = useState<ScheduleNotificationPayload | null>(
+    null
+  )
   const [contextUsage, setContextUsage] = useState<{
     used: number
     limit: number
@@ -346,11 +354,24 @@ export default function App(): React.JSX.Element {
   }, [applySessionsState, refreshOllama, refreshServers])
 
   useEffect(() => {
+    const unsubSchedules = window.api.schedules.onNotification((payload) => {
+      setScheduleToast(payload)
+    })
+
     const unsub = window.api.sessions.onChanged((state) => {
       applySessionsState(state)
     })
-    return unsub
+    return () => {
+      unsubSchedules()
+      unsub()
+    }
   }, [applySessionsState])
+
+  useEffect(() => {
+    if (!scheduleToast) return
+    const timer = window.setTimeout(() => setScheduleToast(null), 8000)
+    return () => window.clearTimeout(timer)
+  }, [scheduleToast])
 
   useEffect(() => {
     const buf = streamBufRef.current
@@ -1000,7 +1021,29 @@ export default function App(): React.JSX.Element {
   }
 
   return (
-    <div className="flex h-full overflow-hidden bg-[#0f1419] text-[#e7ecf1]">
+    <div className="relative flex h-full overflow-hidden bg-[#0f1419] text-[#e7ecf1]">
+      {scheduleToast && (
+        <div
+          className="absolute left-1/2 top-3 z-50 w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-[#2d6cb5]/40 bg-[#1a3050] px-4 py-3 shadow-lg shadow-black/40"
+          role="status"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[#9ec5f0]">
+                Schedule: {scheduleToast.scheduleName}
+              </p>
+              <p className="mt-1 text-sm text-[#c5d0dc]">{scheduleToast.snippet}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setScheduleToast(null)}
+              className="shrink-0 text-xs text-[#8b9aab] hover:text-[#e7ecf1]"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -1021,6 +1064,10 @@ export default function App(): React.JSX.Element {
         onOpenSkills={() => {
           setSkillsVisited(true)
           setView('skills')
+        }}
+        onOpenSchedules={() => {
+          setSchedulesVisited(true)
+          setView('schedules')
         }}
         onOpenSettings={() => setSettingsOpen(true)}
       />
@@ -1062,6 +1109,15 @@ export default function App(): React.JSX.Element {
           }
         >
           <SkillsPage active={view === 'skills'} />
+        </div>
+      ) : null}
+      {schedulesVisited ? (
+        <div
+          className={
+            view === 'schedules' ? 'flex min-h-0 min-w-0 flex-1' : 'hidden'
+          }
+        >
+          <SchedulesPage active={view === 'schedules'} sessions={sessions} />
         </div>
       ) : null}
       {view === 'chat' ? (

@@ -399,3 +399,37 @@ export interface HtmlPreviewCreateResult {
   id: string
   url: string
 }
+
+export type ScheduleRecurrence =
+  | { type: 'interval'; everyMinutes: number }
+  | { type: 'cron'; expression: string; timezone?: string }
+
+export type ScheduleDelivery =
+  | { mode: 'telegram' }
+  | { mode: 'notification'; channel: 'system' | 'in-app' }
+  | { mode: 'both'; notificationChannel: 'system' | 'in-app' }
+
+export type ScheduleRunStatus = 'ok' | 'error' | 'skipped'
+
+export interface TelegramSchedule {
+  id: string
+  name: string
+  prompt: string
+  enabled: boolean
+  recurrence: ScheduleRecurrence
+  delivery: ScheduleDelivery
+  /** Target chat session (telegram or desktop depending on delivery). */
+  sessionId: string | null
+  createdAt: string
+  updatedAt: string
+  lastRunAt?: string
+  lastRunStatus?: ScheduleRunStatus
+  lastRunError?: string
+}
+
+export interface ScheduleNotificationPayload {
+  scheduleId: string
+  scheduleName: string
+  snippet: string
+  sessionId: string
+}

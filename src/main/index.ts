@@ -3,6 +3,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { registerIpc, restoreMcpConnections } from './ipc'
 import { mcpManager } from './mcp-manager'
+import { reloadScheduleRunner, stopScheduleRunner } from './schedule-runner'
 import { restartTelegramBot, stopTelegramBot } from './telegram-bot'
 import {
   destroyAllHtmlPreviews,
@@ -120,6 +121,7 @@ app.whenReady().then(async () => {
   registerHtmlPreviewProtocol()
   registerIpc(ipcMain)
   await restoreMcpConnections()
+  reloadScheduleRunner()
   await restartTelegramBot()
   createWindow()
 
@@ -132,6 +134,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   destroyAllHtmlPreviews()
+  stopScheduleRunner()
   void mcpManager.disconnectAll()
   void stopTelegramBot()
 })
