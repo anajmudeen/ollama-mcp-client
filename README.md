@@ -71,4 +71,4 @@ Tool names are prefixed as `{serverId}__{toolName}` so multiple servers can expo
 
 - MVP supports **stdio** MCP only (not SSE/HTTP).
 - Use Ollama’s native `/api/chat` (not `/v1`) for reliable tool calling.
-- Max 8 tool-call iterations per user turn.
+- Configurable max tool-call iterations per user turn (default 30, range 8–100 in Settings).

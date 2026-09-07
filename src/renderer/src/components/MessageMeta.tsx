@@ -1,10 +1,17 @@
 import type { ReactNode } from 'react'
 import { formatTokenCount } from '../../../shared/contextUsage'
 import { contextUsageColor } from '../lib/contextUsage'
+import { useSegmentTimer } from '../hooks/useSegmentTimer'
 
 interface MessageMetaProps {
   createdAt?: string
   responseMs?: number
+  elapsedMs?: number
+  liveTotal?: boolean
+  segmentActive?: boolean
+  segmentStartedAt?: number
+  segmentDurationMs?: number
+  totalStartedAt?: number
   tokensPerSec?: number
   model?: string
   contextUsed?: number
@@ -52,6 +59,12 @@ export function formatTokensPerSec(n?: number): string {
 export function MessageMeta({
   createdAt,
   responseMs,
+  elapsedMs,
+  liveTotal,
+  segmentActive,
+  segmentStartedAt,
+  segmentDurationMs,
+  totalStartedAt,
   tokensPerSec,
   model,
   contextUsed,
@@ -59,7 +72,19 @@ export function MessageMeta({
   align = 'left'
 }: MessageMetaProps): React.JSX.Element | null {
   const time = formatMessageTime(createdAt)
-  const duration = formatResponseMs(responseMs)
+  const segment = useSegmentTimer({
+    active: Boolean(segmentActive),
+    startedAt: segmentStartedAt,
+    durationMs: segmentDurationMs
+  })
+  const total = useSegmentTimer({
+    active: Boolean(liveTotal && totalStartedAt),
+    startedAt: totalStartedAt,
+    durationMs: responseMs
+  })
+  const duration = liveTotal ? total : formatResponseMs(responseMs)
+  const segmentLabel = segmentActive ? segment : formatResponseMs(segmentDurationMs)
+  const elapsed = formatResponseMs(elapsedMs)
   const speed = formatTokensPerSec(tokensPerSec)
   const modelLabel = model?.trim() || ''
   const hasContext =
@@ -71,7 +96,8 @@ export function MessageMeta({
     ? Math.max(0, (contextUsed / contextLimit) * 100)
     : 0
   const barPct = Math.min(100, pct)
-  if (!time && !duration && !speed && !modelLabel && !hasContext) return null
+  if (!time && !duration && !segmentLabel && !elapsed && !speed && !modelLabel && !hasContext)
+    return null
 
   const parts: ReactNode[] = []
   const push = (node: ReactNode): void => {
@@ -99,10 +125,24 @@ export function MessageMeta({
   if (time) {
     push(<span key="time">{time}</span>)
   }
+  if (segmentLabel) {
+    push(
+      <span key="segment" title="Reply time" className="text-[#8b9aab]">
+        {segmentLabel}
+      </span>
+    )
+  }
   if (duration) {
     push(
-      <span key="duration" title="Response time" className="text-[#8b9aab]">
+      <span key="duration" title="Total time" className="text-[#8b9aab]">
         {duration}
+      </span>
+    )
+  }
+  if (elapsed) {
+    push(
+      <span key="elapsed" title="Elapsed since send" className="text-[#8b9aab]">
+        {elapsed}
       </span>
     )
   }

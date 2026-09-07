@@ -3,9 +3,13 @@ import type {
   ActivityPhase,
   ChatEvent,
   ChatMessage,
+  ChatQueueState,
   ChatSession,
   McpToolInfo,
   OllamaModel,
+  ScheduleNotificationPayload,
+  SessionQueueStatus,
+  TelegramStatus,
   UiMessage
 } from '../../shared/types'
 import type { ServerWithStatus } from '../../preload/index'
@@ -15,7 +19,18 @@ import { McpCatalogPage } from './components/McpCatalogPage'
 import { ModelsPage } from './components/ModelsPage'
 import { Settings } from './components/Settings'
 import { Sidebar } from './components/Sidebar'
+import { SchedulesPage } from './components/SchedulesPage'
 import { SkillsPage } from './components/SkillsPage'
+import {
+  applyBackgroundChatEvent,
+  createBackgroundSessionTurn,
+  type BackgroundSessionTurn
+} from './lib/backgroundChatEvents'
+import {
+  closeStreamingThinking,
+  closeToolMessage,
+  segmentDurationMs
+} from './lib/segmentTiming'
 
 function uid(): string {
   return crypto.randomUUID()
@@ -26,6 +41,15 @@ function nowIso(): string {
 }
 
 const IDLE_ACTIVITY: ActivityState = { phase: 'idle' }
+
+function sessionQueueStatus(
+  sessionId: string,
+  state: ChatQueueState
+): SessionQueueStatus {
+  if (state.running?.sessionId === sessionId) return 'running'
+  if (state.queued.some((q) => q.sessionId === sessionId)) return 'queued'
+  return 'idle'
+}
 
 function titleFromPrompt(text: string): string {
   const cleaned = text.replace(/\s+/g, ' ').trim()
@@ -47,12 +71,31 @@ export default function App(): React.JSX.Element {
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [busy, setBusy] = useState(false)
   const [activity, setActivity] = useState<ActivityState>(IDLE_ACTIVITY)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [showThinking, setShowThinking] = useState(false)
-  const [view, setView] = useState<'chat' | 'models' | 'mcp' | 'skills'>('chat')
+  const [maxToolIterations, setMaxToolIterations] = useState(30)
+  const [telegramEnabled, setTelegramEnabled] = useState(false)
+  const [telegramAllowedUserIds, setTelegramAllowedUserIds] = useState<number[]>(
+    []
+  )
+  const [telegramStatus, setTelegramStatus] = useState<TelegramStatus>({
+    running: false
+  })
+  const [telegramTokenDraft, setTelegramTokenDraft] = useState('')
+  const [view, setView] = useState<
+    'chat' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
+  >('chat')
   const [modelsVisited, setModelsVisited] = useState(false)
   const [mcpVisited, setMcpVisited] = useState(false)
   const [skillsVisited, setSkillsVisited] = useState(false)
+  const [schedulesVisited, setSchedulesVisited] = useState(false)
+  const [settingsVisited, setSettingsVisited] = useState(false)
+  const [scheduleToast, setScheduleToast] = useState<ScheduleNotificationPayload | null>(
+    null
+  )
+  const [queueState, setQueueState] = useState<ChatQueueState>({
+    running: null,
+    queued: []
+  })
   const [contextUsage, setContextUsage] = useState<{
     used: number
     limit: number
@@ -68,7 +111,18 @@ export default function App(): React.JSX.Element {
   const activeTurnIdRef = useRef<string | null>(null)
   const turnStartedAtRef = useRef<number | null>(null)
   const turnModelRef = useRef<string | null>(null)
+  const selectedModelRef = useRef<string | null>(null)
   const showThinkingRef = useRef(false)
+  const sessionsRef = useRef<ChatSession[]>([])
+  const backgroundSessionsRef = useRef<Map<string, BackgroundSessionTurn>>(new Map())
+  const writeSessionRef = useRef<
+    (
+      id: string,
+      uiMessages: UiMessage[],
+      history: ChatMessage[],
+      title?: string
+    ) => Promise<void>
+  >(async () => {})
   const persistSessionRef = useRef<
     (
       id: string,
@@ -98,6 +152,7 @@ export default function App(): React.JSX.Element {
     turnId: null,
     raf: null
   })
+  const queueStateRef = useRef<ChatQueueState>({ running: null, queued: [] })
 
   const syncMessages = useCallback((next: UiMessage[]) => {
     messagesRef.current = next
@@ -223,6 +278,18 @@ export default function App(): React.JSX.Element {
     showThinkingRef.current = showThinking
   }, [showThinking])
 
+  useEffect(() => {
+    selectedModelRef.current = selectedModel
+  }, [selectedModel])
+
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
+
+  useEffect(() => {
+    writeSessionRef.current = writeSession
+  }, [writeSession])
+
   const flushActiveSession = useCallback(async (): Promise<void> => {
     if (persistTimer.current !== null) {
       window.clearTimeout(persistTimer.current)
@@ -293,12 +360,85 @@ export default function App(): React.JSX.Element {
       setSelectedModel(config.selectedModel)
       setShowThinking(Boolean(config.showThinking))
       showThinkingRef.current = Boolean(config.showThinking)
+      setMaxToolIterations(config.maxToolIterations)
+      setTelegramEnabled(Boolean(config.telegramEnabled))
+      setTelegramAllowedUserIds(config.telegramAllowedUserIds)
+      setTelegramStatus(await window.api.telegram.getStatus())
       const sessionState = await window.api.sessions.list()
       applySessionsState(sessionState)
       await refreshServers()
       await refreshOllama()
     })()
   }, [applySessionsState, refreshOllama, refreshServers])
+
+  useEffect(() => {
+    queueStateRef.current = queueState
+  }, [queueState])
+
+  const clearQueuedLabels = useCallback((sessionId: string): void => {
+    if (sessionId !== activeSessionIdRef.current) return
+    const next = messagesRef.current.map((m) =>
+      m.kind === 'user' && m.queueStatus === 'queued'
+        ? { ...m, queueStatus: undefined }
+        : m
+    )
+    syncMessages(next)
+    persistSessionRef.current(sessionId, next, historyRef.current)
+  }, [syncMessages])
+
+  const adoptRunningTurn = useCallback(
+    (sessionId: string, turnId: string): void => {
+      if (sessionId !== activeSessionIdRef.current) return
+      activeTurnIdRef.current = turnId
+      turnStartedAtRef.current = Date.now()
+      turnModelRef.current = selectedModelRef.current
+      setBusy(true)
+      setActivity({
+        phase: 'thinking',
+        detail: 'Waiting for the model…',
+        thinking: '',
+        startedAt: Date.now()
+      })
+      clearQueuedLabels(sessionId)
+    },
+    [clearQueuedLabels]
+  )
+
+  useEffect(() => {
+    void window.api.queue.getState().then((state) => {
+      setQueueState(state)
+      queueStateRef.current = state
+    })
+    const unsubQueue = window.api.queue.onChanged((state) => {
+      setQueueState(state)
+      queueStateRef.current = state
+      const activeId = activeSessionIdRef.current
+      if (activeId && state.running?.sessionId === activeId) {
+        adoptRunningTurn(activeId, state.running.turnId)
+      }
+    })
+    return unsubQueue
+  }, [adoptRunningTurn])
+
+  useEffect(() => {
+    const unsubSchedules = window.api.schedules.onNotification((payload) => {
+      setScheduleToast(payload)
+    })
+
+    const unsub = window.api.sessions.onChanged((state) => {
+      applySessionsState(state)
+    })
+    return () => {
+      unsubSchedules()
+      unsub()
+    }
+  }, [applySessionsState])
+
+  useEffect(() => {
+    if (!scheduleToast) return
+    const timer = window.setTimeout(() => setScheduleToast(null), 8000)
+    return () => window.clearTimeout(timer)
+  }, [scheduleToast])
 
   useEffect(() => {
     const buf = streamBufRef.current
@@ -327,7 +467,8 @@ export default function App(): React.JSX.Element {
             content,
             createdAt: nowIso(),
             streaming: true,
-            model: turnModelRef.current ?? undefined
+            model: turnModelRef.current ?? undefined,
+            startedAt: Date.now()
           })
         }
         messagesRef.current = next
@@ -347,9 +488,7 @@ export default function App(): React.JSX.Element {
             }
       )
       setMessages((prev) => {
-        let next = prev.map((m) =>
-          m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
-        )
+        let next = closeStreamingThinking(prev, turnStartedAtRef.current)
         next = [...next]
         const last = next[next.length - 1]
         if (last?.kind === 'assistant' && last.streaming) {
@@ -364,7 +503,8 @@ export default function App(): React.JSX.Element {
             content,
             createdAt: nowIso(),
             streaming: true,
-            model: turnModelRef.current ?? undefined
+            model: turnModelRef.current ?? undefined,
+            startedAt: Date.now()
           })
         }
         messagesRef.current = next
@@ -407,13 +547,64 @@ export default function App(): React.JSX.Element {
         requestAiTitleRef.current()
       }
 
+      const eventSessionId = event.sessionId
+
+      if (event.turnId && eventSessionId) {
+        if (eventSessionId !== activeSessionIdRef.current) {
+          let bg = backgroundSessionsRef.current.get(eventSessionId)
+          if (!bg) {
+            const session = sessionsRef.current.find((s) => s.id === eventSessionId)
+            if (!session) return
+            bg = createBackgroundSessionTurn(
+              session.uiMessages,
+              session.history,
+              selectedModelRef.current
+            )
+            backgroundSessionsRef.current.set(eventSessionId, bg)
+          }
+          applyBackgroundChatEvent(
+            event,
+            bg,
+            (ui, hist) => {
+              void writeSessionRef.current(eventSessionId, ui, hist)
+            },
+            showThinkingRef.current
+          )
+          if (event.type === 'done' || event.type === 'error') {
+            backgroundSessionsRef.current.delete(eventSessionId)
+          }
+          return
+        }
+      }
+
       const sessionId = activeSessionIdRef.current
       if (!sessionId) return
+
+      // Adopt in-flight turns only for the session currently open in the UI.
+      if (
+        event.turnId &&
+        eventSessionId === sessionId &&
+        !activeTurnIdRef.current &&
+        event.type !== 'user' &&
+        event.type !== 'done'
+      ) {
+        activeTurnIdRef.current = event.turnId
+        turnStartedAtRef.current = Date.now()
+        turnModelRef.current = selectedModelRef.current
+        setBusy(true)
+        setActivity({
+          phase: 'thinking',
+          detail: 'Waiting for the model…',
+          thinking: '',
+          startedAt: Date.now()
+        })
+      }
 
       const turnOk =
         Boolean(event.turnId) &&
         Boolean(activeTurnIdRef.current) &&
-        event.turnId === activeTurnIdRef.current
+        event.turnId === activeTurnIdRef.current &&
+        (!eventSessionId || eventSessionId === sessionId)
 
       const stillCurrent = (): boolean =>
         turnOk && sessionId === activeSessionIdRef.current
@@ -469,9 +660,7 @@ export default function App(): React.JSX.Element {
         const finishedAt = nowIso()
         setMessages((prev) => {
           if (sessionId !== activeSessionIdRef.current) return prev
-          const next = [...prev].map((m) =>
-            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
-          )
+          const next = closeStreamingThinking(prev, turnStartedAtRef.current)
           const last = next[next.length - 1]
           if (last?.kind === 'assistant' && last.streaming) {
             next[next.length - 1] = {
@@ -479,6 +668,7 @@ export default function App(): React.JSX.Element {
               content: event.content || last.content,
               streaming: false,
               createdAt: finishedAt,
+              durationMs: segmentDurationMs(last.startedAt),
               responseMs,
               contextUsed: event.contextUsed ?? last.contextUsed,
               contextLimit: event.contextLimit ?? last.contextLimit,
@@ -521,9 +711,7 @@ export default function App(): React.JSX.Element {
         const finishedAt = nowIso()
         setMessages((prev) => {
           if (sessionId !== activeSessionIdRef.current) return prev
-          const next = [...prev].map((m) =>
-            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
-          )
+          const next = closeStreamingThinking(prev, turnStartedAtRef.current)
           const last = next[next.length - 1]
           if (last?.kind === 'assistant' && last.streaming) {
             next[next.length - 1] = {
@@ -532,6 +720,7 @@ export default function App(): React.JSX.Element {
               images: dataUrls,
               streaming: false,
               createdAt: finishedAt,
+              durationMs: segmentDurationMs(last.startedAt),
               responseMs
             }
           } else {
@@ -560,10 +749,8 @@ export default function App(): React.JSX.Element {
         }))
         setMessages((prev) => {
           if (!stillCurrent()) return prev
-          const next = prev.map((m) =>
-            m.kind === 'thinking' && m.streaming ? { ...m, streaming: false } : m
-          )
-          const last = next[next.length - 1]
+          const closed = closeStreamingThinking(prev, turnStartedAtRef.current)
+          const last = closed[closed.length - 1]
           const responseMs =
             turnStartedAtRef.current != null
               ? Date.now() - turnStartedAtRef.current
@@ -571,15 +758,16 @@ export default function App(): React.JSX.Element {
           const withClosed =
             last?.kind === 'assistant' && last.streaming
               ? [
-                  ...next.slice(0, -1),
+                  ...closed.slice(0, -1),
                   {
                     ...last,
                     streaming: false,
                     createdAt: nowIso(),
+                    durationMs: segmentDurationMs(last.startedAt),
                     responseMs: last.responseMs ?? responseMs
                   }
                 ]
-              : [...next]
+              : [...closed]
           withClosed.push({
             kind: 'tool',
             id: event.id,
@@ -587,7 +775,8 @@ export default function App(): React.JSX.Element {
             arguments: event.arguments,
             status: 'running',
             createdAt: nowIso(),
-            model: turnModelRef.current ?? undefined
+            model: turnModelRef.current ?? undefined,
+            startedAt: Date.now()
           })
           messagesRef.current = withClosed
           persistSessionRef.current(sessionId, withClosed, historyRef.current)
@@ -599,11 +788,14 @@ export default function App(): React.JSX.Element {
           if (!stillCurrent()) return prev
           const next = prev.map((m) =>
             m.kind === 'tool' && m.id === event.id
-              ? {
-                  ...m,
-                  status: event.ok ? ('done' as const) : ('error' as const),
-                  result: event.result
-                }
+              ? closeToolMessage(
+                  {
+                    ...m,
+                    status: event.ok ? ('done' as const) : ('error' as const),
+                    result: event.result
+                  },
+                  turnStartedAtRef.current
+                )
               : m
           )
           messagesRef.current = next
@@ -670,15 +862,19 @@ export default function App(): React.JSX.Element {
         const finishedAt = nowIso()
         setMessages((prev) => {
           if (sessionId !== activeSessionIdRef.current) return prev
-          const next = prev.map((m) =>
-            m.kind === 'assistant' && m.streaming
-              ? {
-                  ...m,
-                  streaming: false,
-                  createdAt: finishedAt,
-                  responseMs: m.responseMs ?? responseMs
-                }
-              : m
+          const next = closeStreamingThinking(
+            prev.map((m) =>
+              m.kind === 'assistant' && m.streaming
+                ? {
+                    ...m,
+                    streaming: false,
+                    createdAt: finishedAt,
+                    durationMs: segmentDurationMs(m.startedAt),
+                    responseMs: m.responseMs ?? responseMs
+                  }
+                : m
+            ),
+            turnStartedAtRef.current
           )
           messagesRef.current = next
           persistSessionRef.current(sessionId, next, historyRef.current)
@@ -695,21 +891,27 @@ export default function App(): React.JSX.Element {
     }
   }, [])
 
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const activeSessionReadOnly = (activeSession?.origin ?? 'desktop') === 'telegram'
+  const activeSessionQueueStatus = activeSessionId
+    ? sessionQueueStatus(activeSessionId, queueState)
+    : 'idle'
+
   const handleSend = async (payload: {
     content: string
     images?: string[]
     attachmentLabels?: string[]
     invokedSkill?: string
   }): Promise<void> => {
-    if (!selectedModel || busy) return
+    if (!selectedModel) return
+    if (activeSessionReadOnly) return
     if (!payload.content.trim() && !payload.images?.length) return
     const sessionId = activeSessionIdRef.current
     if (!sessionId) return
+    if (sessionQueueStatus(sessionId, queueStateRef.current) !== 'idle') return
 
+    const willQueue = queueStateRef.current.running !== null
     const turnId = uid()
-    activeTurnIdRef.current = turnId
-    turnStartedAtRef.current = Date.now()
-    turnModelRef.current = selectedModel
 
     const userMsg: ChatMessage = {
       role: 'user',
@@ -737,7 +939,8 @@ export default function App(): React.JSX.Element {
         content: uiContent,
         createdAt: nowIso(),
         attachmentLabels: payload.attachmentLabels,
-        model: selectedModel
+        model: selectedModel,
+        ...(willQueue ? { queueStatus: 'queued' as const } : {})
       }
     ]
     syncMessages(nextMessages)
@@ -759,20 +962,34 @@ export default function App(): React.JSX.Element {
     }
     persistSession(sessionId, nextMessages, nextHistory, title)
 
-    setBusy(true)
-    setActivity({
-      phase: 'thinking',
-      detail: 'Waiting for the model…',
-      thinking: '',
-      startedAt: Date.now()
-    })
-    await window.api.chat.send({
+    if (!willQueue) {
+      activeTurnIdRef.current = turnId
+      turnStartedAtRef.current = Date.now()
+      turnModelRef.current = selectedModel
+      setBusy(true)
+      setActivity({
+        phase: 'thinking',
+        detail: 'Waiting for the model…',
+        thinking: '',
+        startedAt: Date.now()
+      })
+    }
+
+    const result = await window.api.chat.send({
       model: selectedModel,
       messages: nextHistory,
+      sessionId,
       turnId,
       contextUsed: contextUsage?.used,
       invokedSkill: payload.invokedSkill
     })
+    if (!result.ok) {
+      const reverted = nextMessages.slice(0, -1)
+      historyRef.current = historyRef.current.slice(0, -1)
+      syncMessages(reverted)
+      persistSession(sessionId, reverted, historyRef.current, title)
+      return
+    }
   }
 
   const handleAbort = async (): Promise<void> => {
@@ -784,7 +1001,9 @@ export default function App(): React.JSX.Element {
   }
 
   const handleClear = (): void => {
+    if (activeSessionReadOnly) return
     const sessionId = activeSessionIdRef.current
+    if (sessionId) void window.api.queue.removeSession(sessionId)
     bumpChatEpoch()
     activeTurnIdRef.current = null
     cancelAiTitle()
@@ -807,9 +1026,19 @@ export default function App(): React.JSX.Element {
   }
 
   const leaveCurrentSession = useCallback(async (): Promise<void> => {
+    const sessionId = activeSessionIdRef.current
+    if (sessionId && activeTurnIdRef.current) {
+      backgroundSessionsRef.current.set(
+        sessionId,
+        createBackgroundSessionTurn(
+          messagesRef.current,
+          historyRef.current,
+          turnModelRef.current
+        )
+      )
+    }
     bumpChatEpoch()
     activeTurnIdRef.current = null
-    await window.api.chat.abort()
     setBusy(false)
     setActivity(IDLE_ACTIVITY)
     setContextUsage(null)
@@ -828,10 +1057,29 @@ export default function App(): React.JSX.Element {
     if (id === activeSessionIdRef.current) return
     await leaveCurrentSession()
     const state = await window.api.sessions.setActive(id)
-    applySessionsState(state)
+    const bg = backgroundSessionsRef.current.get(id)
+    if (bg) {
+      backgroundSessionsRef.current.delete(id)
+      setSessions(state.sessions)
+      setActiveSessionId(id)
+      activeSessionIdRef.current = id
+      messagesRef.current = bg.messages
+      setMessages(bg.messages)
+      historyRef.current = bg.history
+      const session = state.sessions.find((s) => s.id === id)
+      sessionTitleRef.current = session?.title ?? 'New chat'
+    } else {
+      applySessionsState(state)
+    }
+    const running = queueStateRef.current.running
+    if (running?.sessionId === id) {
+      adoptRunningTurn(id, running.turnId)
+    }
   }
 
   const handleDeleteSession = async (id: string): Promise<void> => {
+    const target = sessions.find((s) => s.id === id)
+    if (!target) return
     if (pendingAiTitleRef.current?.sessionId === id) {
       cancelAiTitle()
     }
@@ -865,30 +1113,79 @@ export default function App(): React.JSX.Element {
     await window.api.setShowThinking(enabled)
   }
 
+  const handleSetMaxToolIterations = async (value: number): Promise<void> => {
+    const saved = await window.api.setMaxToolIterations(value)
+    setMaxToolIterations(saved)
+  }
+
+  const handleSetTelegramToken = async (token: string | null): Promise<void> => {
+    const status = await window.api.telegram.setToken(token)
+    setTelegramStatus(status)
+    setTelegramTokenDraft('')
+  }
+
+  const handleSetTelegramEnabled = async (enabled: boolean): Promise<void> => {
+    setTelegramEnabled(enabled)
+    const status = await window.api.telegram.setEnabled(enabled)
+    setTelegramStatus(status)
+  }
+
+  const handleSetTelegramAllowedUserIds = async (ids: number[]): Promise<void> => {
+    const saved = await window.api.telegram.setAllowedUserIds(ids)
+    setTelegramAllowedUserIds(saved)
+  }
+
+  const handleNavigate = (
+    target: 'chat' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
+  ): void => {
+    if (target === 'models') {
+      setModelsVisited(true)
+      void window.api.ollama.searchLibrary({ page: 1 }).catch(() => {})
+    } else if (target === 'mcp') {
+      setMcpVisited(true)
+    } else if (target === 'skills') {
+      setSkillsVisited(true)
+    } else if (target === 'schedules') {
+      setSchedulesVisited(true)
+    } else if (target === 'settings') {
+      setSettingsVisited(true)
+    }
+    setView(target)
+  }
+
   return (
-    <div className="flex h-full overflow-hidden bg-[#0f1419] text-[#e7ecf1]">
+    <div className="relative flex h-full overflow-hidden bg-[#0f1419] text-[#e7ecf1]">
+      {scheduleToast && (
+        <div
+          className="absolute left-1/2 top-3 z-50 w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-[#2d6cb5]/40 bg-[#1a3050] px-4 py-3 shadow-lg shadow-black/40"
+          role="status"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[#9ec5f0]">
+                Schedule: {scheduleToast.scheduleName}
+              </p>
+              <p className="mt-1 text-sm text-[#c5d0dc]">{scheduleToast.snippet}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setScheduleToast(null)}
+              className="shrink-0 text-xs text-[#8b9aab] hover:text-[#e7ecf1]"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       <Sidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
+        queueState={queueState}
         view={view}
         onNewSession={() => void handleNewSession()}
         onSelectSession={(id) => void handleSelectSession(id)}
         onDeleteSession={(id) => void handleDeleteSession(id)}
-        onOpenModels={() => {
-          setModelsVisited(true)
-          setView('models')
-          // Warm the default library list cache while Models opens.
-          void window.api.ollama.searchLibrary({ page: 1 }).catch(() => {})
-        }}
-        onOpenMcp={() => {
-          setMcpVisited(true)
-          setView('mcp')
-        }}
-        onOpenSkills={() => {
-          setSkillsVisited(true)
-          setView('skills')
-        }}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onNavigate={handleNavigate}
       />
       {modelsVisited ? (
         <div
@@ -930,6 +1227,43 @@ export default function App(): React.JSX.Element {
           <SkillsPage active={view === 'skills'} />
         </div>
       ) : null}
+      {schedulesVisited ? (
+        <div
+          className={
+            view === 'schedules' ? 'flex min-h-0 min-w-0 flex-1' : 'hidden'
+          }
+        >
+          <SchedulesPage active={view === 'schedules'} sessions={sessions} />
+        </div>
+      ) : null}
+      {settingsVisited ? (
+        <div
+          className={
+            view === 'settings' ? 'flex min-h-0 min-w-0 flex-1' : 'hidden'
+          }
+        >
+          <Settings
+            ollamaOk={ollamaOk}
+            ollamaError={ollamaError}
+            baseUrl={baseUrl}
+            showThinking={showThinking}
+            maxToolIterations={maxToolIterations}
+            telegramEnabled={telegramEnabled}
+            telegramAllowedUserIds={telegramAllowedUserIds}
+            telegramStatus={telegramStatus}
+            telegramTokenDraft={telegramTokenDraft}
+            onSetTelegramToken={(token) => void handleSetTelegramToken(token)}
+            onSetTelegramEnabled={(enabled) => void handleSetTelegramEnabled(enabled)}
+            onSetTelegramAllowedUserIds={(ids) =>
+              void handleSetTelegramAllowedUserIds(ids)
+            }
+            onRefreshOllama={() => void refreshOllama()}
+            onSetBaseUrl={(u) => void handleSetBaseUrl(u)}
+            onSetShowThinking={(v) => void handleSetShowThinking(v)}
+            onSetMaxToolIterations={(v) => void handleSetMaxToolIterations(v)}
+          />
+        </div>
+      ) : null}
       {view === 'chat' ? (
         <Chat
           key={activeSessionId ?? 'chat'}
@@ -940,7 +1274,13 @@ export default function App(): React.JSX.Element {
           busy={busy}
           activity={activity}
           showThinking={showThinking}
-          canSend={Boolean(selectedModel) && ollamaOk}
+          canSend={
+            Boolean(selectedModel) &&
+            ollamaOk &&
+            !activeSessionReadOnly &&
+            activeSessionQueueStatus === 'idle'
+          }
+          readOnly={activeSessionReadOnly}
           ollamaOk={ollamaOk}
           imageGenSupported={imageGenSupported}
           models={models}
@@ -951,20 +1291,9 @@ export default function App(): React.JSX.Element {
           onSend={(payload) => void handleSend(payload)}
           onAbort={() => void handleAbort()}
           onClear={handleClear}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => handleNavigate('settings')}
         />
       ) : null}
-      <Settings
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        ollamaOk={ollamaOk}
-        ollamaError={ollamaError}
-        baseUrl={baseUrl}
-        showThinking={showThinking}
-        onRefreshOllama={() => void refreshOllama()}
-        onSetBaseUrl={(u) => void handleSetBaseUrl(u)}
-        onSetShowThinking={(v) => void handleSetShowThinking(v)}
-      />
     </div>
   )
 }

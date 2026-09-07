@@ -4,7 +4,9 @@ import type {
   AgentSkillInput,
   AppConfig,
   CatalogSkill,
+  ChatEnqueueResult,
   ChatEvent,
+  ChatQueueState,
   ChatSendPayload,
   ChatSession,
   HtmlPreviewCreatePayload,
@@ -18,8 +20,12 @@ import type {
   OllamaModelDetails,
   OllamaStatus,
   PullProgressEvent,
+  ScheduleNotificationPayload,
   SessionsState,
-  SkillImportResult
+  SkillImportResult,
+  TelegramMirrorMode,
+  TelegramSchedule,
+  TelegramStatus
 } from '../shared/types'
 
 export type ServerWithStatus = McpServerConfig & { connected: boolean }
@@ -29,6 +35,8 @@ const api = {
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke('config:get'),
   setShowThinking: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('config:setShowThinking', enabled),
+  setMaxToolIterations: (value: number): Promise<number> =>
+    ipcRenderer.invoke('config:setMaxToolIterations', value),
 
   ollama: {
     getStatus: (): Promise<OllamaStatus> => ipcRenderer.invoke('ollama:getStatus'),
@@ -109,11 +117,20 @@ const api = {
     delete: (id: string): Promise<SessionsState> =>
       ipcRenderer.invoke('sessions:delete', id),
     generateTitle: (id: string, prompt: string): Promise<string> =>
-      ipcRenderer.invoke('sessions:generateTitle', id, prompt)
+      ipcRenderer.invoke('sessions:generateTitle', id, prompt),
+    onChanged: (callback: (state: SessionsState) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, state: SessionsState): void => {
+        callback(state)
+      }
+      ipcRenderer.on('sessions:changed', handler)
+      return () => {
+        ipcRenderer.removeListener('sessions:changed', handler)
+      }
+    }
   },
 
   chat: {
-    send: (payload: ChatSendPayload): Promise<void> =>
+    send: (payload: ChatSendPayload): Promise<ChatEnqueueResult> =>
       ipcRenderer.invoke('chat:send', payload),
     abort: (): Promise<void> => ipcRenderer.invoke('chat:abort'),
     onEvent: (callback: (event: ChatEvent) => void): (() => void) => {
@@ -127,11 +144,81 @@ const api = {
     }
   },
 
+  queue: {
+    getState: (): Promise<ChatQueueState> => ipcRenderer.invoke('queue:getState'),
+    removeSession: (sessionId: string): Promise<ChatQueueState> =>
+      ipcRenderer.invoke('queue:removeSession', sessionId),
+    onChanged: (callback: (state: ChatQueueState) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, state: ChatQueueState): void => {
+        callback(state)
+      }
+      ipcRenderer.on('queue:changed', handler)
+      return () => {
+        ipcRenderer.removeListener('queue:changed', handler)
+      }
+    }
+  },
+
   htmlPreview: {
     create: (payload: HtmlPreviewCreatePayload): Promise<HtmlPreviewCreateResult> =>
       ipcRenderer.invoke('htmlPreview:create', payload),
     destroy: (id: string): Promise<void> =>
       ipcRenderer.invoke('htmlPreview:destroy', id)
+  },
+
+  telegram: {
+    getStatus: (): Promise<TelegramStatus> =>
+      ipcRenderer.invoke('telegram:getStatus'),
+    setToken: (token: string | null): Promise<TelegramStatus> =>
+      ipcRenderer.invoke('telegram:setToken', token),
+    setEnabled: (enabled: boolean): Promise<TelegramStatus> =>
+      ipcRenderer.invoke('telegram:setEnabled', enabled),
+    setAllowedUserIds: (ids: number[]): Promise<number[]> =>
+      ipcRenderer.invoke('telegram:setAllowedUserIds', ids),
+    setMirrorMode: (mode: TelegramMirrorMode): Promise<TelegramMirrorMode> =>
+      ipcRenderer.invoke('telegram:setMirrorMode', mode)
+  },
+
+  schedules: {
+    list: (): Promise<TelegramSchedule[]> => ipcRenderer.invoke('schedules:list'),
+    create: (
+      input: Omit<
+        TelegramSchedule,
+        'id' | 'createdAt' | 'updatedAt' | 'lastRunAt' | 'lastRunStatus' | 'lastRunError'
+      >
+    ): Promise<TelegramSchedule> => ipcRenderer.invoke('schedules:create', input),
+    update: (schedule: TelegramSchedule): Promise<TelegramSchedule> =>
+      ipcRenderer.invoke('schedules:update', schedule),
+    delete: (id: string): Promise<TelegramSchedule[]> =>
+      ipcRenderer.invoke('schedules:delete', id),
+    runNow: (id: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('schedules:runNow', id),
+    onChanged: (callback: (schedules: TelegramSchedule[]) => void): (() => void) => {
+      const handler = (
+        _: Electron.IpcRendererEvent,
+        schedules: TelegramSchedule[]
+      ): void => {
+        callback(schedules)
+      }
+      ipcRenderer.on('schedules:changed', handler)
+      return () => {
+        ipcRenderer.removeListener('schedules:changed', handler)
+      }
+    },
+    onNotification: (
+      callback: (payload: ScheduleNotificationPayload) => void
+    ): (() => void) => {
+      const handler = (
+        _: Electron.IpcRendererEvent,
+        payload: ScheduleNotificationPayload
+      ): void => {
+        callback(payload)
+      }
+      ipcRenderer.on('schedules:notification', handler)
+      return () => {
+        ipcRenderer.removeListener('schedules:notification', handler)
+      }
+    }
   }
 }
 

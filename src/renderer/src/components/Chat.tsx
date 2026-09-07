@@ -3,6 +3,7 @@ import type { AgentSkill, McpToolInfo, OllamaModel, UiMessage } from '../../../s
 import type { ActivityState } from './ActivityIndicator'
 import { DownloadImageButton } from './DownloadImageButton'
 import { ActivityIndicator } from './ActivityIndicator'
+import { AssistantReplyTimer } from './AssistantReplyTimer'
 import { CopyButton } from './CopyButton'
 import { ImageLightbox } from './ImageLightbox'
 import { MarkdownContent } from './MarkdownContent'
@@ -24,10 +25,10 @@ import {
 import {
   type ContextSlice,
   buildContextSlices,
+  buildSkillsContextText,
   contextUsageColor,
   estimateDraftTokens,
-  estimateMessageTokens,
-  estimateToolSchemaTokens,
+  estimateLivePromptTokens,
   formatTokenCount
 } from '../lib/contextUsage'
 
@@ -38,6 +39,7 @@ interface ChatProps {
   activity: ActivityState
   showThinking: boolean
   canSend: boolean
+  readOnly?: boolean
   ollamaOk: boolean
   imageGenSupported?: boolean
   models: OllamaModel[]
@@ -63,6 +65,7 @@ export function Chat({
   activity,
   showThinking,
   canSend,
+  readOnly = false,
   ollamaOk,
   imageGenSupported = true,
   models,
@@ -142,7 +145,7 @@ export function Chat({
     }, 320)
   }
 
-  const canCompose = canSend && !busy
+  const canCompose = canSend && !busy && !readOnly
   const hasDraft = Boolean(draft.trim()) || attachments.length > 0
   const slashToken = slashQuery(draft)
   const slashMatches = useMemo(
@@ -176,9 +179,14 @@ export function Chat({
   const hasStreamingAssistant = messages.some(
     (m) => m.kind === 'assistant' && m.streaming
   )
-  /** Hide generating spinner once reply text streams; keep it for image gen. */
+  const hasRunningTool = messages.some(
+    (m) => m.kind === 'tool' && m.status === 'running'
+  )
+  /** Hide activity once transcript cards own the phase (reply text, tool call). */
   const showActivity =
-    busy && !(activity.phase === 'generating' && hasStreamingAssistant)
+    busy &&
+    !(activity.phase === 'generating' && hasStreamingAssistant) &&
+    !(activity.phase === 'tool' && hasRunningTool)
   const hasImageAttachment = attachments.some((a) => a.kind === 'image')
   const modelNames = models.map((m) => m.name)
 
@@ -384,36 +392,54 @@ export function Chat({
     return last.contextUsed
   }, [messages])
 
+  const skillsText = useMemo(
+    () => buildSkillsContextText(slashSkills),
+    [slashSkills]
+  )
+
   const contextUsed = useMemo(() => {
+    const live = estimateLivePromptTokens({
+      systemPrompt: modelSystem,
+      skills: slashSkills,
+      tools,
+      messages,
+      draft,
+      attachments
+    })
+    // During an active turn, Ollama's prompt counts are a better floor than char/4.
     const draftTokens = estimateDraftTokens(draft, attachments)
     const reported =
       contextUsage && contextUsage.used > 0 ? contextUsage.used : 0
     const measured = Math.max(reported, lastReplyContext ?? 0)
-    if (measured > 0) return measured + draftTokens
-    return (
-      estimateMessageTokens(messages) +
-      estimateToolSchemaTokens(tools) +
-      draftTokens
-    )
-  }, [attachments, contextUsage, draft, lastReplyContext, messages, tools])
+    if (busy && measured > 0) {
+      return Math.max(live, measured + draftTokens)
+    }
+    // Idle meter: reflect the next prompt (skills/MCP toggles must update immediately).
+    return live
+  }, [
+    attachments,
+    busy,
+    contextUsage,
+    draft,
+    lastReplyContext,
+    messages,
+    modelSystem,
+    slashSkills,
+    tools
+  ])
 
   const contextSlices = useMemo(
     () =>
       buildContextSlices({
         used: contextUsed,
         systemPrompt: modelSystem,
-        skillsText: slashSkills
-          .map(
-            (s) =>
-              `### Skill: ${s.name}\n${s.description}\n\n${s.body}`.trim()
-          )
-          .join('\n\n'),
+        skillsText,
         tools,
         messages,
         draft,
         attachments
       }),
-    [attachments, contextUsed, draft, messages, modelSystem, slashSkills, tools]
+    [attachments, contextUsed, draft, messages, modelSystem, skillsText, tools]
   )
 
   const applySlashSkill = (skill: AgentSkill): void => {
@@ -511,13 +537,15 @@ export function Chat({
               Stop
             </button>
           )}
-          <button
-            type="button"
-            onClick={onClear}
-            className="rounded border border-[#2a3a4d] px-3 py-1 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
-          >
-            Clear
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded border border-[#2a3a4d] px-3 py-1 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+            >
+              Clear
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpenSettings}
@@ -581,16 +609,32 @@ export function Chat({
                     )}
                     <div className="whitespace-pre-wrap">{m.content}</div>
                   </div>
+                  {m.queueStatus === 'queued' && (
+                    <p className="mt-1 text-right text-[11px] text-amber-300/90">
+                      Waiting in queue…
+                    </p>
+                  )}
                   <MessageMeta createdAt={m.createdAt} model={m.model} align="right" />
                 </div>
               </div>
             )
           }
           if (m.kind === 'assistant') {
+            const showReplyTimer =
+              Boolean(m.streaming && m.startedAt) || m.durationMs != null
             return (
               <div key={m.id} className="msg-enter group/assistant flex justify-start">
                 <div className="max-w-[85%]">
-                  <div className="relative rounded-2xl rounded-bl-md border border-[#2a3a4d] bg-[#161d27] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1]">
+                  <div
+                    className={`relative rounded-2xl rounded-bl-md border border-[#2a3a4d] bg-[#161d27] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1] ${
+                      showReplyTimer ? 'pt-6' : ''
+                    }`}
+                  >
+                    <AssistantReplyTimer
+                      active={Boolean(m.streaming)}
+                      startedAt={m.startedAt}
+                      durationMs={m.durationMs}
+                    />
                     {m.images && m.images.length > 0 && (
                       <div className="flex flex-col gap-2">
                         {m.images.map((src, i) => (
@@ -625,7 +669,9 @@ export function Chat({
                   </div>
                   <MessageMeta
                     createdAt={m.createdAt}
-                    responseMs={m.streaming ? undefined : m.responseMs}
+                    liveTotal={m.streaming}
+                    totalStartedAt={m.streaming ? activity.startedAt : undefined}
+                    responseMs={m.responseMs}
                     tokensPerSec={m.streaming ? undefined : m.tokensPerSec}
                     model={m.model}
                     contextUsed={m.streaming ? undefined : m.contextUsed}
@@ -645,7 +691,9 @@ export function Chat({
                 streaming={m.streaming}
                 createdAt={m.createdAt}
                 model={m.model}
-                startedAt={m.streaming ? activity.startedAt : undefined}
+                startedAt={m.startedAt}
+                durationMs={m.durationMs}
+                elapsedMs={m.elapsedMs}
               />
             )
           }
@@ -659,6 +707,9 @@ export function Chat({
                 result={m.result}
                 createdAt={m.createdAt}
                 model={m.model}
+                startedAt={m.startedAt}
+                durationMs={m.durationMs}
+                elapsedMs={m.elapsedMs}
               />
             )
           }
@@ -698,6 +749,11 @@ export function Chat({
       </div>
 
       <form onSubmit={submit} className="px-5 pb-5 pt-2">
+        {readOnly && (
+          <p className="mb-2 rounded-lg border border-[#2d4a6a]/50 bg-[#1a3050]/40 px-3 py-2 text-xs text-[#9ec5f0]">
+            Telegram session — view only on desktop. Send messages from Telegram.
+          </p>
+        )}
         {!ollamaOk && (
           <p className="mb-2 text-xs text-amber-300/90">
             Ollama is offline — check the sidebar connection.
@@ -917,8 +973,11 @@ export function Chat({
                     const otherTags = m.tags.filter(
                       (tag) => !PRIMARY_TAGS.has(tag.toLowerCase())
                     )
+                    const tooltipParts: string[] = []
+                    if (m.size > 0) tooltipParts.push(formatBytes(m.size))
+                    if (otherTags.length > 0) tooltipParts.push(otherTags.join(' · '))
                     const tooltipText =
-                      otherTags.length > 0 ? otherTags.join(' · ') : undefined
+                      tooltipParts.length > 0 ? tooltipParts.join(' · ') : undefined
 
                     return (
                       <button

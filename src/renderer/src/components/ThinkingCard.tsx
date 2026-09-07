@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useSegmentTimer } from '../hooks/useSegmentTimer'
 import { MarkdownContent } from './MarkdownContent'
 import { MessageMeta } from './MessageMeta'
 
@@ -6,41 +7,29 @@ interface ThinkingCardProps {
   content: string
   streaming?: boolean
   startedAt?: number
+  durationMs?: number
+  elapsedMs?: number
   createdAt?: string
   model?: string
-}
-
-function formatElapsed(ms: number): string {
-  const sec = Math.floor(ms / 1000)
-  const m = Math.floor(sec / 60)
-  const s = sec % 60
-  return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`
 }
 
 export function ThinkingCard({
   content,
   streaming,
   startedAt,
+  durationMs,
+  elapsedMs,
   createdAt,
   model
 }: ThinkingCardProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
   const streamRef = useRef<HTMLDivElement>(null)
   const stickInnerRef = useRef(true)
-
-  useEffect(() => {
-    if (!streaming || !startedAt) {
-      setElapsed(0)
-      return
-    }
-    const tick = (): void => {
-      setElapsed(Date.now() - startedAt)
-    }
-    tick()
-    const id = window.setInterval(tick, 200)
-    return () => window.clearInterval(id)
-  }, [streaming, startedAt])
+  const segmentLabel = useSegmentTimer({
+    active: Boolean(streaming),
+    startedAt,
+    durationMs
+  })
 
   useEffect(() => {
     if (streaming) stickInnerRef.current = true
@@ -89,9 +78,9 @@ export function ThinkingCard({
                     <span>.</span>
                     <span>.</span>
                   </span>
-                  {startedAt ? (
+                  {segmentLabel ? (
                     <span className="ml-auto font-mono text-[11px] tabular-nums text-[#6b7a8c]">
-                      {formatElapsed(elapsed)}
+                      {segmentLabel}
                     </span>
                   ) : null}
                 </div>
@@ -110,9 +99,16 @@ export function ThinkingCard({
             onClick={() => setOpen((o) => !o)}
             className="flex w-full items-center justify-between px-3.5 py-2 text-left hover:bg-[#1a2430]"
           >
-            <span className="text-[11px] font-medium uppercase tracking-wider text-[#8b9aab]">
-              Model thinking
-            </span>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-[#8b9aab]">
+                Model thinking
+              </span>
+              {segmentLabel ? (
+                <span className="font-mono text-[11px] tabular-nums text-[#6b7a8c]">
+                  {segmentLabel}
+                </span>
+              ) : null}
+            </div>
             <span className="font-mono text-[11px] text-[#6b7a8c]">
               {open ? '−' : '+'}
             </span>
@@ -129,7 +125,12 @@ export function ThinkingCard({
           </div>
         )}
       </div>
-      <MessageMeta createdAt={createdAt} model={model} align="left" />
+      <MessageMeta
+        createdAt={createdAt}
+        model={model}
+        elapsedMs={streaming ? undefined : elapsedMs}
+        align="left"
+      />
     </div>
   )
 }

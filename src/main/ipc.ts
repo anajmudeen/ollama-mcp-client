@@ -7,24 +7,42 @@ import type {
   LibrarySearchParams,
   McpServerConfig,
   PullProgressEvent,
-  SkillImportResult
+  SkillImportResult,
+  TelegramMirrorMode,
+  TelegramSchedule
 } from '../shared/types'
-import { abortChat, runAgentTurn } from './agent'
+import {
+  abortCurrentTurn,
+  enqueueTurn,
+  getQueueState,
+  removeSessionTurns
+} from './chat-queue'
 import {
   createSession,
+  createScheduleRecord,
+  deleteScheduleRecord,
   deleteSession,
   ensureActiveSession,
   getConfig,
+  getSchedule,
   getSelectedModel,
   getSessionsState,
+  listSchedules,
   listServers,
+  patchScheduleRun,
   removeServer,
   setActiveSession,
   setOllamaBaseUrl,
   setSelectedModel,
   setServerEnabled,
   setShowThinking,
+  setMaxToolIterations,
+  setTelegramAllowedUserIds,
+  setTelegramBotToken,
+  setTelegramEnabled,
+  setTelegramMirrorMode,
   updateSession,
+  upsertSchedule,
   upsertServer
 } from './config-store'
 import {
@@ -55,6 +73,14 @@ import {
   createHtmlPreview,
   destroyHtmlPreview
 } from './html-preview'
+import { broadcastSessionsChanged } from './sessions-broadcast'
+import { reloadScheduleRunner, runScheduleNow } from './schedule-runner'
+import { broadcastSchedulesChanged } from './schedules-broadcast'
+import {
+  getTelegramBotStatus,
+  restartTelegramBot,
+  stopTelegramBot
+} from './telegram-bot'
 
 function emitPullProgress(event: PullProgressEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -79,6 +105,9 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('config:get', () => getConfig())
   ipcMain.handle('config:setShowThinking', (_e, enabled: boolean) =>
     setShowThinking(enabled)
+  )
+  ipcMain.handle('config:setMaxToolIterations', (_e, value: number) =>
+    setMaxToolIterations(value)
   )
 
   ipcMain.handle('ollama:getStatus', () => getOllamaStatus())
@@ -195,9 +224,15 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('sessions:list', () => ensureActiveSession())
   ipcMain.handle('sessions:create', () => {
     createSession()
-    return getSessionsState()
+    const state = getSessionsState()
+    broadcastSessionsChanged()
+    return state
   })
-  ipcMain.handle('sessions:setActive', (_e, id: string) => setActiveSession(id))
+  ipcMain.handle('sessions:setActive', (_e, id: string) => {
+    const state = setActiveSession(id)
+    broadcastSessionsChanged()
+    return state
+  })
   ipcMain.handle(
     'sessions:update',
     (
@@ -209,7 +244,12 @@ export function registerIpc(ipcMain: IpcMain): void {
       return getSessionsState()
     }
   )
-  ipcMain.handle('sessions:delete', (_e, id: string) => deleteSession(id))
+  ipcMain.handle('sessions:delete', (_e, id: string) => {
+    removeSessionTurns(id)
+    const state = deleteSession(id)
+    broadcastSessionsChanged()
+    return state
+  })
   ipcMain.handle(
     'sessions:generateTitle',
     async (_e, id: string, prompt: string) => {
@@ -230,12 +270,17 @@ export function registerIpc(ipcMain: IpcMain): void {
     }
   )
 
-  ipcMain.handle('chat:send', async (_e, payload: ChatSendPayload) => {
-    void runAgentTurn(payload)
-  })
+  ipcMain.handle('chat:send', (_e, payload: ChatSendPayload) => enqueueTurn(payload))
 
   ipcMain.handle('chat:abort', () => {
-    abortChat()
+    abortCurrentTurn()
+  })
+
+  ipcMain.handle('queue:getState', () => getQueueState())
+
+  ipcMain.handle('queue:removeSession', (_e, sessionId: string) => {
+    removeSessionTurns(sessionId)
+    return getQueueState()
   })
 
   ipcMain.handle(
@@ -244,5 +289,71 @@ export function registerIpc(ipcMain: IpcMain): void {
   )
   ipcMain.handle('htmlPreview:destroy', (_e, id: string) => {
     destroyHtmlPreview(id)
+  })
+
+  ipcMain.handle('telegram:getStatus', () => getTelegramBotStatus())
+  ipcMain.handle('telegram:setToken', async (_e, token: string | null) => {
+    setTelegramBotToken(token)
+    await restartTelegramBot()
+    return getTelegramBotStatus()
+  })
+  ipcMain.handle('telegram:setEnabled', async (_e, enabled: boolean) => {
+    setTelegramEnabled(enabled)
+    if (enabled) await restartTelegramBot()
+    else await stopTelegramBot()
+    return getTelegramBotStatus()
+  })
+  ipcMain.handle('telegram:setAllowedUserIds', (_e, ids: number[]) => {
+    return setTelegramAllowedUserIds(ids)
+  })
+  ipcMain.handle('telegram:setMirrorMode', (_e, mode: TelegramMirrorMode) => {
+    return setTelegramMirrorMode(mode)
+  })
+
+  ipcMain.handle('schedules:list', () => listSchedules())
+
+  ipcMain.handle(
+    'schedules:create',
+    (
+      _e,
+      input: Omit<TelegramSchedule, 'id' | 'createdAt' | 'updatedAt' | 'lastRunAt' | 'lastRunStatus' | 'lastRunError'>
+    ) => {
+      let sessionId = input.sessionId
+      if (!sessionId) {
+        if (input.delivery.mode === 'notification') {
+          const session = createSession('desktop')
+          session.title = `Schedule: ${input.name}`
+          updateSession(session.id, { title: session.title })
+          sessionId = session.id
+          broadcastSessionsChanged()
+        }
+      }
+      const schedule = createScheduleRecord({ ...input, sessionId })
+      reloadScheduleRunner()
+      broadcastSchedulesChanged()
+      return schedule
+    }
+  )
+
+  ipcMain.handle('schedules:update', (_e, schedule: TelegramSchedule) => {
+    const updated: TelegramSchedule = {
+      ...schedule,
+      updatedAt: new Date().toISOString()
+    }
+    upsertSchedule(updated)
+    reloadScheduleRunner()
+    broadcastSchedulesChanged()
+    return updated
+  })
+
+  ipcMain.handle('schedules:delete', (_e, id: string) => {
+    deleteScheduleRecord(id)
+    reloadScheduleRunner()
+    broadcastSchedulesChanged()
+    return listSchedules()
+  })
+
+  ipcMain.handle('schedules:runNow', async (_e, id: string) => {
+    return runScheduleNow(id)
   })
 }

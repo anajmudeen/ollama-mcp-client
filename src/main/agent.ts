@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
-import { BrowserWindow } from 'electron'
 import type { ChatEvent, ChatMessage, ChatSendPayload } from '../shared/types'
+import { getMaxToolIterations } from './config-store'
+import { emitChatEvent } from './chat-events'
 import { compactIfNeeded, shouldCompact } from './context-compact'
 import {
   estimateChatMessagesTokens,
@@ -26,7 +27,8 @@ import {
   type OllamaTool
 } from './ollama'
 
-const MAX_TOOL_ITERATIONS = 8
+const WRAP_UP_USER_MESSAGE =
+  "You've reached the maximum number of tool calls for this turn. Summarize what you accomplished, what's incomplete, and suggest next steps. Do not call any more tools."
 /** Cap tool payloads sent back to the model; UI still gets the full result. */
 const MAX_TOOL_RESULT_CHARS = 24_000
 const MIN_NUM_PREDICT = 256
@@ -36,9 +38,7 @@ let activeAbort: AbortController | null = null
 let activeTurnId: string | null = null
 
 function emit(event: ChatEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('chat:event', event)
-  }
+  emitChatEvent(event)
 }
 
 function ms(startedAt: number, endedAt = Date.now()): string {
@@ -205,15 +205,18 @@ export function abortChat(): void {
   activeTurnId = null
 }
 
+export function isAgentBusy(): boolean {
+  return activeTurnId != null
+}
+
 export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
-  abortChat()
   const abort = new AbortController()
   activeAbort = abort
   const turnId = payload.turnId
   activeTurnId = turnId
 
   const emitTurn = (event: Exclude<ChatEvent, { type: 'user' }>): void => {
-    emit({ ...event, turnId })
+    emit({ ...event, turnId, sessionId: payload.sessionId })
   }
 
   let emittedDone = false
@@ -231,6 +234,12 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
   console.log(
     `[agent] turn start id=${tid} model=${payload.model} messages=${payload.messages.length} tools=${tools.length}`
   )
+
+  emitTurn({
+    type: 'status',
+    phase: 'thinking',
+    detail: 'Processing your request…'
+  })
 
   // Image-generation models use /api/generate instead of the chat/tools loop.
   const modelInfo = await getModelInfo(payload.model).catch(() => null)
@@ -373,8 +382,70 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
     }
   }
 
+  const maxToolIterations = getMaxToolIterations()
+
+  const completeAssistantTurn = async (
+    finalContent: string,
+    promptEvalCount: number | undefined,
+    evalCount: number | undefined,
+    evalDurationNs: number | undefined,
+    logLabel: string
+  ): Promise<void> => {
+    const tokensPerSec =
+      evalCount != null && evalCount > 0 && evalDurationNs != null && evalDurationNs > 0
+        ? evalCount / (evalDurationNs / 1e9)
+        : undefined
+    console.log(
+      `[agent] ${logLabel} id=${tid} total=${ms(turnStartedAt)} contentChars=${finalContent.length}` +
+        (tokensPerSec != null ? ` tok/s=${tokensPerSec.toFixed(1)}` : '')
+    )
+    const withReply: ChatMessage[] = finalContent
+      ? [...workingMessages, { role: 'assistant', content: finalContent }]
+      : workingMessages
+    const used = (promptEvalCount ?? 0) + (evalCount ?? 0)
+    emitTurn({
+      type: 'assistant_done',
+      content: finalContent,
+      contextUsed: used > 0 ? used : occupancyUsed(withReply, toolOverhead),
+      contextLimit: contextLimit ?? undefined,
+      tokensPerSec
+    })
+    try {
+      const compacted = await applyCompact({
+        model: payload.model,
+        messages: withReply,
+        limit: contextLimit,
+        measuredUsed: used,
+        extraTokens: toolOverhead,
+        signal: abort.signal,
+        turnId,
+        emitTurn
+      })
+      if (abort.signal.aborted || activeTurnId !== turnId) {
+        emitTurn({ type: 'error', message: 'Aborted' })
+        return
+      }
+      if (contextLimit) {
+        emitTurn({
+          type: 'context',
+          used: liveContextUsed(compacted, toolOverhead, used, compacted !== withReply),
+          limit: contextLimit
+        })
+      }
+    } catch (err) {
+      console.warn('[agent] post-turn compact skipped:', err instanceof Error ? err.message : err)
+      if (contextLimit) {
+        emitTurn({
+          type: 'context',
+          used: liveContextUsed(withReply, toolOverhead, used, false),
+          limit: contextLimit
+        })
+      }
+    }
+  }
+
   try {
-    for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+    for (let iteration = 0; iteration < maxToolIterations; iteration++) {
       if (abort.signal.aborted || activeTurnId !== turnId) {
         console.log(`[agent] aborted before iter=${iteration} id=${tid}`)
         emitTurn({ type: 'error', message: 'Aborted' })
@@ -538,62 +609,13 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       )
 
       if (toolCalls.length === 0) {
-        // Always complete the turn so the UI leaves thinking/synthesizing,
-        // even when the model returns an empty final message after tools.
-        console.log(
-          `[agent] turn done id=${tid} total=${ms(turnStartedAt)} iterations=${iteration + 1}`
+        await completeAssistantTurn(
+          finalContent,
+          promptEvalCount,
+          evalCount,
+          evalDurationNs,
+          `turn done iterations=${iteration + 1}`
         )
-        const withReply: ChatMessage[] = finalContent
-          ? [...workingMessages, { role: 'assistant', content: finalContent }]
-          : workingMessages
-        const used = (promptEvalCount ?? 0) + (evalCount ?? 0)
-        emitTurn({
-          type: 'assistant_done',
-          content: finalContent,
-          contextUsed: used > 0 ? used : occupancyUsed(withReply, toolOverhead),
-          contextLimit: contextLimit ?? undefined,
-          tokensPerSec
-        })
-        try {
-          const compacted = await applyCompact({
-            model: payload.model,
-            messages: withReply,
-            limit: contextLimit,
-            measuredUsed: used,
-            extraTokens: toolOverhead,
-            signal: abort.signal,
-            turnId,
-            emitTurn
-          })
-          if (abort.signal.aborted || activeTurnId !== turnId) {
-            emitTurn({ type: 'error', message: 'Aborted' })
-            return
-          }
-          if (contextLimit) {
-            emitTurn({
-              type: 'context',
-              used: liveContextUsed(
-                compacted,
-                toolOverhead,
-                used,
-                compacted !== withReply
-              ),
-              limit: contextLimit
-            })
-          }
-        } catch (err) {
-          console.warn(
-            '[agent] post-turn compact skipped:',
-            err instanceof Error ? err.message : err
-          )
-          if (contextLimit) {
-            emitTurn({
-              type: 'context',
-              used: liveContextUsed(withReply, toolOverhead, used, false),
-              limit: contextLimit
-            })
-          }
-        }
         return
       }
 
@@ -652,13 +674,98 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       }
     }
 
+    if (abort.signal.aborted || activeTurnId !== turnId) {
+      emitTurn({ type: 'error', message: 'Aborted' })
+      return
+    }
+
     console.log(
-      `[agent] turn stopped id=${tid} total=${ms(turnStartedAt)} maxIterations=${MAX_TOOL_ITERATIONS}`
+      `[agent] tool limit reached id=${tid} maxIterations=${maxToolIterations} wrap-up=true`
     )
+    messages.push({ role: 'user', content: WRAP_UP_USER_MESSAGE })
+
     emitTurn({
-      type: 'error',
-      message: `Stopped after ${MAX_TOOL_ITERATIONS} tool iterations`
+      type: 'status',
+      phase: 'synthesizing',
+      detail: 'Summarizing progress…'
     })
+
+    let wrapContent = ''
+    let wrapThinkBuf = ''
+    let wrapContentBuf = ''
+    let wrapEmitTimer: ReturnType<typeof setImmediate> | null = null
+
+    const flushWrapEmits = (): void => {
+      if (wrapEmitTimer != null) {
+        clearImmediate(wrapEmitTimer)
+        wrapEmitTimer = null
+      }
+      if (wrapThinkBuf) {
+        const text = wrapThinkBuf
+        wrapThinkBuf = ''
+        emitTurn({ type: 'thinking', content: text })
+      }
+      if (wrapContentBuf) {
+        const text = wrapContentBuf
+        wrapContentBuf = ''
+        emitTurn({ type: 'chunk', content: text })
+      }
+    }
+
+    const queueWrapEmit = (): void => {
+      if (wrapEmitTimer == null) {
+        wrapEmitTimer = setImmediate(flushWrapEmits)
+      }
+    }
+
+    const {
+      content: wrapReply,
+      promptEvalCount: wrapPromptEval,
+      evalCount: wrapEval,
+      evalDurationNs: wrapEvalDuration
+    } = await chatStream({
+      model: payload.model,
+      messages,
+      signal: abort.signal,
+      numCtx: contextLimit,
+      numPredict: replyNumPredict(
+        contextLimit,
+        estimatePromptTokens(messages, toolOverhead)
+      ),
+      onChunk: (chunk) => {
+        if (activeTurnId !== turnId) return
+        const thinking = chunk.message?.thinking
+        if (thinking) {
+          wrapThinkBuf += thinking
+          queueWrapEmit()
+        }
+        const text = chunk.message?.content
+        if (text) {
+          wrapContent += text
+          wrapContentBuf += text
+          queueWrapEmit()
+        }
+      }
+    })
+
+    if (wrapEmitTimer != null) {
+      clearImmediate(wrapEmitTimer)
+      wrapEmitTimer = null
+    }
+    flushWrapEmits()
+
+    if (abort.signal.aborted || activeTurnId !== turnId) {
+      emitTurn({ type: 'error', message: 'Aborted' })
+      return
+    }
+
+    await completeAssistantTurn(
+      wrapReply || wrapContent,
+      wrapPromptEval,
+      wrapEval,
+      wrapEvalDuration,
+      `wrap-up done maxIterations=${maxToolIterations}`
+    )
   } catch (err) {
     if (abort.signal.aborted || activeTurnId !== turnId) {
       console.log(`[agent] aborted id=${tid} total=${ms(turnStartedAt)}`)

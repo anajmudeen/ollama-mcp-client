@@ -31,12 +31,26 @@ export interface CatalogServer {
   install?: CatalogInstall
 }
 
+export type TelegramMirrorMode = 'full' | 'final'
+
 export interface AppConfig {
   ollamaBaseUrl: string
   selectedModel: string | null
   servers: McpServerConfig[]
   /** When true, model reasoning/thinking is shown in the chat transcript. */
   showThinking: boolean
+  /** Max tool-call rounds per user turn (clamped 8–100). */
+  maxToolIterations: number
+  telegramBotToken: string | null
+  telegramEnabled: boolean
+  telegramAllowedUserIds: number[]
+  telegramMirrorMode: TelegramMirrorMode
+}
+
+export interface TelegramStatus {
+  running: boolean
+  error?: string
+  botUsername?: string
 }
 
 export interface OllamaModel {
@@ -182,19 +196,21 @@ export type ActivityPhase =
   | 'compacting'
 
 export type ChatEvent =
-  | { type: 'user'; content: string; turnId?: string }
+  | { type: 'user'; content: string; turnId?: string; sessionId?: string }
   | {
       type: 'status'
       phase: Exclude<ActivityPhase, 'idle'>
       detail?: string
       turnId?: string
+      sessionId?: string
     }
-  | { type: 'thinking'; content: string; turnId?: string }
-  | { type: 'chunk'; content: string; turnId?: string }
+  | { type: 'thinking'; content: string; turnId?: string; sessionId?: string }
+  | { type: 'chunk'; content: string; turnId?: string; sessionId?: string }
   | {
       type: 'assistant_done'
       content: string
       turnId?: string
+      sessionId?: string
       contextUsed?: number
       contextLimit?: number
       /** Generated tokens per second for this reply (Ollama eval_count / eval_duration). */
@@ -205,6 +221,7 @@ export type ChatEvent =
       images: string[]
       mime?: string
       turnId?: string
+      sessionId?: string
     }
   | {
       type: 'tool_start'
@@ -212,6 +229,7 @@ export type ChatEvent =
       name: string
       arguments: Record<string, unknown>
       turnId?: string
+      sessionId?: string
     }
   | {
       type: 'tool_result'
@@ -220,18 +238,26 @@ export type ChatEvent =
       ok: boolean
       result: string
       turnId?: string
+      sessionId?: string
     }
-  | { type: 'done'; turnId?: string }
-  | { type: 'error'; message: string; turnId?: string }
-  | { type: 'context'; used: number; limit: number; turnId?: string }
+  | { type: 'done'; turnId?: string; sessionId?: string }
+  | { type: 'error'; message: string; turnId?: string; sessionId?: string }
+  | { type: 'context'; used: number; limit: number; turnId?: string; sessionId?: string }
   /** Model history was compacted; renderer should replace session history. */
-  | { type: 'compacted'; messages: ChatMessage[]; turnId?: string }
+  | { type: 'compacted'; messages: ChatMessage[]; turnId?: string; sessionId?: string }
   /** Lightweight UI notice (e.g. summarization). */
-  | { type: 'notice'; content: string; summary?: string; turnId?: string }
+  | {
+      type: 'notice'
+      content: string
+      summary?: string
+      turnId?: string
+      sessionId?: string
+    }
 
 export interface ChatSendPayload {
   model: string
   messages: ChatMessage[]
+  sessionId: string
   /** Client-generated id so the UI can ignore stale events from aborted turns. */
   turnId: string
   /** Last Ollama prompt+eval count from this session (drives compaction). */
@@ -239,6 +265,17 @@ export interface ChatSendPayload {
   /** Skill invoked via `/name` in the composer. */
   invokedSkill?: string
 }
+
+export type SessionQueueStatus = 'idle' | 'running' | 'queued'
+
+export interface ChatQueueState {
+  running: { sessionId: string; turnId: string } | null
+  queued: Array<{ sessionId: string; turnId: string }>
+}
+
+export type ChatEnqueueResult =
+  | { ok: true; queued: boolean }
+  | { ok: false; error: string }
 
 export type UiMessage =
   | {
@@ -249,6 +286,8 @@ export type UiMessage =
       attachmentLabels?: string[]
       /** Model selected for this turn. */
       model?: string
+      /** Waiting for global agent queue. */
+      queueStatus?: 'queued'
     }
   | {
       kind: 'assistant'
@@ -256,6 +295,10 @@ export type UiMessage =
       content: string
       createdAt: string
       streaming?: boolean
+      /** Renderer-only: reply segment start epoch ms (live timer). */
+      startedAt?: number
+      /** Reply segment duration once streaming finishes. */
+      durationMs?: number
       /** Wall-clock duration from user send to this reply finishing. */
       responseMs?: number
       /** Generated tokens per second for this reply. */
@@ -276,6 +319,12 @@ export type UiMessage =
       createdAt: string
       streaming?: boolean
       model?: string
+      /** Renderer-only: segment start epoch ms (live timer). */
+      startedAt?: number
+      /** Segment duration once thinking finishes. */
+      durationMs?: number
+      /** Wall-clock from user send to thinking finish. */
+      elapsedMs?: number
     }
   | {
       kind: 'tool'
@@ -286,6 +335,12 @@ export type UiMessage =
       createdAt: string
       result?: string
       model?: string
+      /** Renderer-only: segment start epoch ms (live timer). */
+      startedAt?: number
+      /** Segment duration once tool finishes. */
+      durationMs?: number
+      /** Wall-clock from user send to tool finish. */
+      elapsedMs?: number
     }
   | {
       kind: 'error'
@@ -303,6 +358,8 @@ export type UiMessage =
       summary?: string
     }
 
+export type SessionOrigin = 'desktop' | 'telegram'
+
 export interface ChatSession {
   id: string
   title: string
@@ -310,11 +367,13 @@ export interface ChatSession {
   updatedAt: string
   uiMessages: UiMessage[]
   history: ChatMessage[]
+  origin?: SessionOrigin
 }
 
 export interface SessionsState {
   sessions: ChatSession[]
   activeSessionId: string | null
+  telegramActiveSessionId: string | null
 }
 
 export interface AgentSkill {
@@ -354,4 +413,38 @@ export interface HtmlPreviewCreatePayload {
 export interface HtmlPreviewCreateResult {
   id: string
   url: string
+}
+
+export type ScheduleRecurrence =
+  | { type: 'interval'; everyMinutes: number }
+  | { type: 'cron'; expression: string; timezone?: string }
+
+export type ScheduleDelivery =
+  | { mode: 'telegram' }
+  | { mode: 'notification'; channel: 'system' | 'in-app' }
+  | { mode: 'both'; notificationChannel: 'system' | 'in-app' }
+
+export type ScheduleRunStatus = 'ok' | 'error' | 'skipped'
+
+export interface TelegramSchedule {
+  id: string
+  name: string
+  prompt: string
+  enabled: boolean
+  recurrence: ScheduleRecurrence
+  delivery: ScheduleDelivery
+  /** Target chat session (telegram or desktop depending on delivery). */
+  sessionId: string | null
+  createdAt: string
+  updatedAt: string
+  lastRunAt?: string
+  lastRunStatus?: ScheduleRunStatus
+  lastRunError?: string
+}
+
+export interface ScheduleNotificationPayload {
+  scheduleId: string
+  scheduleName: string
+  snippet: string
+  sessionId: string
 }
