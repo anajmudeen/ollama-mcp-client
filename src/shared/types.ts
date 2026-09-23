@@ -33,9 +33,39 @@ export interface CatalogServer {
 
 export type TelegramMirrorMode = 'full' | 'final'
 
+export type LlmProvider = 'ollama' | 'openai'
+
+export interface OpenAiModelEntry {
+  id: string
+  ownedBy?: string
+  created?: number
+}
+
+export interface SelectedModelByProvider {
+  ollama: string | null
+  openai: string | null
+}
+
+export interface OpenAiStatus {
+  enabled: boolean
+  validationOk: boolean
+  validationError: string | null
+  catalogCount: number
+  enabledCount: number
+}
+
 export interface AppConfig {
   ollamaBaseUrl: string
+  /** @deprecated Use selectedModelByProvider; kept for migration and UI compat */
   selectedModel: string | null
+  llmProvider: LlmProvider
+  openaiEnabled: boolean
+  openaiApiKey: string | null
+  openaiValidationOk: boolean
+  openaiValidationError: string | null
+  openaiModelsCatalog: OpenAiModelEntry[]
+  openaiModelEnabled: Record<string, boolean>
+  selectedModelByProvider: SelectedModelByProvider
   servers: McpServerConfig[]
   /** When true, model reasoning/thinking is shown in the chat transcript. */
   showThinking: boolean
@@ -197,6 +227,12 @@ export type ActivityPhase =
 
 export type ChatEvent =
   | { type: 'user'; content: string; turnId?: string; sessionId?: string }
+  | {
+      type: 'provider_fallback'
+      message: string
+      turnId?: string
+      sessionId?: string
+    }
   | {
       type: 'status'
       phase: Exclude<ActivityPhase, 'idle'>
