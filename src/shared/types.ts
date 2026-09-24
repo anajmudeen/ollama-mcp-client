@@ -225,6 +225,18 @@ export type ActivityPhase =
   | 'synthesizing'
   | 'compacting'
 
+export interface TokenUsageBreakdown {
+  provider: 'ollama' | 'openai'
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  cachedPromptTokens?: number
+  reasoningTokens?: number
+  /** Ollama sums (same as prompt/completion when mapped). */
+  ollamaPromptEval?: number
+  ollamaEval?: number
+}
+
 export type ChatEvent =
   | { type: 'user'; content: string; turnId?: string; sessionId?: string }
   | {
@@ -251,6 +263,9 @@ export type ChatEvent =
       contextLimit?: number
       /** Generated tokens per second for this reply (Ollama eval_count / eval_duration). */
       tokensPerSec?: number
+      tokenUsage?: TokenUsageBreakdown
+      /** True when usage sums more than one model call in the turn. */
+      multiCallTurn?: boolean
     }
   | {
       type: 'assistant_images'
@@ -258,6 +273,9 @@ export type ChatEvent =
       mime?: string
       turnId?: string
       sessionId?: string
+      tokenUsage?: TokenUsageBreakdown
+      contextUsed?: number
+      contextLimit?: number
     }
   | {
       type: 'tool_start'
@@ -347,6 +365,8 @@ export type UiMessage =
       contextLimit?: number
       /** Generated image data URLs (e.g. data:image/png;base64,...). */
       images?: string[]
+      tokenUsage?: TokenUsageBreakdown
+      multiCallTurn?: boolean
     }
   | {
       kind: 'thinking'

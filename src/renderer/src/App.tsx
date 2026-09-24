@@ -743,7 +743,9 @@ export default function App(): React.JSX.Element {
               responseMs,
               contextUsed: event.contextUsed ?? last.contextUsed,
               contextLimit: event.contextLimit ?? last.contextLimit,
-              tokensPerSec: event.tokensPerSec ?? last.tokensPerSec
+              tokensPerSec: event.tokensPerSec ?? last.tokensPerSec,
+              tokenUsage: event.tokenUsage ?? last.tokenUsage,
+              multiCallTurn: event.multiCallTurn ?? last.multiCallTurn
             }
           } else if (event.content) {
             next.push({
@@ -756,7 +758,9 @@ export default function App(): React.JSX.Element {
               model: turnModelRef.current ?? undefined,
               contextUsed: event.contextUsed,
               contextLimit: event.contextLimit,
-              tokensPerSec: event.tokensPerSec
+              tokensPerSec: event.tokensPerSec,
+              tokenUsage: event.tokenUsage,
+              multiCallTurn: event.multiCallTurn
             })
           }
           messagesRef.current = next
@@ -792,7 +796,10 @@ export default function App(): React.JSX.Element {
               streaming: false,
               createdAt: finishedAt,
               durationMs: segmentDurationMs(last.startedAt),
-              responseMs
+              responseMs,
+              contextUsed: event.contextUsed ?? last.contextUsed,
+              contextLimit: event.contextLimit ?? last.contextLimit,
+              tokenUsage: event.tokenUsage ?? last.tokenUsage
             }
           } else {
             next.push({
@@ -803,7 +810,10 @@ export default function App(): React.JSX.Element {
               createdAt: finishedAt,
               streaming: false,
               responseMs,
-              model: turnModelRef.current ?? undefined
+              model: turnModelRef.current ?? undefined,
+              contextUsed: event.contextUsed,
+              contextLimit: event.contextLimit,
+              tokenUsage: event.tokenUsage
             })
           }
           messagesRef.current = next
@@ -1432,6 +1442,7 @@ export default function App(): React.JSX.Element {
             activeSessionQueueStatus === 'idle'
           }
           readOnly={activeSessionReadOnly}
+          llmProvider={llmProvider}
           ollamaOk={ollamaOk}
           imageGenSupported={imageGenSupported}
           models={models}

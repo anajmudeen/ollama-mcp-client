@@ -1,6 +1,7 @@
 import type { OpenAiModelEntry } from '../shared/types'
 import type { OllamaChatMessage, OllamaTool } from './ollama'
 import { getOpenaiApiKey } from './config-store'
+import { isOpenAiImageGenModel } from './openai-image'
 
 export const OPENAI_BASE = 'https://api.openai.com/v1'
 
@@ -12,6 +13,19 @@ export function isChatModelId(id: string): boolean {
   if (lower.startsWith('dall-e-')) return false
   if (lower.includes('realtime')) return false
   return true
+}
+
+/**
+ * Models that accept `reasoning_effort` on Chat Completions (o-series, GPT-5+, etc.).
+ * Standard GPT-4.x / GPT-4o models reject the parameter entirely.
+ */
+export function openAiModelUsesReasoningEffort(model: string): boolean {
+  const lower = model.toLowerCase()
+  if (/^o\d/.test(lower)) return true
+  const major = lower.match(/^gpt-(\d+)/)?.[1]
+  if (major && Number.parseInt(major, 10) >= 5) return true
+  if (lower.includes('reasoning')) return true
+  return false
 }
 
 export async function fetchOpenAiModels(apiKey: string): Promise<OpenAiModelEntry[]> {
@@ -65,11 +79,65 @@ export interface OpenAiToolDef {
   }
 }
 
+export interface OpenAiUsageDetails {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  cachedPromptTokens: number
+  reasoningTokens: number
+}
+
+export function parseOpenAiUsageFromJson(usage: unknown): OpenAiUsageDetails | undefined {
+  if (!usage || typeof usage !== 'object') return undefined
+  const u = usage as Record<string, unknown>
+  const prompt =
+    typeof u.prompt_tokens === 'number'
+      ? u.prompt_tokens
+      : typeof u.input_tokens === 'number'
+        ? u.input_tokens
+        : 0
+  const completion =
+    typeof u.completion_tokens === 'number'
+      ? u.completion_tokens
+      : typeof u.output_tokens === 'number'
+        ? u.output_tokens
+        : 0
+  const total =
+    typeof u.total_tokens === 'number' ? u.total_tokens : prompt + completion
+  const promptDetails = u.prompt_tokens_details as Record<string, unknown> | undefined
+  const completionDetails = u.completion_tokens_details as Record<string, unknown> | undefined
+  const cached =
+    typeof promptDetails?.cached_tokens === 'number' ? promptDetails.cached_tokens : 0
+  const reasoning =
+    typeof completionDetails?.reasoning_tokens === 'number'
+      ? completionDetails.reasoning_tokens
+      : 0
+  if (prompt === 0 && completion === 0 && total === 0) return undefined
+  return {
+    promptTokens: prompt,
+    completionTokens: completion,
+    totalTokens: total,
+    cachedPromptTokens: cached,
+    reasoningTokens: reasoning
+  }
+}
+
 export interface OpenAiStreamResult {
   content: string
   toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>
   promptEvalCount?: number
   evalCount?: number
+  usage?: OpenAiUsageDetails
+}
+
+export function formatOpenAiError(text: string, status: number): string {
+  try {
+    const parsed = JSON.parse(text) as { error?: { message?: string } }
+    if (parsed.error?.message) return parsed.error.message
+  } catch {
+    // keep raw
+  }
+  return text || `HTTP ${status}`
 }
 
 function normalizeToolArgs(args: string | undefined): Record<string, unknown> {
@@ -167,7 +235,7 @@ export async function openAiChatOnce(options: {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    throw new Error(text || `HTTP ${res.status}`)
+    throw new Error(formatOpenAiError(text, res.status))
   }
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>
@@ -185,6 +253,12 @@ export async function openAiChatStream(options: {
   const apiKey = options.apiKey ?? getOpenaiApiKey()
   if (!apiKey) throw new Error('OpenAI API key not configured')
 
+  if (isOpenAiImageGenModel(options.model)) {
+    throw new Error(
+      `"${options.model}" is an image generation model. Enter an image prompt; the app uses the Images / Responses API, not chat completions.`
+    )
+  }
+
   const body: Record<string, unknown> = {
     model: options.model,
     messages: ollamaMessagesToOpenAi(options.messages),
@@ -193,6 +267,10 @@ export async function openAiChatStream(options: {
   }
   if (options.tools?.length) {
     body.tools = ollamaToolsToOpenAi(options.tools)
+    if (openAiModelUsesReasoningEffort(options.model)) {
+      // Reasoning models default non-none effort; tools on chat/completions require none.
+      body.reasoning_effort = 'none'
+    }
   }
 
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
@@ -206,7 +284,7 @@ export async function openAiChatStream(options: {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    throw new Error(text || `HTTP ${res.status}`)
+    throw new Error(formatOpenAiError(text, res.status))
   }
   if (!res.body) throw new Error('Empty response body')
 
@@ -217,6 +295,7 @@ export async function openAiChatStream(options: {
   >()
   let promptEvalCount: number | undefined
   let evalCount: number | undefined
+  let usage: OpenAiUsageDetails | undefined
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -245,7 +324,7 @@ export async function openAiChatStream(options: {
               }>
             }
           }>
-          usage?: { prompt_tokens?: number; completion_tokens?: number }
+          usage?: unknown
         }
         const delta = chunk.choices?.[0]?.delta
         if (delta?.content) content += delta.content
@@ -263,8 +342,12 @@ export async function openAiChatStream(options: {
           }
         }
         if (chunk.usage) {
-          promptEvalCount = chunk.usage.prompt_tokens
-          evalCount = chunk.usage.completion_tokens
+          const parsed = parseOpenAiUsageFromJson(chunk.usage)
+          if (parsed) {
+            usage = parsed
+            promptEvalCount = parsed.promptTokens
+            evalCount = parsed.completionTokens
+          }
         }
       } catch {
         // skip malformed SSE lines
@@ -279,5 +362,5 @@ export async function openAiChatStream(options: {
       arguments: normalizeToolArgs(tc.arguments)
     }))
 
-  return { content, toolCalls, promptEvalCount, evalCount }
+  return { content, toolCalls, promptEvalCount, evalCount, usage }
 }

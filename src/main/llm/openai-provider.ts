@@ -8,6 +8,7 @@ import {
   openAiChatOnce,
   openAiChatStream
 } from '../openai-client'
+import { isOpenAiImageGenModel } from '../openai-image'
 import {
   detectVisionSupport as ollamaDetectVision,
   type OllamaChatChunk,
@@ -21,6 +22,7 @@ const DEFAULT_CTX = 128_000
 function openAiModelTags(id: string): string[] {
   const tags: string[] = ['openai']
   const lower = id.toLowerCase()
+  if (isOpenAiImageGenModel(id)) tags.push('image')
   if (lower.includes('gpt-4o') || lower.includes('vision')) tags.push('vision')
   if (lower.startsWith('o1') || lower.startsWith('o3') || lower.includes('reasoning')) {
     tags.push('thinking')
@@ -49,7 +51,8 @@ export const openaiLlmProvider: LlmProvider = {
       toolCalls: result.toolCalls,
       promptEvalCount: result.promptEvalCount,
       evalCount: result.evalCount,
-      evalDurationNs: undefined
+      evalDurationNs: undefined,
+      usage: result.usage
     }
   },
 
@@ -88,8 +91,8 @@ export const openaiLlmProvider: LlmProvider = {
     return info
   },
 
-  modelIsImageGen() {
-    return false
+  modelIsImageGen(model) {
+    return isOpenAiImageGenModel(model)
   },
 
   detectVisionSupport(model, info) {

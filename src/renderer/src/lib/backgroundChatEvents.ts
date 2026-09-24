@@ -97,7 +97,9 @@ export function applyBackgroundChatEvent(
         responseMs,
         contextUsed: event.contextUsed ?? last.contextUsed,
         contextLimit: event.contextLimit ?? last.contextLimit,
-        tokensPerSec: event.tokensPerSec ?? last.tokensPerSec
+        tokensPerSec: event.tokensPerSec ?? last.tokensPerSec,
+        tokenUsage: event.tokenUsage ?? last.tokenUsage,
+        multiCallTurn: event.multiCallTurn ?? last.multiCallTurn
       }
     } else if (event.content) {
       next.push({
@@ -110,7 +112,9 @@ export function applyBackgroundChatEvent(
         model: turnModel ?? undefined,
         contextUsed: event.contextUsed,
         contextLimit: event.contextLimit,
-        tokensPerSec: event.tokensPerSec
+        tokensPerSec: event.tokensPerSec,
+        tokenUsage: event.tokenUsage,
+        multiCallTurn: event.multiCallTurn
       })
     }
     messages = next
@@ -136,7 +140,10 @@ export function applyBackgroundChatEvent(
         streaming: false,
         createdAt: finishedAt,
         durationMs: segmentDurationMs(last.startedAt),
-        responseMs
+        responseMs,
+        contextUsed: event.contextUsed ?? last.contextUsed,
+        contextLimit: event.contextLimit ?? last.contextLimit,
+        tokenUsage: event.tokenUsage ?? last.tokenUsage
       }
     } else {
       next.push({
@@ -147,7 +154,10 @@ export function applyBackgroundChatEvent(
         createdAt: finishedAt,
         streaming: false,
         responseMs,
-        model: turnModel ?? undefined
+        model: turnModel ?? undefined,
+        contextUsed: event.contextUsed,
+        contextLimit: event.contextLimit,
+        tokenUsage: event.tokenUsage
       })
     }
     messages = next

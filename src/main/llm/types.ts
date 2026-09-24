@@ -1,4 +1,5 @@
 import type { LlmProvider as LlmProviderId, OllamaModel } from '../../shared/types'
+import type { OpenAiUsageDetails } from '../openai-client'
 import type { OllamaChatChunk, OllamaChatMessage, OllamaTool } from '../ollama'
 
 export interface LlmChatStreamResult {
@@ -7,6 +8,8 @@ export interface LlmChatStreamResult {
   promptEvalCount?: number
   evalCount?: number
   evalDurationNs?: number
+  /** Full usage from OpenAI SSE when available. */
+  usage?: OpenAiUsageDetails
 }
 
 export interface LlmModelInfo {

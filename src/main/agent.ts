@@ -1,5 +1,16 @@
 import { randomUUID } from 'crypto'
-import type { ChatEvent, ChatMessage, ChatSendPayload } from '../shared/types'
+import type {
+  ChatEvent,
+  ChatMessage,
+  ChatSendPayload,
+  LlmProvider,
+  TokenUsageBreakdown
+} from '../shared/types'
+import {
+  emptyTokenUsage,
+  hasTokenUsageData,
+  mergeTokenUsage
+} from '../shared/tokenUsage'
 import { getMaxToolIterations, getSelectedModelForProvider } from './config-store'
 import { emitChatEvent } from './chat-events'
 import { compactIfNeeded, shouldCompact } from './context-compact'
@@ -9,8 +20,10 @@ import {
   formatTokenCount
 } from '../shared/contextUsage'
 import { getEffectiveLlmProvider, resolveEffectiveLlmProvider } from './llm'
+import type { LlmChatStreamResult } from './llm/types'
 import { mcpManager } from './mcp-manager'
 import { generateImageBase64 } from './ollama-image'
+import { generateOpenAiImageBase64 } from './openai-image'
 import {
   LOAD_SKILL_NAME,
   loadSkillByName,
@@ -29,6 +42,31 @@ const WRAP_UP_USER_MESSAGE =
 const MAX_TOOL_RESULT_CHARS = 24_000
 const MIN_NUM_PREDICT = 256
 const PREDICT_RESERVE = 64
+
+function mergeLlmStreamUsage(
+  acc: TokenUsageBreakdown,
+  provider: LlmProvider,
+  result: LlmChatStreamResult
+): TokenUsageBreakdown {
+  if (provider === 'openai' && result.usage) {
+    return mergeTokenUsage(acc, {
+      promptTokens: result.usage.promptTokens,
+      completionTokens: result.usage.completionTokens,
+      totalTokens: result.usage.totalTokens,
+      cachedPromptTokens: result.usage.cachedPromptTokens,
+      reasoningTokens: result.usage.reasoningTokens
+    })
+  }
+  if (result.promptEvalCount != null || result.evalCount != null) {
+    return mergeTokenUsage(acc, {
+      promptTokens: result.promptEvalCount,
+      completionTokens: result.evalCount,
+      ollamaPromptEval: result.promptEvalCount,
+      ollamaEval: result.evalCount
+    })
+  }
+  return acc
+}
 
 let activeAbort: AbortController | null = null
 let activeTurnId: string | null = null
@@ -286,22 +324,35 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
     })
 
     try {
-      const imageBase64 = await generateImageBase64(
-        turnModel,
-        prompt,
-        abort.signal
-      )
+      const imageResult =
+        effective === 'openai'
+          ? await generateOpenAiImageBase64(turnModel, prompt, abort.signal)
+          : { b64: await generateImageBase64(turnModel, prompt, abort.signal) }
       if (abort.signal.aborted || activeTurnId !== turnId) {
         emitTurn({ type: 'error', message: 'Aborted' })
         return
       }
       console.log(
-        `[agent] image done id=${tid} bytes=${imageBase64.length} +${ms(turnStartedAt)}`
+        `[agent] image done id=${tid} bytes=${imageResult.b64.length} +${ms(turnStartedAt)}`
       )
+      let tokenUsage: TokenUsageBreakdown | undefined
+      if (imageResult.usage) {
+        const u = mergeTokenUsage(emptyTokenUsage('openai'), {
+          promptTokens: imageResult.usage.promptTokens,
+          completionTokens: imageResult.usage.completionTokens,
+          totalTokens: imageResult.usage.totalTokens,
+          cachedPromptTokens: imageResult.usage.cachedPromptTokens,
+          reasoningTokens: imageResult.usage.reasoningTokens
+        })
+        if (hasTokenUsageData(u)) tokenUsage = u
+      }
       emitTurn({
         type: 'assistant_images',
-        images: [imageBase64],
-        mime: 'image/png'
+        images: [imageResult.b64],
+        mime: 'image/png',
+        tokenUsage,
+        contextUsed: tokenUsage?.totalTokens,
+        contextLimit: contextLimit ?? undefined
       })
       finish()
       return
@@ -401,6 +452,9 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
   const maxToolIterations = getMaxToolIterations()
 
+  let turnUsage = emptyTokenUsage(effective)
+  let modelCallCount = 0
+
   const completeAssistantTurn = async (
     finalContent: string,
     promptEvalCount: number | undefined,
@@ -425,7 +479,9 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       content: finalContent,
       contextUsed: used > 0 ? used : occupancyUsed(withReply, toolOverhead),
       contextLimit: contextLimit ?? undefined,
-      tokensPerSec
+      tokensPerSec,
+      tokenUsage: hasTokenUsageData(turnUsage) ? turnUsage : undefined,
+      multiCallTurn: modelCallCount > 1
     })
     try {
       const compacted = await applyCompact({
@@ -517,8 +573,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
         }
       }
 
-      const { content, toolCalls, promptEvalCount, evalCount, evalDurationNs } =
-        await llm.chatStream({
+      const streamResult = await llm.chatStream({
         model: turnModel,
         messages,
         tools: tools.length > 0 ? tools : undefined,
@@ -585,6 +640,10 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
           }
         }
       })
+
+      modelCallCount += 1
+      turnUsage = mergeLlmStreamUsage(turnUsage, effective, streamResult)
+      const { content, toolCalls, promptEvalCount, evalCount, evalDurationNs } = streamResult
 
       if (abort.signal.aborted || activeTurnId !== turnId) {
         if (streamEmitTimer != null) {
@@ -742,12 +801,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       }
     }
 
-    const {
-      content: wrapReply,
-      promptEvalCount: wrapPromptEval,
-      evalCount: wrapEval,
-      evalDurationNs: wrapEvalDuration
-    } = await llm.chatStream({
+    const wrapStreamResult = await llm.chatStream({
       model: turnModel,
       messages,
       signal: abort.signal,
@@ -771,6 +825,15 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
         }
       }
     })
+
+    modelCallCount += 1
+    turnUsage = mergeLlmStreamUsage(turnUsage, effective, wrapStreamResult)
+    const {
+      content: wrapReply,
+      promptEvalCount: wrapPromptEval,
+      evalCount: wrapEval,
+      evalDurationNs: wrapEvalDuration
+    } = wrapStreamResult
 
     if (wrapEmitTimer != null) {
       clearImmediate(wrapEmitTimer)
