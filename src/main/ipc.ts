@@ -46,6 +46,8 @@ import {
   setServerEnabled,
   setShowThinking,
   setMaxToolIterations,
+  getDefaultImageModel,
+  setDefaultImageModel,
   setTelegramAllowedUserIds,
   setTelegramBotToken,
   setTelegramEnabled,
@@ -158,6 +160,9 @@ export function registerIpc(ipcMain: IpcMain): void {
     provider: LlmProvider,
     model: string | null
   ) => setSelectedModelForProvider(provider, model))
+  ipcMain.handle('config:setDefaultImageModel', (_e, model: string | null) =>
+    setDefaultImageModel(model)
+  )
   ipcMain.handle('openai:validateAndFetchModels', () => validateOpenAiAndFetchCatalog())
   ipcMain.handle('openai:refreshModels', () => validateOpenAiAndFetchCatalog())
   ipcMain.handle('openai:getStatus', () => getOpenAiStatus())
@@ -174,6 +179,10 @@ export function registerIpc(ipcMain: IpcMain): void {
     const selected = getSelectedModel()
     if (selected === model) {
       setSelectedModel(null)
+    }
+    const defaultImage = getDefaultImageModel()
+    if (defaultImage === model) {
+      setDefaultImageModel(null)
     }
   })
   ipcMain.handle('ollama:pullModel', async (_e, model: string) => {

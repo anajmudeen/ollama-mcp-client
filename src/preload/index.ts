@@ -51,6 +51,8 @@ const api = {
     provider: LlmProvider,
     model: string | null
   ): Promise<void> => ipcRenderer.invoke('config:setSelectedModelForProvider', provider, model),
+  setDefaultImageModel: (model: string | null): Promise<string | null> =>
+    ipcRenderer.invoke('config:setDefaultImageModel', model),
 
   llm: {
     getEffectiveProvider: (): Promise<{
