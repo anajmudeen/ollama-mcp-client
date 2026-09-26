@@ -1520,10 +1520,6 @@ export default function App(): React.JSX.Element {
     if (requestId !== modelRefreshRequestRef.current) return
     await refreshAzureConfig(requestId)
     await refreshEffectiveProvider(requestId)
-    if (requestId !== modelRefreshRequestRef.current) return
-    if (llmProvider === 'azure-openai') {
-      await refreshModelsForProvider('azure-openai', requestId)
-    }
   }
 
   const handleAddAzureDeployment = async (name: string): Promise<void> => {
@@ -1539,10 +1535,6 @@ export default function App(): React.JSX.Element {
     if (requestId !== modelRefreshRequestRef.current) return
     await refreshAzureConfig(requestId)
     await refreshEffectiveProvider(requestId)
-    if (requestId !== modelRefreshRequestRef.current) return
-    if (llmProvider === 'azure-openai') {
-      await refreshModelsForProvider('azure-openai', requestId)
-    }
   }
 
   const handleValidateOpenai = async (): Promise<void> => {

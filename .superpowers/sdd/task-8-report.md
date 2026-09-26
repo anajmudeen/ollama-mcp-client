@@ -268,3 +268,32 @@ No standalone renderer regression harness exists; the focused persistence
 change is covered by the typecheck/build verification and existing provider
 selection paths. Live cloud-provider validation was not run without
 credentials.
+
+## Final-review fix — fallback transition refresh and Chat metadata
+
+Removed redundant Azure model refreshes after Azure deployment toggle/removal.
+The shared Azure config refresh now resolves the effective provider and refreshes
+that provider once, preserving Ollama model state when Azure falls back because
+no enabled deployments remain. Chat model metadata, Ollama context lookup,
+offline guidance, and context-meter gating now use `effectiveProvider` and its
+dependency rather than the configured provider. Configured-provider fallback
+messaging and Azure empty-state guidance remain provider-appropriate.
+
+## Exact verification results
+
+- `npm run typecheck` — exit 0.
+- `npm run build` — exit 0; main, preload, and renderer bundles built.
+- `node scripts/test-config-store-migrations.mjs` — exit 0.
+- `node scripts/test-azure-openai-client.mjs` — exit 0.
+- `node scripts/test-image-gen-tool.mjs` — exit 0.
+- `node scripts/test-agent-image-attachments.mjs` — exit 0.
+- `node scripts/test-openai-image-edit.mjs` — exit 0.
+- `npm run check:openai-vision` — exit 0; OpenAI vision/image classifier
+  checks passed.
+- `git diff --check 4bb3cda HEAD` — exit 0.
+- `git diff --check` — exit 0.
+- IDE linter diagnostics for changed renderer files — no linter errors.
+
+No standalone renderer regression harness exists; transition behavior was
+verified through the renderer typecheck/build and existing focused provider
+tests. Live Azure validation was not run without credentials.

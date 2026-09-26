@@ -341,7 +341,7 @@ export function Chat({
       setModelSystem('')
       return
     }
-    if (llmProvider !== 'ollama') {
+    if (effectiveProvider !== 'ollama') {
       setModelLimit(128_000)
       setModelSystem('')
       return
@@ -368,7 +368,7 @@ export function Chat({
     return () => {
       cancelled = true
     }
-  }, [selectedModel, ollamaOk, llmProvider])
+  }, [selectedModel, ollamaOk, effectiveProvider])
 
   const backendReady = effectiveProvider === 'ollama' ? ollamaOk : canSend
 
@@ -805,7 +805,7 @@ export function Chat({
             Telegram session — view only on desktop. Send messages from Telegram.
           </p>
         )}
-        {llmProvider === 'ollama' && !ollamaOk && (
+        {effectiveProvider === 'ollama' && !ollamaOk && (
           <p className="mb-2 text-xs text-amber-300/90">
             Ollama is offline — check Settings or switch to OpenAI.
           </p>
@@ -972,7 +972,7 @@ export function Chat({
           />
           )}
 
-          {(ollamaOk || llmProvider !== 'ollama') &&
+          {(ollamaOk || effectiveProvider !== 'ollama') &&
           selectedModel &&
           contextLimit &&
           contextLimit > 0 ? (
