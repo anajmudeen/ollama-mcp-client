@@ -115,6 +115,8 @@ export default function App(): React.JSX.Element {
     AzureOpenaiDeploymentEntry[]
   >([])
   const [selectedAzureOpenaiModel, setSelectedAzureOpenaiModel] = useState<string | null>(null)
+  const [effectiveProvider, setEffectiveProvider] = useState<LlmProvider>('ollama')
+  const [providerFallbackReason, setProviderFallbackReason] = useState<string | undefined>()
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<UiMessage[]>([])
@@ -379,6 +381,12 @@ export default function App(): React.JSX.Element {
     setOpenaiStatus(await window.api.openai.getStatus())
   }, [])
 
+  const refreshEffectiveProvider = useCallback(async () => {
+    const status = await window.api.llm.getEffectiveProvider()
+    setEffectiveProvider(status.effective)
+    setProviderFallbackReason(status.fallback ? status.reason : undefined)
+  }, [])
+
   const refreshModelsForProvider = useCallback(
     async (provider: LlmProvider) => {
       if (provider === 'openai' || provider === 'azure-openai') {
@@ -389,16 +397,17 @@ export default function App(): React.JSX.Element {
               : await window.api.azureOpenai.listChatModels()
           setModels(list)
           const names = list.map((m) => m.name)
-          setSelectedModel((current) => {
-            if (current && names.includes(current)) return current
+          const config = await window.api.getConfig()
+          const saved = config.selectedModelByProvider[provider]
+          setSelectedModel(() => {
+            if (saved && names.includes(saved)) return saved
             const next = names[0] ?? null
-            if (next) {
-              void window.api.setSelectedModelForProvider(provider, next)
-            }
+            void window.api.setSelectedModelForProvider(provider, next)
             return next
           })
         } catch {
           setModels([])
+          setSelectedModel(null)
         }
         try {
           const status = await window.api.ollama.getStatus()
@@ -418,12 +427,12 @@ export default function App(): React.JSX.Element {
       setOllamaModels(list)
       setModels(list)
       const names = list.map((m) => m.name)
-      setSelectedModel((current) => {
-        if (current && names.includes(current)) return current
+      const config = await window.api.getConfig()
+      const saved = config.selectedModelByProvider.ollama
+      setSelectedModel(() => {
+        if (saved && names.includes(saved)) return saved
         const next = names[0] ?? null
-        if (next) {
-          void window.api.setSelectedModelForProvider('ollama', next)
-        }
+        void window.api.setSelectedModelForProvider('ollama', next)
         return next
       })
     },
@@ -455,9 +464,10 @@ export default function App(): React.JSX.Element {
       setTelegramAllowedUserIds(config.telegramAllowedUserIds)
       await refreshOpenAiStatus()
       await window.api.azureOpenai.getStatus().then(setAzureOpenaiStatus)
+      await refreshEffectiveProvider()
       await refreshModelsForProvider(config.llmProvider)
     },
-    [refreshModelsForProvider, refreshOpenAiStatus]
+    [refreshEffectiveProvider, refreshModelsForProvider, refreshOpenAiStatus]
   )
 
   const refreshOllama = useCallback(async () => {
@@ -473,12 +483,12 @@ export default function App(): React.JSX.Element {
         if (llmProvider === 'ollama') {
           setModels(list)
           const names = list.map((m) => m.name)
-          setSelectedModel((current) => {
-            if (current && names.includes(current)) return current
+          const config = await window.api.getConfig()
+          const saved = config.selectedModelByProvider.ollama
+          setSelectedModel(() => {
+            if (saved && names.includes(saved)) return saved
             const next = names[0] ?? null
-            if (next) {
-              void window.api.setSelectedModelForProvider('ollama', next)
-            }
+            void window.api.setSelectedModelForProvider('ollama', next)
             return next
           })
         }
@@ -1359,6 +1369,7 @@ export default function App(): React.JSX.Element {
     setLlmProvider(provider)
     const config = await window.api.getConfig()
     setSelectedModel(config.selectedModel)
+    await refreshEffectiveProvider()
     await refreshModelsForProvider(provider)
   }
 
@@ -1366,12 +1377,14 @@ export default function App(): React.JSX.Element {
     await window.api.setOpenaiEnabled(enabled)
     setOpenaiEnabled(enabled)
     await refreshOpenAiStatus()
+    await refreshEffectiveProvider()
   }
 
   const handleSetOpenaiApiKey = async (key: string | null): Promise<void> => {
     await window.api.setOpenaiApiKey(key)
     setOpenaiApiKeyDraft(key ?? '')
     await refreshOpenAiStatus()
+    await refreshEffectiveProvider()
   }
 
   const refreshAzureConfig = async (): Promise<void> => {
@@ -1390,36 +1403,43 @@ export default function App(): React.JSX.Element {
   const handleSetAzureEnabled = async (enabled: boolean): Promise<void> => {
     await window.api.azureOpenai.setEnabled(enabled)
     await refreshAzureConfig()
+    await refreshEffectiveProvider()
   }
 
   const handleSetAzureApiKey = async (key: string | null): Promise<void> => {
     await window.api.azureOpenai.setApiKey(key)
     await refreshAzureConfig()
+    await refreshEffectiveProvider()
   }
 
   const handleSetAzureEndpoint = async (endpoint: string | null): Promise<void> => {
     await window.api.azureOpenai.setEndpoint(endpoint)
     await refreshAzureConfig()
+    await refreshEffectiveProvider()
   }
 
   const handleSetAzureApiVersion = async (version: string): Promise<void> => {
     await window.api.azureOpenai.setApiVersion(version)
     await refreshAzureConfig()
+    await refreshEffectiveProvider()
   }
 
   const handleValidateAzure = async (): Promise<void> => {
     await window.api.azureOpenai.validateAndFetchModels()
     await refreshAzureConfig()
+    await refreshEffectiveProvider()
   }
 
   const handleRefreshAzure = async (): Promise<void> => {
     await window.api.azureOpenai.refreshModels()
     await refreshAzureConfig()
+    await refreshEffectiveProvider()
   }
 
   const handleToggleAzureDeployment = async (name: string, enabled: boolean): Promise<void> => {
     await window.api.azureOpenai.setDeploymentEnabled(name, enabled)
     await refreshAzureConfig()
+    await refreshEffectiveProvider()
     if (llmProvider === 'azure-openai') await refreshModelsForProvider('azure-openai')
   }
 
@@ -1668,6 +1688,8 @@ export default function App(): React.JSX.Element {
           }
           readOnly={activeSessionReadOnly}
           llmProvider={llmProvider}
+          effectiveProvider={effectiveProvider}
+          providerFallbackReason={providerFallbackReason}
           ollamaOk={ollamaOk}
           imageGenSupported={imageGenSupported}
           models={models}

@@ -41,6 +41,8 @@ interface ChatProps {
   canSend: boolean
   readOnly?: boolean
   llmProvider: LlmProvider
+  effectiveProvider: LlmProvider
+  providerFallbackReason?: string
   ollamaOk: boolean
   imageGenSupported?: boolean
   models: OllamaModel[]
@@ -70,6 +72,8 @@ export function Chat({
   canSend,
   readOnly = false,
   llmProvider,
+  effectiveProvider,
+  providerFallbackReason,
   ollamaOk,
   imageGenSupported = true,
   models,
@@ -337,7 +341,7 @@ export function Chat({
       setModelSystem('')
       return
     }
-    if (llmProvider === 'openai') {
+    if (llmProvider !== 'ollama') {
       setModelLimit(128_000)
       setModelSystem('')
       return
@@ -366,7 +370,7 @@ export function Chat({
     }
   }, [selectedModel, ollamaOk, llmProvider])
 
-  const backendReady = llmProvider === 'openai' ? canSend || ollamaOk : ollamaOk
+  const backendReady = effectiveProvider === 'ollama' ? ollamaOk : canSend
 
   const contextLimit =
     (contextUsage && contextUsage.limit > 0 ? contextUsage.limit : null) ??
@@ -542,11 +546,15 @@ export function Chat({
               }`}
               aria-hidden
             />
-            {llmProvider === 'openai'
+            {effectiveProvider === 'openai'
               ? backendReady
                 ? 'OpenAI ready'
                 : 'OpenAI unavailable'
-              : ollamaOk
+              : effectiveProvider === 'azure-openai'
+                ? backendReady
+                  ? 'Azure OpenAI ready'
+                  : 'Azure OpenAI unavailable'
+                : ollamaOk
                 ? 'Connected'
                 : 'Disconnected'}
           </div>
@@ -802,6 +810,17 @@ export function Chat({
             Ollama is offline — check Settings or switch to OpenAI.
           </p>
         )}
+        {llmProvider === 'azure-openai' && providerFallbackReason && (
+          <p className="mb-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+            Azure OpenAI is unavailable, so this message will use Ollama instead.{' '}
+            {providerFallbackReason}
+          </p>
+        )}
+        {llmProvider === 'azure-openai' && models.length === 0 && (
+          <p className="mb-2 text-xs text-amber-300/90">
+            Add and enable an Azure deployment on the Models page to choose an Azure chat model.
+          </p>
+        )}
         {llmProvider === 'openai' && !canSend && !readOnly && (
           <p className="mb-2 text-xs text-amber-300/90">
             Select an enabled OpenAI model, or validate your API key in Settings.
@@ -953,7 +972,7 @@ export function Chat({
           />
           )}
 
-          {(ollamaOk || llmProvider === 'openai') &&
+          {(ollamaOk || llmProvider !== 'ollama') &&
           selectedModel &&
           contextLimit &&
           contextLimit > 0 ? (
