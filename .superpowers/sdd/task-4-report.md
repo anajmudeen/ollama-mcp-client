@@ -199,3 +199,53 @@ ReadLints(src/main/ipc.ts)
 ```
 
 Passed: no linter errors.
+
+## Fix
+
+- Added an independent image-discovery generation guard. Every discovery
+  continuation checks that it is still latest before reading, writing, or
+  applying state; user selection changes invalidate in-flight discovery.
+- Changed `config:setOpenaiApiKey` IPC/preload to return only a boolean
+  indicating whether a non-empty key was stored. The key remains available to
+  main-process validation and is never returned through IPC.
+
+Exact verification results:
+
+```text
+npm run typecheck
+```
+
+Passed with exit code 0. Both `typecheck:node` and `typecheck:web` completed.
+
+```text
+node scripts/test-image-backend-routing.mjs
+```
+
+Passed with exit code 0.
+
+```text
+node scripts/test-config-store-migrations.mjs
+```
+
+Passed its migration subtest, but the process reported a pre-existing
+development-server port/dependency-scan conflict because port 5173 was already
+occupied; the command exited 1.
+
+```text
+node scripts/test-image-gen-tool.mjs
+```
+
+Reported the same pre-existing port 5173/Vite dependency-scan conflict and
+exited 1. No image-tool assertion failure was reported.
+
+```text
+git diff --check
+```
+
+Passed with no whitespace errors.
+
+```text
+ReadLints(src/main/ipc.ts, src/preload/index.ts, src/renderer/src/App.tsx)
+```
+
+Passed: no linter errors.

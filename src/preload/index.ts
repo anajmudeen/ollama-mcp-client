@@ -46,7 +46,7 @@ const api = {
     ipcRenderer.invoke('config:setLlmProvider', provider),
   setOpenaiEnabled: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('config:setOpenaiEnabled', enabled),
-  setOpenaiApiKey: (key: string | null): Promise<string | null> =>
+  setOpenaiApiKey: (key: string | null): Promise<boolean> =>
     ipcRenderer.invoke('config:setOpenaiApiKey', key),
   setOpenaiModelEnabled: (id: string, enabled: boolean): Promise<Record<string, boolean>> =>
     ipcRenderer.invoke('config:setOpenaiModelEnabled', id, enabled),

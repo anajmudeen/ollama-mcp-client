@@ -233,9 +233,10 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('config:setOpenaiEnabled', (_e, enabled: boolean) =>
     setOpenaiEnabled(enabled)
   )
-  ipcMain.handle('config:setOpenaiApiKey', (_e, key: string | null) =>
+  ipcMain.handle('config:setOpenaiApiKey', (_e, key: string | null) => {
     setOpenaiApiKey(key)
-  )
+    return Boolean(key?.trim())
+  })
   ipcMain.handle('config:setOpenaiModelEnabled', (_e, id: string, enabled: boolean) =>
     setOpenaiModelEnabled(id, enabled)
   )

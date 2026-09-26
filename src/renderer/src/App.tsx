@@ -208,6 +208,7 @@ export default function App(): React.JSX.Element {
   })
   const queueStateRef = useRef<ChatQueueState>({ running: null, queued: [] })
   const modelRefreshRequestRef = useRef(0)
+  const imageDiscoveryGenerationRef = useRef(0)
   const beginProviderOperation = useCallback((): number => {
     modelRefreshRequestRef.current += 1
     return modelRefreshRequestRef.current
@@ -396,9 +397,14 @@ export default function App(): React.JSX.Element {
   }, [])
 
   const refreshAvailableImageModels = useCallback(async (): Promise<void> => {
+    const generation = ++imageDiscoveryGenerationRef.current
+    const isCurrent = (): boolean =>
+      generation === imageDiscoveryGenerationRef.current
     try {
       const available = await window.api.images.listAvailableModels()
+      if (!isCurrent()) return
       const config = await window.api.getConfig()
+      if (!isCurrent()) return
       const selected = config.imageBackend
       const preserved = selected &&
         available.some(
@@ -409,10 +415,13 @@ export default function App(): React.JSX.Element {
         : null
       if (selected && !preserved) {
         await window.api.setImageBackend(null)
+        if (!isCurrent()) return
       }
+      if (!isCurrent()) return
       setAvailableImageModels(available)
       setImageBackend(preserved)
     } catch {
+      if (!isCurrent()) return
       setAvailableImageModels([])
       setImageBackend(null)
     }
@@ -1427,6 +1436,7 @@ export default function App(): React.JSX.Element {
   const handleSetImageBackend = async (
     selection: ImageBackendSelection | null
   ): Promise<void> => {
+    imageDiscoveryGenerationRef.current += 1
     const saved = await window.api.setImageBackend(selection)
     setImageBackend(saved)
   }
