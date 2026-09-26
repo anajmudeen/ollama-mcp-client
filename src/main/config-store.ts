@@ -584,11 +584,6 @@ function normalizeImageBackend(
   return { provider, model }
 }
 
-// Keep this conservative and local: getConfig() is synchronous, and a legacy
-// name can only be migrated to Ollama when its name identifies an image model.
-const LEGACY_OLLAMA_IMAGE_MODEL_RE =
-  /z-image|flux|sdxl|stable-diffusion|stable_diffusion|imagen|dreamshaper|animagine/i
-
 /**
  * Resolve a legacy model against already-verified availability.
  *
@@ -601,8 +596,12 @@ export function migrateImageBackend(
   openaiImageModels: string[],
   installedOllamaImageModels: string[]
 ): ImageBackendSelection | null {
-  const structured = normalizeImageBackend(persisted)
-  if (structured) return structured
+  // `undefined` means the structured field is absent. A persisted null (or
+  // malformed value) is an explicit structured choice and must not fall back
+  // to the legacy model.
+  if (persisted !== undefined) {
+    return normalizeImageBackend(persisted)
+  }
 
   const legacy = typeof legacyModel === 'string' ? legacyModel.trim() : ''
   if (!legacy) return null
@@ -624,7 +623,7 @@ function hasPersistedImageBackend(): boolean {
 }
 
 export function getImageBackend(): ImageBackendSelection | null {
-  const persisted = hasPersistedImageBackend() ? store.get('imageBackend') : null
+  const persisted = hasPersistedImageBackend() ? store.get('imageBackend') : undefined
   const openaiImageModels = getOpenaiModelsCatalog()
     .map((entry) => entry.id)
     .filter(
@@ -633,17 +632,13 @@ export function getImageBackend(): ImageBackendSelection | null {
         isOpenAiImageGenModel(id)
     )
   const legacy = store.get('defaultImageModel', DEFAULT_CONFIG.defaultImageModel)
-  const ollamaImageModels =
-    typeof legacy === 'string' && LEGACY_OLLAMA_IMAGE_MODEL_RE.test(legacy.trim())
-      ? [legacy.trim()]
-      : []
   const migrated = migrateImageBackend(
     legacy,
     persisted,
     openaiImageModels,
-    ollamaImageModels
+    []
   )
-  if (migrated && !normalizeImageBackend(persisted)) store.set('imageBackend', migrated)
+  if (migrated && persisted === undefined) store.set('imageBackend', migrated)
   return migrated
 }
 

@@ -48,9 +48,9 @@ beforeEach(() => {
   setSelectedModelForProvider('ollama', null)
   setSelectedModelForProvider('openai', null)
   setSelectedModelForProvider('azure-openai', null)
-  setOpenaiEnabled(false)
+  setOpenaiEnabled(true)
   setOpenaiApiKey(null)
-  setOpenaiValidationOk(false, 'test reset')
+  setOpenaiValidationOk(true)
   setOpenaiModelsCatalog([])
   setAzureOpenaiEnabled(false)
   setAzureOpenaiApiKey(null)
@@ -246,6 +246,7 @@ test('returns a clear failure when no image backend is selected', async () => {
 
 test('offers the tool to Ollama when Ollama is unavailable but OpenAI is the image backend', async () => {
   setImageBackend({ provider: 'openai', model: 'gpt-image-1' })
+  setOpenaiApiKey('test-key')
   setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
   setOpenaiModelEnabled('gpt-image-1', true)
   const originalFetch = globalThis.fetch

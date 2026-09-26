@@ -107,35 +107,38 @@ test('Azure fallback selects the Ollama chat slot and model', () => {
 
 test('migrates a legacy OpenAI image model first', () => {
   assert.deepEqual(
-    migrateImageBackend(' gpt-image-1 ', null, ['gpt-image-1'], ['gpt-image-1']),
+    migrateImageBackend(' gpt-image-1 ', undefined, ['gpt-image-1'], ['gpt-image-1']),
     { provider: 'openai', model: 'gpt-image-1' }
   )
 })
 
 test('migrates a legacy Ollama image model when verified as installed', () => {
   assert.deepEqual(
-    migrateImageBackend(' flux ', null, [], ['flux']),
+    migrateImageBackend(' flux ', undefined, [], ['flux']),
     { provider: 'ollama', model: 'flux' }
   )
 })
 
-test('production migration path identifies a legacy Ollama image model locally', () => {
+test('does not activate a legacy Ollama image model without verified availability', () => {
   setImageBackend(null)
   setDefaultImageModel(null)
   setDefaultImageModel(' flux-schnell ')
   try {
-    assert.deepEqual(getImageBackend(), {
-      provider: 'ollama',
-      model: 'flux-schnell'
-    })
+    assert.equal(getImageBackend(), null)
   } finally {
     setImageBackend(null)
     setDefaultImageModel(null)
   }
 })
 
+test('explicitly persisted null image backend suppresses legacy migration', () => {
+  setDefaultImageModel('flux-schnell')
+  setImageBackend(null)
+  assert.equal(getImageBackend(), null)
+})
+
 test('does not migrate an unresolved legacy model', () => {
-  assert.equal(migrateImageBackend('unknown', null, [], []), null)
+  assert.equal(migrateImageBackend('unknown', undefined, [], []), null)
 })
 
 test('normalizes and preserves a structured selection', () => {
@@ -212,6 +215,9 @@ test('routes Azure chat to the selected Ollama image backend', async () => {
 })
 
 test('discovers Ollama and enabled OpenAI image models independently', async () => {
+  setOpenaiEnabled(true)
+  setOpenaiApiKey('test-key')
+  setOpenaiValidationOk(true)
   setOpenaiModelsCatalog([
     { id: 'gpt-image-1', name: 'gpt-image-1' },
     { id: 'gpt-4.1-mini', name: 'gpt-4.1-mini' }
@@ -238,9 +244,39 @@ test('discovers Ollama and enabled OpenAI image models independently', async () 
   }
 })
 
+test('hides OpenAI image models unless OpenAI is runtime-usable', async () => {
+  setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
+  setOpenaiModelEnabled('gpt-image-1', true)
+  for (const configure of [
+    () => {
+      setOpenaiEnabled(false)
+      setOpenaiApiKey('test-key')
+      setOpenaiValidationOk(true)
+    },
+    () => {
+      setOpenaiEnabled(true)
+      setOpenaiApiKey(null)
+      setOpenaiValidationOk(true)
+    },
+    () => {
+      setOpenaiEnabled(true)
+      setOpenaiApiKey('test-key')
+      setOpenaiValidationOk(false, 'not validated')
+    }
+  ]) {
+    configure()
+    assert.deepEqual(
+      (await listAvailableImageModels()).filter((entry) => entry.provider === 'openai'),
+      []
+    )
+  }
+})
+
 test('routes Azure chat to the selected OpenAI image backend', async () => {
   setImageBackend({ provider: 'openai', model: 'gpt-image-1' })
+  setOpenaiEnabled(true)
   setOpenaiApiKey('test-key')
+  setOpenaiValidationOk(true)
   setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
   setOpenaiModelEnabled('gpt-image-1', true)
   const originalFetch = globalThis.fetch

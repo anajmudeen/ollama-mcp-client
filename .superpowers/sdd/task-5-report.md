@@ -225,6 +225,11 @@ Replaced source-text regex assertions with behavioral tests using pure helpers:
 - Azure fallback → Ollama provider slot/model
 - Structured image backend transitions preserve provider/model identity
 
+Clarification: Azure deployment names and Azure-native image capabilities do not
+enable native Azure image generation. Azure chat can still use the independently
+selected, runtime-available Ollama or OpenAI image backend through the shared
+image tools; the backend selection is never inferred from the Azure deployment.
+
 | Command | Exact result |
 | --- | --- |
 | `node scripts/test-image-backend-routing.mjs` | **PASS** (exit 0) |
@@ -233,6 +238,33 @@ Replaced source-text regex assertions with behavioral tests using pure helpers:
 | `npm run build` | **PASS** (typecheck + Electron/Vite bundles, exit 0) |
 | `node scripts/check-openai-vision.mjs` | **PASS** — `OpenAI vision/image classifier checks passed` |
 | `git diff --check` | **PASS** (exit 0) |
+
+## Final-review fixes (2026-09-27)
+
+- `setImageBackend(null)` is now authoritative: migration distinguishes an
+  absent structured field from a persisted null and never resurrects
+  `defaultImageModel` after an explicit clear.
+- Legacy Ollama names are no longer classified by regex. Synchronous config
+  reads leave an unverified legacy value pending; the pure migration helper
+  still accepts Ollama values only when supplied with verified installed
+  models, while preserving OpenAI-first migration.
+- OpenAI image models are listed only when OpenAI is enabled, has a key, and
+  has a successful validation state. Provider-specific name listing applies
+  the same runtime-usable gate.
+- Focused tests cover explicit null clearing, unresolved Ollama migration,
+  verified migration, OpenAI runtime gating, and Azure chat using an
+  independently selected image backend.
+
+| Command | Result |
+| --- | --- |
+| `node scripts/test-image-backend-routing.mjs` | **PASS** |
+| `node scripts/test-image-gen-tool.mjs` | **PASS** |
+| `node scripts/test-agent-image-attachments.mjs` | **PASS** |
+| `npm run typecheck` | **PASS** |
+| `npm run build` | **PASS** |
+| `npm run check:openai-vision` | **PASS** |
+| `node scripts/test-azure-openai-client.mjs` | **PASS** |
+| `git diff --check` | **PASS** |
 
 ## Review follow-up: isolated routing state (2026-09-27)
 

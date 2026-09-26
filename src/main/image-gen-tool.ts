@@ -1,7 +1,10 @@
 import {
+  getOpenaiApiKey,
+  getOpenaiEnabled,
   getImageBackend,
   getOpenaiModelEnabledMap,
-  getOpenaiModelsCatalog
+  getOpenaiModelsCatalog,
+  getOpenaiValidationState
 } from './config-store'
 import { isOpenAiImageGenModel } from '../shared/openai-models'
 import type {
@@ -88,14 +91,17 @@ export async function listAvailableImageModels(): Promise<AvailableImageModel[]>
     }
   }
 
-  const catalog = getOpenaiModelsCatalog()
-  const enabled = getOpenaiModelEnabledMap()
-  imageModels.push(
-    ...catalog
-      .map((entry) => entry.id)
-      .filter((id) => enabled[id] === true && isOpenAiImageGenModel(id))
-      .map((model) => ({ provider: 'openai' as const, model }))
-  )
+  const { ok: openaiValidated } = getOpenaiValidationState()
+  if (getOpenaiEnabled() && Boolean(getOpenaiApiKey()) && openaiValidated) {
+    const catalog = getOpenaiModelsCatalog()
+    const enabled = getOpenaiModelEnabledMap()
+    imageModels.push(
+      ...catalog
+        .map((entry) => entry.id)
+        .filter((id) => enabled[id] === true && isOpenAiImageGenModel(id))
+        .map((model) => ({ provider: 'openai' as const, model }))
+    )
+  }
 
   return imageModels
 }
@@ -104,6 +110,8 @@ export async function listAvailableImageModelNames(
   provider: LlmProvider
 ): Promise<string[]> {
   if (provider === 'openai') {
+    const { ok: openaiValidated } = getOpenaiValidationState()
+    if (!getOpenaiEnabled() || !getOpenaiApiKey() || !openaiValidated) return []
     const catalog = getOpenaiModelsCatalog()
     const enabled = getOpenaiModelEnabledMap()
     return catalog

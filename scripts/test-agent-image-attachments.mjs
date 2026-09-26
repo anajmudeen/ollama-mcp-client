@@ -42,9 +42,12 @@ const { onChatEvent } = await server.ssrLoadModule(
 )
 const {
   setDefaultImageModel,
+  setImageBackend,
+  setOpenaiEnabled,
   setOpenaiApiKey,
   setOpenaiModelEnabled,
   setOpenaiModelsCatalog,
+  setOpenaiValidationOk,
   setOllamaBaseUrl,
   setSelectedModelForProvider,
   setLlmProvider
@@ -211,8 +214,11 @@ test('dispatches generation without sources and editing with selected sources', 
   setSelectedModelForProvider('ollama', 'llama3.2-vision')
   setOllamaBaseUrl('http://mock-ollama')
   setOpenaiApiKey('test-key')
+  setOpenaiEnabled(true)
+  setOpenaiValidationOk(true)
   setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
   setOpenaiModelEnabled('gpt-image-1', true)
+  setImageBackend({ provider: 'openai', model: 'gpt-image-1' })
   setDefaultImageModel('gpt-image-1')
 
   const originalFetch = globalThis.fetch
