@@ -1,10 +1,12 @@
 import { randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
 import Store from 'electron-store'
+import { isOpenAiImageGenModel } from '../shared/openai-models'
 import type {
   AppConfig,
   ChatMessage,
   ChatSession,
+  ImageBackendSelection,
   LlmProvider,
   McpServerConfig,
   AzureOpenaiDeploymentEntry,
@@ -50,6 +52,7 @@ const DEFAULT_CONFIG: AppConfig = {
   telegramEnabled: false,
   telegramAllowedUserIds: [],
   telegramMirrorMode: 'full',
+  imageBackend: null,
   defaultImageModel: null
 }
 
@@ -211,6 +214,7 @@ export function getConfig(): AppConfig {
       'telegramMirrorMode',
       DEFAULT_CONFIG.telegramMirrorMode
     ),
+    imageBackend: getImageBackend(),
     defaultImageModel: store.get('defaultImageModel', DEFAULT_CONFIG.defaultImageModel)
   }
 }
@@ -562,6 +566,82 @@ export function getTelegramMirrorMode(): TelegramMirrorMode {
 export function setTelegramMirrorMode(mode: TelegramMirrorMode): TelegramMirrorMode {
   store.set('telegramMirrorMode', mode)
   return mode
+}
+
+function normalizeImageBackend(
+  selection: unknown
+): ImageBackendSelection | null {
+  if (!selection || typeof selection !== 'object') return null
+  const candidate = selection as { provider?: unknown; model?: unknown }
+  const provider = candidate.provider
+  const model = typeof candidate.model === 'string' ? candidate.model.trim() : ''
+  if (
+    (provider !== 'openai' && provider !== 'ollama') ||
+    !model
+  ) {
+    return null
+  }
+  return { provider, model }
+}
+
+/**
+ * Resolve a legacy model against already-verified availability.
+ *
+ * OpenAI is intentionally checked first so a model name collision cannot
+ * change the backend identity during migration.
+ */
+export function migrateImageBackend(
+  legacyModel: string | null | undefined,
+  persisted: unknown,
+  openaiImageModels: string[],
+  installedOllamaImageModels: string[]
+): ImageBackendSelection | null {
+  const structured = normalizeImageBackend(persisted)
+  if (structured) return structured
+
+  const legacy = typeof legacyModel === 'string' ? legacyModel.trim() : ''
+  if (!legacy) return null
+  if (openaiImageModels.includes(legacy)) {
+    return { provider: 'openai', model: legacy }
+  }
+  if (installedOllamaImageModels.includes(legacy)) {
+    return { provider: 'ollama', model: legacy }
+  }
+  return null
+}
+
+function hasPersistedImageBackend(): boolean {
+  try {
+    return store.has('imageBackend')
+  } catch {
+    return false
+  }
+}
+
+export function getImageBackend(): ImageBackendSelection | null {
+  const persisted = hasPersistedImageBackend() ? store.get('imageBackend') : null
+  const openaiImageModels = getOpenaiModelsCatalog()
+    .map((entry) => entry.id)
+    .filter(
+      (id) =>
+        getOpenaiModelEnabledMap()[id] === true &&
+        isOpenAiImageGenModel(id)
+    )
+  const legacy = store.get('defaultImageModel', DEFAULT_CONFIG.defaultImageModel)
+  const migrated = migrateImageBackend(legacy, persisted, openaiImageModels, [])
+  if (migrated && !persisted) store.set('imageBackend', migrated)
+  return migrated
+}
+
+export function setImageBackend(
+  selection: ImageBackendSelection | null
+): ImageBackendSelection | null {
+  const normalized = normalizeImageBackend(selection)
+  if (selection !== null && !normalized) {
+    throw new Error('Image backend provider and model are required')
+  }
+  store.set('imageBackend', normalized)
+  return normalized
 }
 
 export function getDefaultImageModel(): string | null {

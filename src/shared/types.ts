@@ -35,6 +35,13 @@ export type TelegramMirrorMode = 'full' | 'final'
 
 export type LlmProvider = 'ollama' | 'openai' | 'azure-openai'
 
+export type ImageBackendProvider = 'openai' | 'ollama'
+
+export interface ImageBackendSelection {
+  provider: ImageBackendProvider
+  model: string
+}
+
 export interface OpenAiModelEntry {
   id: string
   ownedBy?: string
@@ -106,7 +113,8 @@ export interface AppConfig {
   telegramEnabled: boolean
   telegramAllowedUserIds: number[]
   telegramMirrorMode: TelegramMirrorMode
-  /** Preferred image model for generate_image tool; null = Auto (first installed). */
+  imageBackend: ImageBackendSelection | null
+  /** @deprecated Legacy image model value retained for migration compatibility. */
   defaultImageModel: string | null
 }
 
