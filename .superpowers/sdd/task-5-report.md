@@ -145,3 +145,21 @@ All offline gating smoke checks passed
 - No live Azure or Telegram credentials were available, so provider calls were verified statically and through TypeScript compilation rather than live API execution.
 - Existing model/catalog types remain Ollama-shaped internally for adapter compatibility; Azure deployments still use deployment names as selectable model IDs.
 - The requested verification covered Node typechecking only; no renderer or Electron end-to-end test was run.
+
+## Fix: Task 5 review findings
+
+### Changes
+
+- Resolved the effective provider once at turn start and derived the adapter with `getLlmProvider(effective)`, keeping fallback event, selected model, and adapter consistent.
+- Restored direct OpenAI image-model generation and usage reporting from the pre-Task 5 behavior.
+- Kept Azure direct image generation disabled and retained Ollama-only direct image generation/tool boundaries.
+- Updated Telegram `/current` to display the selected model for the effective provider, including fallback behavior.
+
+### Verification commands and results
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | **PASS** (node and web, exit 0) |
+| `git diff --check` | **PASS** |
+| `npm run check:openai-vision` | **PASS** — OpenAI vision/image classifier checks passed |
+| IDE linter diagnostics for modified files | **PASS** — no errors |

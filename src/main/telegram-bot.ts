@@ -8,7 +8,7 @@ import {
   getSchedule,
   getSessionsState,
   getTelegramActiveSessionId,
-  getSelectedModel,
+  getSelectedModelForProvider,
   getTelegramAllowedUserIds,
   getTelegramBotToken,
   getTelegramEnabled,
@@ -32,6 +32,7 @@ import {
 import { runTelegramTurn } from './telegram-turn'
 import { removeSessionTurns } from './chat-queue'
 import { clearLatestGeneratedImage } from './agent'
+import { resolveEffectiveLlmProvider } from './llm'
 
 let bot: Telegraf | null = null
 let running = false
@@ -275,7 +276,8 @@ function registerHandlers(instance: Telegraf): void {
       return
     }
 
-    const model = getSelectedModel()
+    const { effective } = resolveEffectiveLlmProvider()
+    const model = getSelectedModelForProvider(effective)
     await ctx.reply(
       [
         `Session: ${session.title}`,
