@@ -382,15 +382,20 @@ export default function App(): React.JSX.Element {
     setOpenaiStatus(await window.api.openai.getStatus())
   }, [])
 
-  const refreshEffectiveProvider = useCallback(async () => {
+  const refreshEffectiveProvider = useCallback(async (requestId?: number) => {
     const status = await window.api.llm.getEffectiveProvider()
+    if (
+      requestId !== undefined &&
+      requestId !== modelRefreshRequestRef.current
+    ) {
+      return
+    }
     setEffectiveProvider(status.effective)
     setProviderFallbackReason(status.fallback ? status.reason : undefined)
   }, [])
 
   const refreshModelsForProvider = useCallback(
-    async (provider: LlmProvider) => {
-      const requestId = ++modelRefreshRequestRef.current
+    async (provider: LlmProvider, requestId = ++modelRefreshRequestRef.current) => {
       const isCurrentRequest = (): boolean =>
         requestId === modelRefreshRequestRef.current
 
@@ -409,7 +414,7 @@ export default function App(): React.JSX.Element {
           const next = saved && names.includes(saved) ? saved : names[0] ?? null
           setSelectedModel(next)
           if (!saved || !names.includes(saved)) {
-            void window.api.setSelectedModelForProvider(provider, next)
+            await window.api.setSelectedModelForProvider(provider, next)
           }
         } catch {
           if (!isCurrentRequest()) return
@@ -446,7 +451,7 @@ export default function App(): React.JSX.Element {
       const next = saved && names.includes(saved) ? saved : names[0] ?? null
       setSelectedModel(next)
       if (!saved || !names.includes(saved)) {
-        void window.api.setSelectedModelForProvider('ollama', next)
+        await window.api.setSelectedModelForProvider('ollama', next)
       }
     },
     []
@@ -1378,12 +1383,16 @@ export default function App(): React.JSX.Element {
   }
 
   const handleSetLlmProvider = async (provider: LlmProvider): Promise<void> => {
+    const requestId = ++modelRefreshRequestRef.current
     await window.api.setLlmProvider(provider)
+    if (requestId !== modelRefreshRequestRef.current) return
     setLlmProvider(provider)
     const config = await window.api.getConfig()
+    if (requestId !== modelRefreshRequestRef.current) return
     setSelectedModel(config.selectedModel)
-    await refreshEffectiveProvider()
-    await refreshModelsForProvider(provider)
+    await refreshEffectiveProvider(requestId)
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshModelsForProvider(provider, requestId)
   }
 
   const handleSetOpenaiEnabled = async (enabled: boolean): Promise<void> => {
