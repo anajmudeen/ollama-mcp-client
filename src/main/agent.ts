@@ -57,7 +57,7 @@ function mergeLlmStreamUsage(
   provider: LlmProvider,
   result: LlmChatStreamResult
 ): TokenUsageBreakdown {
-  if (provider === 'openai' && result.usage) {
+  if ((provider === 'openai' || provider === 'azure-openai') && result.usage) {
     return mergeTokenUsage(acc, {
       promptTokens: result.usage.promptTokens,
       completionTokens: result.usage.completionTokens,

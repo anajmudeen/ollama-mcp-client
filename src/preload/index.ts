@@ -90,9 +90,7 @@ const api = {
       ipcRenderer.invoke('azureOpenai:refreshModels'),
     getStatus: (): Promise<AzureOpenaiStatus> =>
       ipcRenderer.invoke('azureOpenai:getStatus'),
-    addDeployment: (
-      deployment: AzureOpenaiDeploymentEntry | string
-    ): Promise<AzureOpenaiDeploymentEntry[]> =>
+    addDeployment: (deployment: string): Promise<AzureOpenaiDeploymentEntry[]> =>
       ipcRenderer.invoke('azureOpenai:addDeployment', deployment),
     updateDeployment: (
       name: string,

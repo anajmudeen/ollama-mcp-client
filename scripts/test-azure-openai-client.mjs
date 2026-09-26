@@ -99,20 +99,21 @@ test('sends Azure chat requests with api-key and no model field', async () => {
     const chunks = []
     const result = await client.azureOpenAiChatStream({
       endpoint: 'https://example.openai.azure.com/',
-      deployment: 'gpt 4/deploy',
+      deployment: 'gpt-5/deploy',
       apiVersion: '2024-10/21',
       apiKey: 'secret',
       messages: [{ role: 'user', content: 'hi' }],
       tools: [{ function: { name: 'lookup', description: 'find', parameters: {} } }],
       onChunk: (chunk) => chunks.push(chunk)
     })
-    assert.equal(request.url, 'https://example.openai.azure.com/openai/deployments/gpt%204%2Fdeploy/chat/completions?api-version=2024-10%2F21')
+    assert.equal(request.url, 'https://example.openai.azure.com/openai/deployments/gpt-5%2Fdeploy/chat/completions?api-version=2024-10%2F21')
     assert.equal(request.options.headers.Authorization, undefined)
     assert.equal(request.options.headers['api-key'], 'secret')
     const body = JSON.parse(request.options.body)
     assert.equal(body.model, undefined)
     assert.equal(body.stream, true)
     assert.equal(body.tools[0].function.name, 'lookup')
+    assert.equal(body.reasoning_effort, 'none')
     assert.equal(result.content, 'hello')
     assert.deepEqual(result.toolCalls, [{ name: 'lookup', arguments: { q: 'x' } }])
     assert.deepEqual(result.usage, {

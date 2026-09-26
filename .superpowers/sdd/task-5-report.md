@@ -114,7 +114,7 @@ All offline gating smoke checks passed
 
 ## Task 5: Azure-aware main-process routing
 
-**Date:** 2026-09-27  
+**Date:** 2026-09-27
 **Scope:** `agent.ts`, `session-title.ts`, `context-compact.ts`, `schedule-executor.ts`, `telegram-turn.ts`, and image-tool provider boundaries.
 
 ### Changes

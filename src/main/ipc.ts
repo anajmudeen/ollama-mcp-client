@@ -124,6 +124,12 @@ import {
   stopTelegramBot
 } from './telegram-bot'
 
+let azureValidationGeneration = 0
+
+function invalidateAzureValidation(): void {
+  azureValidationGeneration += 1
+}
+
 async function validateOpenAiAndFetchCatalog(): Promise<ReturnType<typeof getConfig>> {
   const key = getOpenaiApiKey()
   if (!key) {
@@ -157,28 +163,32 @@ function getAzureOpenaiStatus(): AzureOpenaiStatus {
 }
 
 async function validateAzureOpenaiAndFetchCatalog(): Promise<ReturnType<typeof getConfig>> {
+  const generation = ++azureValidationGeneration
+  const isCurrent = (): boolean => generation === azureValidationGeneration
   const apiKey = getAzureOpenaiApiKey()
   const endpoint = getAzureOpenaiEndpoint()
   const apiVersion = getAzureOpenaiApiVersion()
   if (!apiKey) {
-    setAzureOpenaiValidationOk(false, 'API key not configured')
+    if (isCurrent()) setAzureOpenaiValidationOk(false, 'API key not configured')
     return getConfig()
   }
   if (!endpoint || !normalizeAzureEndpoint(endpoint)) {
-    setAzureOpenaiValidationOk(false, 'Service endpoint not configured')
+    if (isCurrent()) setAzureOpenaiValidationOk(false, 'Service endpoint not configured')
     return getConfig()
   }
   if (!apiVersion.trim()) {
-    setAzureOpenaiValidationOk(false, 'API version not configured')
+    if (isCurrent()) setAzureOpenaiValidationOk(false, 'API version not configured')
     return getConfig()
   }
 
   const options = { apiKey, endpoint, apiVersion }
   try {
     const models = await fetchAzureModels(options)
+    if (!isCurrent()) return getConfig()
     mergeAzureOpenaiCatalog(models)
-    setAzureOpenaiValidationOk(true)
+    if (isCurrent()) setAzureOpenaiValidationOk(true)
   } catch (err) {
+    if (!isCurrent()) return getConfig()
     setAzureOpenaiValidationOk(
       false,
       err instanceof Error ? err.message : String(err)
@@ -235,6 +245,7 @@ export function registerIpc(ipcMain: IpcMain): void {
     const previous = getAzureOpenaiApiKey()
     const next = key?.trim() || null
     const value = setAzureOpenaiApiKey(key)
+    invalidateAzureValidation()
     if (!value) setAzureOpenaiValidationOk(false, 'API key not configured')
     else if (next !== previous) {
       setAzureOpenaiValidationOk(false, 'Azure OpenAI settings changed; validate again')
@@ -245,6 +256,7 @@ export function registerIpc(ipcMain: IpcMain): void {
     const previous = getAzureOpenaiEndpoint()
     const next = endpoint?.trim().replace(/\/+$/, '') || null
     const value = setAzureOpenaiEndpoint(endpoint)
+    invalidateAzureValidation()
     if (!value) setAzureOpenaiValidationOk(false, 'Service endpoint not configured')
     else if (next !== previous) {
       setAzureOpenaiValidationOk(false, 'Azure OpenAI settings changed; validate again')
@@ -255,6 +267,7 @@ export function registerIpc(ipcMain: IpcMain): void {
     const previous = getAzureOpenaiApiVersion()
     const next = version.trim() || '2024-10-21'
     setAzureOpenaiApiVersion(version)
+    invalidateAzureValidation()
     if (next !== previous) {
       setAzureOpenaiValidationOk(false, 'Azure OpenAI settings changed; validate again')
     }
@@ -283,8 +296,8 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('azureOpenai:getStatus', () => getAzureOpenaiStatus())
   ipcMain.handle('azureOpenai:addDeployment', (
     _e,
-    deployment: AzureOpenaiDeploymentEntry | string
-  ) => addAzureOpenaiDeployment(deployment))
+    deployment: string
+  ) => addAzureOpenaiDeployment(deployment.trim()))
   ipcMain.handle('azureOpenai:updateDeployment', (
     _e,
     name: string,

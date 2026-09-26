@@ -380,7 +380,12 @@ export function addAzureOpenaiDeployment(
   if (!next.name) throw new Error('Deployment name is required')
   const deployments = getAzureOpenaiDeployments()
   const index = deployments.findIndex((entry) => entry.name === next.name)
-  if (index >= 0) deployments[index] = { ...deployments[index], ...next }
+  if (index >= 0) {
+    // Adding by name is idempotent; it must not reset an existing explicit toggle.
+    if (typeof deployment !== 'string') {
+      deployments[index] = { ...deployments[index], ...next }
+    }
+  }
   else deployments.push(next)
   store.set('azureOpenaiDeployments', deployments)
   return deployments
