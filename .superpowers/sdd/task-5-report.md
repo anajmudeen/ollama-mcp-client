@@ -1,8 +1,8 @@
 # Task 5 Report: End-to-end verification
 
-**Branch:** `in-built-image-model-tool`  
-**Date:** 2026-09-07  
-**Ollama:** v0.32.5 @ `http://127.0.0.1:11434` (imageGenSupported: true)  
+**Branch:** `in-built-image-model-tool`
+**Date:** 2026-09-07
+**Ollama:** v0.32.5 @ `http://127.0.0.1:11434` (imageGenSupported: true)
 **Image models installed:** `x/flux2-klein:9b`, `x/z-image-turbo:bf16`, `x/z-image-turbo:latest`
 
 ## Step 1: Typecheck
@@ -162,4 +162,26 @@ All offline gating smoke checks passed
 | `npm run typecheck` | **PASS** (node and web, exit 0) |
 | `git diff --check` | **PASS** |
 | `npm run check:openai-vision` | **PASS** — OpenAI vision/image classifier checks passed |
+| IDE linter diagnostics for modified files | **PASS** — no errors |
+
+## Fix: remaining image-tool review findings
+
+### Changes
+
+- `runGenerateImageTool` now rejects `azure-openai` explicitly.
+- OpenAI provider tool calls now require an enabled OpenAI image model and cannot fall back silently to an Ollama image model.
+- Azure image-tool dispatch is rejected defensively for both generation and editing, even outside normal agent gating.
+- Existing Ollama generation and supported OpenAI direct generation remain unchanged.
+- Removed trailing whitespace from the Task 5 report.
+
+### Verification commands and results
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | **PASS** (node and web, exit 0) |
+| `npm run check:openai-vision` | **PASS** |
+| `node --test scripts/test-image-gen-tool.mjs` | **PASS** |
+| `node --test scripts/test-agent-image-attachments.mjs` | **PASS** |
+| `node --test scripts/test-openai-image-edit.mjs` | **PASS** |
+| `git diff --check` | **PASS** |
 | IDE linter diagnostics for modified files | **PASS** — no errors |

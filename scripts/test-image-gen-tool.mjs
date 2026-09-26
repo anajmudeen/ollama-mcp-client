@@ -170,7 +170,7 @@ test('offers the tool to OpenAI when Ollama is the configured image backend', as
   }
 })
 
-test('routes an OpenAI turn through the configured Ollama image backend', async () => {
+test('rejects OpenAI image-tool calls when only Ollama image backend exists', async () => {
   setOpenaiModelsCatalog([])
   setDefaultImageModel('flux')
   const originalFetch = globalThis.fetch
@@ -192,13 +192,29 @@ test('routes an OpenAI turn through the configured Ollama image backend', async 
 
   try {
     const result = await runGenerateImageTool('openai', { prompt: 'a test image' })
-    assert.equal(result.ok, true)
-    assert.equal(result.model, 'flux')
-    assert.equal(result.message, 'Generated image with flux via ollama')
-    assert.ok(calls.some((call) => String(call[0]).endsWith('/api/generate')))
+    assert.deepEqual(result, {
+      ok: false,
+      message:
+        'Image generation for the OpenAI provider requires an enabled OpenAI image model.'
+    })
+    assert.equal(calls.some((call) => String(call[0]).endsWith('/api/generate')), false)
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+test('rejects Azure image-tool dispatch explicitly', async () => {
+  const generated = await runGenerateImageTool('azure-openai', { prompt: 'a test image' })
+  assert.deepEqual(generated, {
+    ok: false,
+    message: 'Image generation is not supported by the Azure OpenAI provider.'
+  })
+
+  const edited = await runEditImageTool('azure-openai', 'edit this', ['base64-image'])
+  assert.deepEqual(edited, {
+    ok: false,
+    message: 'Image editing is not supported by the Azure OpenAI provider.'
+  })
 })
 
 test('offers the tool to Ollama when Ollama is unavailable but OpenAI is the image backend', async () => {

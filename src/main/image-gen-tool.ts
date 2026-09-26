@@ -203,6 +203,12 @@ export async function runGenerateImageTool(
   args: Record<string, unknown>,
   signal?: AbortSignal
 ): Promise<GenerateImageToolResult> {
+  if (provider === 'azure-openai') {
+    return {
+      ok: false,
+      message: 'Image generation is not supported by the Azure OpenAI provider.'
+    }
+  }
   const prompt = String(args.prompt ?? '').trim()
   if (!prompt) {
     return { ok: false, message: 'Missing required argument: prompt' }
@@ -219,6 +225,12 @@ export async function runGenerateImageTool(
         ok: false,
         message:
           'No image models installed. Install an image model to generate images.'
+      }
+    }
+    if (provider === 'openai' && backend.provider !== 'openai') {
+      return {
+        ok: false,
+        message: 'Image generation for the OpenAI provider requires an enabled OpenAI image model.'
       }
     }
 
@@ -245,6 +257,12 @@ export async function runEditImageTool(
   images: Array<string | OpenAiImageSource>,
   signal?: AbortSignal
 ): Promise<GenerateImageToolResult> {
+  if (provider === 'azure-openai') {
+    return {
+      ok: false,
+      message: 'Image editing is not supported by the Azure OpenAI provider.'
+    }
+  }
   const normalizedPrompt = prompt.trim()
   if (!normalizedPrompt) {
     return { ok: false, message: 'Missing required argument: prompt' }
