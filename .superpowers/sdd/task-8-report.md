@@ -269,6 +269,33 @@ change is covered by the typecheck/build verification and existing provider
 selection paths. Live cloud-provider validation was not run without
 credentials.
 
+## Final-review fix — provider-aware Chat image detection
+
+Scoped Chat's heuristic image-generation detection to the effective Ollama
+provider. Azure deployments and capabilities, including image-like names, no
+longer activate Ollama image-generation labels, attachment suppression, or
+image-model behavior. The explicit OpenAI image-model classifier remains
+available when OpenAI is the effective provider.
+
+## Exact verification results
+
+- `npm run typecheck` — exit 0.
+- `npm run build` — exit 0; main, preload, and renderer bundles built.
+- `node scripts/test-config-store-migrations.mjs` — exit 0.
+- `node scripts/test-azure-openai-client.mjs` — exit 0.
+- `node scripts/test-image-gen-tool.mjs` — exit 0.
+- `node scripts/test-agent-image-attachments.mjs` — exit 0.
+- `node scripts/test-openai-image-edit.mjs` — exit 0.
+- `npm run check:openai-vision` — exit 0; OpenAI vision/image classifier
+  checks passed.
+- `git diff --check 4bb3cda HEAD` — exit 0.
+- `git diff --check` — exit 0.
+- IDE linter diagnostics for `Chat.tsx` — no linter errors.
+
+No standalone renderer regression harness exists; focused behavior was
+verified through typecheck/build and provider/image checks. Live Azure
+validation was not run without credentials.
+
 ## Final-review fix — fallback transition refresh and Chat metadata
 
 Removed redundant Azure model refreshes after Azure deployment toggle/removal.
