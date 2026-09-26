@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { readFileSync } from 'fs'
 import Store from 'electron-store'
 import type {
   AppConfig,
@@ -114,25 +115,53 @@ function scheduleSessionsPersist(): void {
   }, 100)
 }
 
+function hasPersistedSelectedModelByProvider(): boolean {
+  try {
+    const persisted = JSON.parse(readFileSync(store.path, 'utf8')) as unknown
+    return Boolean(
+      persisted &&
+        typeof persisted === 'object' &&
+        Object.prototype.hasOwnProperty.call(persisted, 'selectedModelByProvider')
+    )
+  } catch {
+    return false
+  }
+}
+
+export function migrateSelectedModelByProvider(
+  persisted: boolean,
+  stored: Partial<SelectedModelByProvider> | undefined,
+  legacy: string | null
+): SelectedModelByProvider {
+  if (!persisted) {
+    return {
+      ollama: legacy,
+      openai: null,
+      'azure-openai': null
+    }
+  }
+  return {
+    ollama: stored?.ollama ?? null,
+    openai: stored?.openai ?? null,
+    'azure-openai': stored?.['azure-openai'] ?? null
+  }
+}
+
 function readSelectedModelByProvider(): SelectedModelByProvider {
+  if (!hasPersistedSelectedModelByProvider()) {
+    const legacy = store.get('selectedModel', DEFAULT_CONFIG.selectedModel)
+    const migrated = migrateSelectedModelByProvider(false, undefined, legacy)
+    store.set('selectedModelByProvider', migrated)
+    return migrated
+  }
+
   const stored = store.get('selectedModelByProvider') as SelectedModelByProvider | undefined
   if (stored && typeof stored === 'object') {
-    const migrated: SelectedModelByProvider = {
-      ollama: stored.ollama ?? null,
-      openai: stored.openai ?? null,
-      'azure-openai': stored['azure-openai'] ?? null
-    }
+    const migrated = migrateSelectedModelByProvider(true, stored, null)
     if (!('azure-openai' in stored)) store.set('selectedModelByProvider', migrated)
     return migrated
   }
-  const legacy = store.get('selectedModel', DEFAULT_CONFIG.selectedModel)
-  const migrated: SelectedModelByProvider = {
-    ollama: legacy,
-    openai: null,
-    'azure-openai': null
-  }
-  store.set('selectedModelByProvider', migrated)
-  return migrated
+  return { ...DEFAULT_SELECTED_BY_PROVIDER }
 }
 
 export function getConfig(): AppConfig {
@@ -415,7 +444,11 @@ export function setAzureOpenaiDeploymentEnabled(
   name: string,
   enabled: boolean
 ): AzureOpenaiDeploymentEntry[] {
-  return updateAzureOpenaiDeployment(name, { enabled })
+  const deployments = updateAzureOpenaiDeployment(name, { enabled })
+  if (!enabled && getSelectedModelForProvider('azure-openai') === name.trim()) {
+    setSelectedModelForProvider('azure-openai', null)
+  }
+  return deployments
 }
 
 export function mergeAzureOpenaiCatalog(

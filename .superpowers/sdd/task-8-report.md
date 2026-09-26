@@ -171,3 +171,40 @@ OpenAI vision checks, image-related tests, and repository whitespace checks.
 Concurrent Azure validation was reviewed through the generation-token guard;
 no live Azure endpoint was used because credentials and a reachable service
 were unavailable.
+
+## Final-review fixes — selected-model migration and Azure disable guard
+
+Implemented:
+
+- Added persisted-file detection for `selectedModelByProvider`, avoiding
+  electron-store defaults during legacy migration. A legacy `selectedModel`
+  now migrates to the Ollama slot, while an actually persisted provider map
+  preserves its OpenAI and Azure slots.
+- Added `migrateSelectedModelByProvider` regression coverage for legacy and
+  provider-map cases in `scripts/test-config-store-migrations.mjs`.
+- Clearing an Azure deployment's enabled toggle now clears that deployment
+  from the Azure provider selection. Agent turn startup also validates Azure
+  deployment availability and refuses stale/disabled selections without
+  changing OpenAI or Ollama selection behavior.
+
+## Exact verification results
+
+- `npm run typecheck` — exit 0.
+- `npm run build` — exit 0; main, preload, and renderer bundles built.
+- `node scripts/test-config-store-migrations.mjs` — exit 0; 1 test passed.
+  Vite emitted a non-fatal `WebSocket server error: Port 24678 is already in
+  use` and temporary-server shutdown diagnostics; the TAP test passed.
+- `node scripts/test-azure-openai-client.mjs` — exit 0.
+- `node scripts/test-image-gen-tool.mjs` — exit 0.
+- `node scripts/test-agent-image-attachments.mjs` — exit 0.
+- `node scripts/test-openai-image-edit.mjs` — exit 0.
+- `npm run check:openai-vision` — exit 0; OpenAI vision/image classifier
+  checks passed.
+- `git diff --check 4bb3cda HEAD` — exit 0.
+- `git diff --check` — exit 0.
+- IDE linter diagnostics for changed TypeScript and regression-test files —
+  no linter errors.
+
+Live Azure service validation was not run because no credentials or reachable
+deployment were available. These fixes were committed in the final review
+fix commit for this branch.

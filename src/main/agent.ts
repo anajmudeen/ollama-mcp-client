@@ -11,7 +11,12 @@ import {
   hasTokenUsageData,
   mergeTokenUsage
 } from '../shared/tokenUsage'
-import { getMaxToolIterations, getSelectedModelForProvider } from './config-store'
+import {
+  getAzureOpenaiDeployments,
+  getMaxToolIterations,
+  getSelectedModelForProvider,
+  setSelectedModelForProvider
+} from './config-store'
 import { emitChatEvent } from './chat-events'
 import { compactIfNeeded, shouldCompact } from './context-compact'
 import {
@@ -298,7 +303,20 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
   const { effective, fallback, reason } = resolveEffectiveLlmProvider()
   const llm = getLlmProvider(effective)
-  const turnModel = getSelectedModelForProvider(effective) ?? payload.model
+  const selectedModel = getSelectedModelForProvider(effective)
+  let turnModel: string | null = selectedModel ?? payload.model
+
+  if (effective === 'azure-openai') {
+    const deployment = turnModel
+      ? getAzureOpenaiDeployments().find(
+          (entry) => entry.name.trim() === turnModel?.trim()
+        )
+      : undefined
+    if (!deployment?.enabled) {
+      if (selectedModel) setSelectedModelForProvider('azure-openai', null)
+      turnModel = null
+    }
+  }
 
   if (fallback && reason) {
     emitTurn({
