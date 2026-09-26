@@ -102,6 +102,13 @@ Result: committed successfully as `54f4007`.
 - Azure catalog validation performs one models request and merges only after
   that request succeeds; failed requests leave prior catalog/deployment data
   intact.
+> **Superseded historical report:** The obsolete `defaultImageModel` selector
+> behavior in the report below was superseded by the independent image-backend
+> design. See
+> [`docs/superpowers/specs/2026-09-27-azure-openai-provider-design.md`](../../docs/superpowers/specs/2026-09-27-azure-openai-provider-design.md)
+> and
+> [`docs/superpowers/plans/2026-09-27-independent-image-backend.md`](../../docs/superpowers/plans/2026-09-27-independent-image-backend.md).
+
 # Task 4 Report: Settings UI + App wiring
 
 ## Status

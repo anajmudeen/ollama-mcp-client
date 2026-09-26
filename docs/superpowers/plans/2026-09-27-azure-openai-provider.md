@@ -1,5 +1,12 @@
 # Azure OpenAI Provider Implementation Plan
 
+> **Superseded image-backend guidance:** The image-specific global constraints
+> and agent-task claims in this historical Azure plan are superseded by the
+> independent image-backend design. See
+> [`../specs/2026-09-27-azure-openai-provider-design.md`](../specs/2026-09-27-azure-openai-provider-design.md)
+> and
+> [`2026-09-27-independent-image-backend.md`](2026-09-27-independent-image-backend.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add Azure OpenAI as a separate, selectable LLM provider with API-key validation, model catalog refresh, manually managed deployments, OpenAI-compatible streaming/tool behavior, and Ollama fallback.
@@ -18,6 +25,9 @@
 - Deployment names are entered manually and are disabled by default.
 - Runtime fallback to Ollama preserves the configured provider.
 - API keys remain in the main process and are never logged or exposed through renderer state.
+> **Superseded constraint:** The historical Ollama-only image-generation
+> constraint below is superseded by the independent image-backend design linked
+> above.
 - Azure image generation is out of scope; Ollama image generation remains Ollama-only.
 - Run `npm run typecheck` after each task that changes TypeScript.
 - Use focused tests/scripts where no test runner exists, and run the complete manual checklist before handoff.
@@ -255,6 +265,9 @@ git commit -m "feat: expose Azure OpenAI configuration IPC"
 - [ ] **Step 1: Replace direct provider selection in agent**
 
 Resolve configured/effective provider at turn start, select the model from the effective provider slot, emit the existing fallback event once when needed, and use provider methods for streaming, info, vision, context, and tool calls.
+
+> **Superseded task claim:** The historical image-tool routing claim in this
+> task is superseded by the independent image-backend design linked above.
 
 - [ ] **Step 2: Preserve image-tool boundaries**
 
