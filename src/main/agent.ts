@@ -31,10 +31,12 @@ import {
   EDIT_IMAGE_NAME,
   GENERATE_IMAGE_NAME,
   runEditImageTool,
-  runGenerateImageTool,
-  shouldOfferGenerateImageTool
+  runGenerateImageTool
 } from './image-gen-tool'
-import { buildAgentImageTools } from './agent-tool-boundary'
+import {
+  buildAgentImageTools,
+  shouldOfferAgentImageTools
+} from './agent-tool-boundary'
 import { mcpManager } from './mcp-manager'
 import { generateImageBase64 } from './ollama-image'
 import { generateOpenAiImageBase64 } from './openai-image'
@@ -413,7 +415,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
   const skillTool = loadSkillTool()
   const baseTools = [...(skillTool ? [skillTool] : []), ...toolsFromMcp()]
-  const offerImageTool = await shouldOfferGenerateImageTool(effective, turnModel)
+  const offerImageTool = await shouldOfferAgentImageTools(effective, turnModel)
   const tools = offerImageTool
     ? buildAgentImageTools(baseTools)
     : baseTools

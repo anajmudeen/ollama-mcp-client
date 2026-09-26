@@ -130,11 +130,15 @@ export async function shouldOfferGenerateImageTool(
   providerOrSelectedModel: LlmProvider | string,
   selectedModelArg?: string
 ): Promise<boolean> {
+  const provider =
+    selectedModelArg === undefined
+      ? 'ollama'
+      : (providerOrSelectedModel as LlmProvider)
   const selectedModel = selectedModelArg ?? providerOrSelectedModel
-  if (isOpenAiImageGenModel(selectedModel)) {
+  if (provider === 'openai' && isOpenAiImageGenModel(selectedModel)) {
     return false
   }
-  if (modelIsImageGen(selectedModel)) {
+  if (provider === 'ollama' && modelIsImageGen(selectedModel)) {
     return false
   }
   return resolveImageBackend(getImageBackend(), await listAvailableImageModels()) !== null

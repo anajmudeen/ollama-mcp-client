@@ -22,6 +22,7 @@ const {
 const {
   listAvailableImageModels,
   resolveImageBackend,
+  shouldOfferGenerateImageTool,
   runEditImageTool,
   runGenerateImageTool
 } = await server.ssrLoadModule(
@@ -249,6 +250,47 @@ test('rejects editing when the selected backend is Ollama', async () => {
           'Image editing requires an OpenAI image model. Select an OpenAI image model and try again.'
       }
     )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('offers image tools to Azure chat when the selected backend is available', async () => {
+  setImageBackend({ provider: 'ollama', model: 'flux' })
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (input) => {
+    if (String(input).endsWith('/api/tags')) {
+      return response({
+        models: [{ name: 'flux', details: { families: ['diffusion'] } }]
+      })
+    }
+    return response({ version: '0.1.0' })
+  }
+  try {
+    assert.equal(await shouldOfferGenerateImageTool('azure-openai', 'gpt-4o'), true)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('omits image tools when no image backend is selected', async () => {
+  setImageBackend(null)
+  assert.equal(await shouldOfferGenerateImageTool('azure-openai', 'gpt-4o'), false)
+})
+
+test('does not treat Azure deployment names as native image models', async () => {
+  setImageBackend({ provider: 'ollama', model: 'flux' })
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (input) => {
+    if (String(input).endsWith('/api/tags')) {
+      return response({
+        models: [{ name: 'flux', details: { families: ['diffusion'] } }]
+      })
+    }
+    return response({ version: '0.1.0' })
+  }
+  try {
+    assert.equal(await shouldOfferGenerateImageTool('azure-openai', 'gpt-image-1'), true)
   } finally {
     globalThis.fetch = originalFetch
   }
