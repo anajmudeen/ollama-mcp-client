@@ -1,6 +1,6 @@
 import type { OllamaModel } from '../shared/types'
 import { getSelectedModelForProvider } from './config-store'
-import { getEffectiveLlmProvider, getLlmProvider, resolveEffectiveLlmProvider } from './llm'
+import { getLlmProvider, resolveEffectiveLlmProvider } from './llm'
 import { modelIsImageGen } from './ollama'
 
 const TITLE_SYSTEM =
@@ -79,7 +79,7 @@ export async function generateSessionTitle(
 
   const selected = getSelectedModelForProvider(effective)
   try {
-    const raw = await getEffectiveLlmProvider().chatOnce({
+    const raw = await provider.chatOnce({
       model,
       numPredict: 24,
       numCtx: 512,

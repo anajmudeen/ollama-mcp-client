@@ -6,7 +6,7 @@ import { onChatEvent } from './chat-events'
 import {
   ensureTelegramActiveSession,
   getSchedule,
-  getSelectedModel,
+  getSelectedModelForProvider,
   getSessionsState,
   getTelegramActiveSessionId,
   getTelegramBotToken,
@@ -22,6 +22,7 @@ import {
 import { broadcastSchedulesChanged } from './schedules-broadcast'
 import { broadcastSessionsChanged } from './sessions-broadcast'
 import { beginTelegramActivity } from './telegram-mirror'
+import { resolveEffectiveLlmProvider } from './llm'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -81,7 +82,8 @@ export async function executeSchedule(
     return { ok: false, error: 'Schedule is disabled.' }
   }
 
-  const model = getSelectedModel()
+  const { effective } = resolveEffectiveLlmProvider()
+  const model = getSelectedModelForProvider(effective)
   if (!model) {
     patchScheduleRun(scheduleId, {
       lastRunAt: nowIso(),

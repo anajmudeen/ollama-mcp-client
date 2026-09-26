@@ -2,6 +2,7 @@ import type { ChatMessage } from '../shared/types'
 import { estimateChatMessagesTokens } from '../shared/contextUsage'
 import { toOllamaMessages } from './ollama'
 import { getEffectiveLlmProvider } from './llm'
+import type { LlmProvider } from './llm/types'
 
 /** Trigger compaction when estimated usage reaches this fraction of the limit. */
 export const COMPACT_THRESHOLD = 0.75
@@ -129,9 +130,10 @@ export async function summarizeHistory(options: {
   older: ChatMessage[]
   signal?: AbortSignal
   numCtx?: number
+  provider?: LlmProvider
 }): Promise<string> {
   const transcript = formatMessagesForSummary(options.older)
-  const content = await getEffectiveLlmProvider().chatOnce({
+  const content = await (options.provider ?? getEffectiveLlmProvider()).chatOnce({
     model: options.model,
     signal: options.signal,
     numCtx: options.numCtx,
@@ -196,8 +198,9 @@ export async function compactIfNeeded(options: {
   measuredUsed?: number | null
   extraTokens?: number
   signal?: AbortSignal
+  provider?: LlmProvider
 }): Promise<CompactResult> {
-  const { model, limit, measuredUsed, signal } = options
+  const { model, limit, measuredUsed, signal, provider } = options
   const extraTokens = options.extraTokens ?? 0
   const messages = options.messages
 
@@ -230,7 +233,8 @@ export async function compactIfNeeded(options: {
       model,
       older,
       signal,
-      numCtx: limit
+      numCtx: limit,
+      provider
     })
     if (signal?.aborted) {
       return { messages, summarized: false }

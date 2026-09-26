@@ -3,12 +3,13 @@ import type { ChatMessage, UiMessage } from '../shared/types'
 import { enqueueTurn } from './chat-queue'
 import {
   ensureTelegramActiveSession,
-  getSelectedModel,
+  getSelectedModelForProvider,
   getTelegramActiveSessionId,
   updateSession
 } from './config-store'
 import { broadcastSessionsChanged } from './sessions-broadcast'
 import { beginTelegramActivity } from './telegram-mirror'
+import { resolveEffectiveLlmProvider } from './llm'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -20,7 +21,8 @@ export async function runTelegramTurn(
   const trimmed = userText.trim()
   if (!trimmed) return { ok: false, error: 'Message is empty.' }
 
-  const model = getSelectedModel()
+  const { effective } = resolveEffectiveLlmProvider()
+  const model = getSelectedModelForProvider(effective)
   if (!model) {
     return { ok: false, error: 'Select a model in the desktop app first.' }
   }

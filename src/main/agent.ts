@@ -20,7 +20,7 @@ import {
   formatTokenCount
 } from '../shared/contextUsage'
 import { getEffectiveLlmProvider, resolveEffectiveLlmProvider } from './llm'
-import type { LlmChatStreamResult } from './llm/types'
+import type { LlmChatStreamResult, LlmProvider as LlmProviderAdapter } from './llm/types'
 import { prepareEditImageToolArguments } from './agent-image-boundary'
 import {
   EDIT_IMAGE_NAME,
@@ -32,7 +32,6 @@ import {
 import { buildAgentImageTools } from './agent-tool-boundary'
 import { mcpManager } from './mcp-manager'
 import { generateImageBase64 } from './ollama-image'
-import { generateOpenAiImageBase64 } from './openai-image'
 import {
   LOAD_SKILL_NAME,
   loadSkillByName,
@@ -182,6 +181,7 @@ async function applyCompact(options: {
   signal: AbortSignal
   turnId: string
   emitTurn: EmitTurn
+  provider: LlmProviderAdapter
 }): Promise<ChatMessage[]> {
   const {
     model,
@@ -191,7 +191,8 @@ async function applyCompact(options: {
     extraTokens,
     signal,
     turnId,
-    emitTurn
+    emitTurn,
+    provider
   } = options
 
   if (!shouldCompact(messages, limit, measuredUsed, extraTokens)) {
@@ -210,7 +211,8 @@ async function applyCompact(options: {
     limit,
     measuredUsed,
     extraTokens,
-    signal
+    signal,
+    provider
   })
 
   if (signal.aborted || activeTurnId !== turnId) {
@@ -332,7 +334,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       limit: contextLimit ?? 0
     })
   }
-  if (llm.modelIsImageGen(turnModel, modelInfo)) {
+  if (effective === 'ollama' && llm.modelIsImageGen(turnModel, modelInfo)) {
     console.log(
       `[agent] turn start id=${tid} provider=${effective} model=${turnModel} messages=${payload.messages.length} tools=0`
     )
@@ -351,10 +353,9 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
     })
 
     try {
-      const imageResult =
-        effective === 'openai'
-          ? await generateOpenAiImageBase64(turnModel, prompt, abort.signal)
-          : { b64: await generateImageBase64(turnModel, prompt, abort.signal) }
+      const imageResult: { b64: string; usage?: undefined } = {
+        b64: await generateImageBase64(turnModel, prompt, abort.signal)
+      }
       if (abort.signal.aborted || activeTurnId !== turnId) {
         emitTurn({ type: 'error', message: 'Aborted' })
         return
@@ -362,24 +363,11 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       console.log(
         `[agent] image done id=${tid} bytes=${imageResult.b64.length} +${ms(turnStartedAt)}`
       )
-      let tokenUsage: TokenUsageBreakdown | undefined
-      if (imageResult.usage) {
-        const u = mergeTokenUsage(emptyTokenUsage('openai'), {
-          promptTokens: imageResult.usage.promptTokens,
-          completionTokens: imageResult.usage.completionTokens,
-          totalTokens: imageResult.usage.totalTokens,
-          cachedPromptTokens: imageResult.usage.cachedPromptTokens,
-          reasoningTokens: imageResult.usage.reasoningTokens
-        })
-        if (hasTokenUsageData(u)) tokenUsage = u
-      }
       emitTurn({
         type: 'assistant_images',
         images: [imageResult.b64],
         imageModel: turnModel,
         mime: 'image/png',
-        tokenUsage,
-        contextUsed: tokenUsage?.totalTokens,
         contextLimit: contextLimit ?? undefined
       })
       rememberGeneratedImage(payload.sessionId, imageResult.b64)
@@ -422,7 +410,8 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       extraTokens: toolOverhead,
       signal: abort.signal,
       turnId,
-      emitTurn
+      emitTurn,
+      provider: llm
     })
     if (abort.signal.aborted || activeTurnId !== turnId) {
       emitTurn({ type: 'error', message: 'Aborted' })
@@ -532,7 +521,8 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
         extraTokens: toolOverhead,
         signal: abort.signal,
         turnId,
-        emitTurn
+        emitTurn,
+        provider: llm
       })
       if (abort.signal.aborted || activeTurnId !== turnId) {
         emitTurn({ type: 'error', message: 'Aborted' })

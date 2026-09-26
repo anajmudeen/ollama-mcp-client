@@ -136,6 +136,7 @@ export async function shouldOfferGenerateImageTool(
   const provider: LlmProvider =
     selectedModelArg === undefined ? 'ollama' : providerOrSelectedModel as LlmProvider
   const selectedModel = selectedModelArg ?? providerOrSelectedModel
+  if (provider === 'azure-openai') return false
   if (isOpenAiImageGenModel(selectedModel)) {
     return false
   }
