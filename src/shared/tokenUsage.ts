@@ -1,6 +1,6 @@
 import type { TokenUsageBreakdown } from './types'
 
-export function emptyTokenUsage(provider: 'ollama' | 'openai'): TokenUsageBreakdown {
+export function emptyTokenUsage(provider: TokenUsageBreakdown['provider']): TokenUsageBreakdown {
   return {
     provider,
     promptTokens: 0,

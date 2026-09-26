@@ -6,6 +6,8 @@ import type {
   ChatSession,
   LlmProvider,
   McpServerConfig,
+  AzureOpenaiDeploymentEntry,
+  AzureOpenaiModelEntry,
   OpenAiModelEntry,
   SelectedModelByProvider,
   SessionOrigin,
@@ -17,7 +19,8 @@ import type {
 
 const DEFAULT_SELECTED_BY_PROVIDER: SelectedModelByProvider = {
   ollama: null,
-  openai: null
+  openai: null,
+  'azure-openai': null
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -30,6 +33,14 @@ const DEFAULT_CONFIG: AppConfig = {
   openaiValidationError: null,
   openaiModelsCatalog: [],
   openaiModelEnabled: {},
+  azureOpenaiEnabled: false,
+  azureOpenaiApiKey: null,
+  azureOpenaiEndpoint: null,
+  azureOpenaiApiVersion: '2024-10-21',
+  azureOpenaiValidationOk: false,
+  azureOpenaiValidationError: null,
+  azureOpenaiModelsCatalog: [],
+  azureOpenaiDeployments: [],
   selectedModelByProvider: { ...DEFAULT_SELECTED_BY_PROVIDER },
   servers: [],
   showThinking: false,
@@ -106,15 +117,19 @@ function scheduleSessionsPersist(): void {
 function readSelectedModelByProvider(): SelectedModelByProvider {
   const stored = store.get('selectedModelByProvider') as SelectedModelByProvider | undefined
   if (stored && typeof stored === 'object') {
-    return {
+    const migrated: SelectedModelByProvider = {
       ollama: stored.ollama ?? null,
-      openai: stored.openai ?? null
+      openai: stored.openai ?? null,
+      'azure-openai': stored['azure-openai'] ?? null
     }
+    if (!('azure-openai' in stored)) store.set('selectedModelByProvider', migrated)
+    return migrated
   }
   const legacy = store.get('selectedModel', DEFAULT_CONFIG.selectedModel)
   const migrated: SelectedModelByProvider = {
     ollama: legacy,
-    openai: null
+    openai: null,
+    'azure-openai': null
   }
   store.set('selectedModelByProvider', migrated)
   return migrated
@@ -143,6 +158,14 @@ export function getConfig(): AppConfig {
     ),
     openaiModelsCatalog: getOpenaiModelsCatalog(),
     openaiModelEnabled: getOpenaiModelEnabledMap(),
+    azureOpenaiEnabled: getAzureOpenaiEnabled(),
+    azureOpenaiApiKey: getAzureOpenaiApiKey(),
+    azureOpenaiEndpoint: getAzureOpenaiEndpoint(),
+    azureOpenaiApiVersion: getAzureOpenaiApiVersion(),
+    azureOpenaiValidationOk: getAzureOpenaiValidationState().ok,
+    azureOpenaiValidationError: getAzureOpenaiValidationState().error,
+    azureOpenaiModelsCatalog: getAzureOpenaiModelsCatalog(),
+    azureOpenaiDeployments: getAzureOpenaiDeployments(),
     selectedModelByProvider,
     servers: store.get('servers', DEFAULT_CONFIG.servers),
     showThinking: store.get('showThinking', DEFAULT_CONFIG.showThinking),
@@ -175,11 +198,13 @@ export function setOllamaBaseUrl(url: string): string {
 
 export function getLlmProvider(): LlmProvider {
   const v = store.get('llmProvider', DEFAULT_CONFIG.llmProvider)
-  return v === 'openai' ? 'openai' : 'ollama'
+  if (v === 'openai' || v === 'azure-openai') return v
+  return 'ollama'
 }
 
 export function setLlmProvider(provider: LlmProvider): LlmProvider {
-  const next = provider === 'openai' ? 'openai' : 'ollama'
+  const next: LlmProvider =
+    provider === 'openai' || provider === 'azure-openai' ? provider : 'ollama'
   store.set('llmProvider', next)
   return next
 }
@@ -263,6 +288,145 @@ export function mergeOpenaiCatalog(entries: OpenAiModelEntry[]): OpenAiModelEntr
     setSelectedModelForProvider('openai', null)
   }
   return entries
+}
+
+export function getAzureOpenaiEnabled(): boolean {
+  return store.get('azureOpenaiEnabled', DEFAULT_CONFIG.azureOpenaiEnabled)
+}
+
+export function setAzureOpenaiEnabled(enabled: boolean): boolean {
+  store.set('azureOpenaiEnabled', enabled)
+  return enabled
+}
+
+export function getAzureOpenaiApiKey(): string | null {
+  return store.get('azureOpenaiApiKey', DEFAULT_CONFIG.azureOpenaiApiKey)
+}
+
+export function setAzureOpenaiApiKey(key: string | null): string | null {
+  const trimmed = key?.trim() || null
+  store.set('azureOpenaiApiKey', trimmed)
+  if (!trimmed) setAzureOpenaiValidationOk(false, 'API key not configured')
+  return trimmed
+}
+
+export function getAzureOpenaiEndpoint(): string | null {
+  return store.get('azureOpenaiEndpoint', DEFAULT_CONFIG.azureOpenaiEndpoint)
+}
+
+export function setAzureOpenaiEndpoint(endpoint: string | null): string | null {
+  const normalized = endpoint?.trim().replace(/\/+$/, '') || null
+  store.set('azureOpenaiEndpoint', normalized)
+  return normalized
+}
+
+export function getAzureOpenaiApiVersion(): string {
+  return store.get('azureOpenaiApiVersion', DEFAULT_CONFIG.azureOpenaiApiVersion)
+}
+
+export function setAzureOpenaiApiVersion(version: string): string {
+  const normalized = version.trim() || DEFAULT_CONFIG.azureOpenaiApiVersion
+  store.set('azureOpenaiApiVersion', normalized)
+  return normalized
+}
+
+export function getAzureOpenaiValidationState(): {
+  ok: boolean
+  error: string | null
+} {
+  return {
+    ok: store.get('azureOpenaiValidationOk', DEFAULT_CONFIG.azureOpenaiValidationOk),
+    error: store.get(
+      'azureOpenaiValidationError',
+      DEFAULT_CONFIG.azureOpenaiValidationError
+    )
+  }
+}
+
+export function setAzureOpenaiValidationOk(ok: boolean, error?: string | null): void {
+  store.set('azureOpenaiValidationOk', ok)
+  store.set('azureOpenaiValidationError', ok ? null : (error ?? 'Validation failed'))
+}
+
+export function getAzureOpenaiModelsCatalog(): AzureOpenaiModelEntry[] {
+  return [...store.get('azureOpenaiModelsCatalog', DEFAULT_CONFIG.azureOpenaiModelsCatalog)]
+}
+
+export function setAzureOpenaiModelsCatalog(
+  entries: AzureOpenaiModelEntry[]
+): AzureOpenaiModelEntry[] {
+  store.set('azureOpenaiModelsCatalog', entries)
+  return entries
+}
+
+export function getAzureOpenaiDeployments(): AzureOpenaiDeploymentEntry[] {
+  return [...store.get('azureOpenaiDeployments', DEFAULT_CONFIG.azureOpenaiDeployments)]
+}
+
+function normalizeAzureDeployment(
+  deployment: AzureOpenaiDeploymentEntry
+): AzureOpenaiDeploymentEntry {
+  return { ...deployment, name: deployment.name.trim() }
+}
+
+export function addAzureOpenaiDeployment(
+  deployment: AzureOpenaiDeploymentEntry | string
+): AzureOpenaiDeploymentEntry[] {
+  const next = normalizeAzureDeployment(
+    typeof deployment === 'string'
+      ? { name: deployment, enabled: false }
+      : deployment
+  )
+  if (!next.name) throw new Error('Deployment name is required')
+  const deployments = getAzureOpenaiDeployments()
+  const index = deployments.findIndex((entry) => entry.name === next.name)
+  if (index >= 0) deployments[index] = { ...deployments[index], ...next }
+  else deployments.push(next)
+  store.set('azureOpenaiDeployments', deployments)
+  return deployments
+}
+
+export function updateAzureOpenaiDeployment(
+  name: string,
+  patch: Partial<Omit<AzureOpenaiDeploymentEntry, 'name'>>
+): AzureOpenaiDeploymentEntry[] {
+  const current = getAzureOpenaiDeployments()
+  const index = current.findIndex((entry) => entry.name === name.trim())
+  if (index < 0) return current
+  current[index] = normalizeAzureDeployment({ ...current[index], ...patch })
+  store.set('azureOpenaiDeployments', current)
+  return current
+}
+
+export function removeAzureOpenaiDeployment(name: string): AzureOpenaiDeploymentEntry[] {
+  const deployments = getAzureOpenaiDeployments().filter(
+    (entry) => entry.name !== name.trim()
+  )
+  store.set('azureOpenaiDeployments', deployments)
+  return deployments
+}
+
+export function setAzureOpenaiDeploymentEnabled(
+  name: string,
+  enabled: boolean
+): AzureOpenaiDeploymentEntry[] {
+  return updateAzureOpenaiDeployment(name, { enabled })
+}
+
+export function mergeAzureOpenaiCatalog(
+  entries: AzureOpenaiModelEntry[]
+): AzureOpenaiModelEntry[] {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]))
+  const deployments = getAzureOpenaiDeployments().map((deployment) => {
+    const matched = byId.get(deployment.name)
+    if (!matched) {
+      const { matchedCatalogMetadata: _matched, ...withoutMetadata } = deployment
+      return withoutMetadata
+    }
+    return { ...deployment, matchedCatalogMetadata: matched }
+  })
+  store.set('azureOpenaiDeployments', deployments)
+  return setAzureOpenaiModelsCatalog(entries)
 }
 
 export function getSelectedModelByProvider(): SelectedModelByProvider {

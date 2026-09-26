@@ -33,7 +33,7 @@ export interface CatalogServer {
 
 export type TelegramMirrorMode = 'full' | 'final'
 
-export type LlmProvider = 'ollama' | 'openai'
+export type LlmProvider = 'ollama' | 'openai' | 'azure-openai'
 
 export interface OpenAiModelEntry {
   id: string
@@ -41,9 +41,22 @@ export interface OpenAiModelEntry {
   created?: number
 }
 
+export interface AzureOpenaiModelEntry {
+  id: string
+  capabilities?: string[]
+  created?: number
+}
+
+export interface AzureOpenaiDeploymentEntry {
+  name: string
+  enabled: boolean
+  matchedCatalogMetadata?: AzureOpenaiModelEntry
+}
+
 export interface SelectedModelByProvider {
   ollama: string | null
   openai: string | null
+  'azure-openai': string | null
 }
 
 export interface OpenAiStatus {
@@ -52,6 +65,16 @@ export interface OpenAiStatus {
   validationError: string | null
   catalogCount: number
   enabledCount: number
+}
+
+export interface AzureOpenaiStatus {
+  enabled: boolean
+  validationOk: boolean
+  validationError: string | null
+  catalogCount: number
+  enabledCount: number
+  deploymentCount: number
+  enabledDeploymentCount: number
 }
 
 export interface AppConfig {
@@ -65,6 +88,14 @@ export interface AppConfig {
   openaiValidationError: string | null
   openaiModelsCatalog: OpenAiModelEntry[]
   openaiModelEnabled: Record<string, boolean>
+  azureOpenaiEnabled: boolean
+  azureOpenaiApiKey: string | null
+  azureOpenaiEndpoint: string | null
+  azureOpenaiApiVersion: string
+  azureOpenaiValidationOk: boolean
+  azureOpenaiValidationError: string | null
+  azureOpenaiModelsCatalog: AzureOpenaiModelEntry[]
+  azureOpenaiDeployments: AzureOpenaiDeploymentEntry[]
   selectedModelByProvider: SelectedModelByProvider
   servers: McpServerConfig[]
   /** When true, model reasoning/thinking is shown in the chat transcript. */
@@ -230,7 +261,7 @@ export type ActivityPhase =
   | 'compacting'
 
 export interface TokenUsageBreakdown {
-  provider: 'ollama' | 'openai'
+  provider: LlmProvider
   promptTokens: number
   completionTokens: number
   totalTokens: number
