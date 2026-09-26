@@ -26,7 +26,9 @@ The existing OpenAI provider must continue to behave unchanged.
 | Selection | Independent selected model slot for each provider |
 | Fallback | Runtime fallback to Ollama; preserve configured provider |
 | Provider behavior | Reuse OpenAI conversion, streaming, tools, vision, and usage logic |
-| Image generation | Azure image generation is out of scope; image tools remain Ollama-only |
+| Image backend | Independent selected OpenAI or Ollama image backend |
+| Image generation | Chat provider is independent from image backend |
+| Image editing | Supported only when the selected image backend is OpenAI |
 
 Azure's models endpoint returns models available to the resource, not the
 deployment names required by chat requests. Catalog model IDs may be used to
@@ -51,6 +53,7 @@ Add Azure fields to `AppConfig` and the electron-store schema:
 - `azureOpenaiValidationError: string | null`
 - `azureOpenaiModelsCatalog: AzureOpenaiModelEntry[]`
 - `azureOpenaiDeployments: AzureOpenaiDeploymentEntry[]`
+- `imageBackend: { provider: 'openai' | 'ollama'; model: string } | null`
 
 An Azure model entry stores the catalog ID, capability metadata, and creation
 timestamp when present. An Azure deployment entry stores at minimum the
@@ -75,6 +78,19 @@ Refreshing the catalog preserves manually entered deployments and their
 enabled state. A catalog refresh may update matched metadata, but must not
 delete deployments when a model is absent from the catalog.
 
+The existing `defaultImageModel: string | null` setting migrates to
+`imageBackend` using the following rules:
+
+- A model matching an enabled OpenAI image model becomes
+  `{ provider: 'openai', model }`.
+- Otherwise, a model matching an installed Ollama image model becomes
+  `{ provider: 'ollama', model }`.
+- An unresolvable legacy value becomes `null`.
+
+The image backend is independent of the configured/effective chat provider.
+There is exactly one selected image backend at a time and no automatic
+fallback to the other backend.
+
 ## Settings and Models UI
 
 The provider selector offers Ollama, OpenAI, and Azure OpenAI. The Azure
@@ -97,6 +113,12 @@ selector.
 The UI must distinguish model catalog entries from deployment entries. A
 catalog model is not automatically a usable chat model until a deployment
 with that name is added and enabled.
+
+Settings also provides one combined image-backend selector grouped by
+provider, with entries such as `OpenAI · gpt-image-1` and
+`Ollama · flux`. Only currently available image models are listed. The
+selection stores both provider and model, so model-name collisions cannot
+route to the wrong backend.
 
 ## HTTP behavior
 
@@ -169,9 +191,19 @@ The provider interface remains the common boundary for:
 
 `agent.ts`, session-title generation, context compaction, scheduled execution,
 Telegram turns, and MCP tool loops use the effective provider abstraction.
-Azure deployments are treated as chat models. Azure image generation is never
-selected; existing Ollama image-generation behavior is preserved only on the
-Ollama path.
+Azure deployments are treated as chat models. The agent offers image tools to
+any chat provider, including Azure, when the selected image backend is
+available. Image tool execution routes to the selected image backend rather
+than the chat provider:
+
+- Ollama image backend: image generation uses the existing Ollama image API.
+- OpenAI image backend: image generation and image editing use the existing
+  OpenAI image APIs.
+- Ollama image editing returns a clear unsupported-operation result.
+- No image backend selected or available: image tools are not offered.
+
+Azure itself does not need to implement image APIs. Its chat model receives
+the tools and the selected OpenAI/Ollama backend performs the operation.
 
 ## IPC and preload
 
@@ -211,6 +243,8 @@ remain compatible.
   persisted chat history.
 - Azure endpoint and API version are treated as user input and safely encoded
   into request URLs.
+- OpenAI and Azure credentials remain isolated from the Ollama image backend;
+  image requests use only the credentials for the selected image provider.
 
 ## Testing and acceptance criteria
 
@@ -225,7 +259,11 @@ Automated or focused tests should cover:
 7. Tool results, vision image conversion, and usage parsing.
 8. Azure validation failure and runtime Ollama fallback.
 9. Provider-specific model selection.
-10. Existing OpenAI behavior and `npm run typecheck`.
+10. Independent image-backend selection and legacy image-model migration.
+11. Azure chat with image tools routes to the selected OpenAI image backend.
+12. Ollama image generation works through Azure/OpenAI/Ollama chat providers.
+13. Ollama image editing returns a clear unsupported message.
+14. Existing OpenAI behavior and `npm run typecheck`.
 
 Manual acceptance:
 
@@ -240,12 +278,14 @@ Manual acceptance:
    preserved independently.
 7. Confirm titles, compaction, Telegram, and schedules use the resolved
    provider.
+8. Select Azure as the chat provider and OpenAI or Ollama as the image
+   backend; verify `generate_image` routes to the selected backend.
 
 ## Non-goals
 
 - Azure Resource Manager authentication
 - Automatic deployment discovery
-- Azure image generation
+- Azure-native image generation
 - Per-session provider overrides
 - Automatic enabling of catalog models or deployments
 - Changing existing OpenAI endpoint behavior
