@@ -1,10 +1,10 @@
 import {
-  getDefaultImageModel,
+  getImageBackend,
   getOpenaiModelEnabledMap,
   getOpenaiModelsCatalog
 } from './config-store'
 import { isOpenAiImageGenModel } from '../shared/openai-models'
-import type { LlmProvider } from '../shared/types'
+import type { ImageBackendSelection, LlmProvider } from '../shared/types'
 import { generateImageBase64 } from './ollama-image'
 import {
   editOpenAiImageBase64,
@@ -57,17 +57,14 @@ export interface AvailableImageModel {
 }
 
 export function resolveImageBackend(
-  configured: string | null,
-  available: AvailableImageModel[],
-  fallbackProvider?: LlmProvider
+  selection: ImageBackendSelection | null,
+  available: AvailableImageModel[]
 ): AvailableImageModel | null {
-  if (available.length === 0) return null
-  const configuredEntry = available.find((entry) => entry.model === configured)
-  if (configuredEntry) return configuredEntry
-  if (fallbackProvider) {
-    return available.find((entry) => entry.provider === fallbackProvider) ?? null
-  }
-  return available[0] ?? null
+  if (!selection) return null
+  return available.find(
+    (entry) =>
+      entry.provider === selection.provider && entry.model === selection.model
+  ) ?? null
 }
 
 export async function listInstalledImageModelNames(): Promise<string[]> {
@@ -133,17 +130,14 @@ export async function shouldOfferGenerateImageTool(
   providerOrSelectedModel: LlmProvider | string,
   selectedModelArg?: string
 ): Promise<boolean> {
-  const provider: LlmProvider =
-    selectedModelArg === undefined ? 'ollama' : providerOrSelectedModel as LlmProvider
   const selectedModel = selectedModelArg ?? providerOrSelectedModel
-  if (provider === 'azure-openai') return false
   if (isOpenAiImageGenModel(selectedModel)) {
     return false
   }
   if (modelIsImageGen(selectedModel)) {
     return false
   }
-  return (await listAvailableImageModels()).length > 0
+  return resolveImageBackend(getImageBackend(), await listAvailableImageModels()) !== null
 }
 
 export function generateImageToolDefinition(): OllamaTool {
@@ -199,38 +193,26 @@ export type GenerateImageToolResult =
   | { ok: false; message: string }
 
 export async function runGenerateImageTool(
-  provider: LlmProvider,
+  _provider: LlmProvider,
   args: Record<string, unknown>,
   signal?: AbortSignal
 ): Promise<GenerateImageToolResult> {
-  if (provider === 'azure-openai') {
-    return {
-      ok: false,
-      message: 'Image generation is not supported by the Azure OpenAI provider.'
-    }
-  }
   const prompt = String(args.prompt ?? '').trim()
   if (!prompt) {
     return { ok: false, message: 'Missing required argument: prompt' }
   }
 
   try {
-    const backend = resolveImageBackend(
-      getDefaultImageModel(),
-      await listAvailableImageModels(),
-      provider
-    )
+    const available = await listAvailableImageModels()
+    const backend = resolveImageBackend(getImageBackend(), available)
     if (!backend) {
+      const selected = getImageBackend()
       return {
         ok: false,
         message:
-          'No image models installed. Install an image model to generate images.'
-      }
-    }
-    if (provider === 'openai' && backend.provider !== 'openai') {
-      return {
-        ok: false,
-        message: 'Image generation for the OpenAI provider requires an enabled OpenAI image model.'
+          selected
+            ? 'The selected image backend is unavailable. Select an available image backend and try again.'
+            : 'No image backend selected. Select an image backend to generate images.'
       }
     }
 
@@ -252,17 +234,11 @@ export async function runGenerateImageTool(
 }
 
 export async function runEditImageTool(
-  provider: LlmProvider,
+  _provider: LlmProvider,
   prompt: string,
   images: Array<string | OpenAiImageSource>,
   signal?: AbortSignal
 ): Promise<GenerateImageToolResult> {
-  if (provider === 'azure-openai') {
-    return {
-      ok: false,
-      message: 'Image editing is not supported by the Azure OpenAI provider.'
-    }
-  }
   const normalizedPrompt = prompt.trim()
   if (!normalizedPrompt) {
     return { ok: false, message: 'Missing required argument: prompt' }
@@ -292,16 +268,16 @@ export async function runEditImageTool(
   }
 
   try {
-    const backend = resolveImageBackend(
-      getDefaultImageModel(),
-      await listAvailableImageModels(),
-      provider
-    )
+    const available = await listAvailableImageModels()
+    const backend = resolveImageBackend(getImageBackend(), available)
     if (!backend) {
+      const selected = getImageBackend()
       return {
         ok: false,
         message:
-          'No image models installed. Install an image model to edit images.'
+          selected
+            ? 'The selected image backend is unavailable. Select an available image backend and try again.'
+            : 'No image backend selected. Select an image backend to edit images.'
       }
     }
     if (backend.provider === 'ollama') {
