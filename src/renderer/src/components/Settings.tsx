@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react'
-import type { LlmProvider, OpenAiStatus, TelegramStatus } from '../../../shared/types'
+import type {
+  AzureOpenaiStatus,
+  LlmProvider,
+  OpenAiStatus,
+  TelegramStatus
+} from '../../../shared/types'
 
 interface SettingsProps {
   llmProvider: LlmProvider
   openaiEnabled: boolean
   openaiApiKeyDraft: string
   openaiStatus: OpenAiStatus
+  azureOpenaiEnabled: boolean
+  azureOpenaiApiKeyDraft: string
+  azureOpenaiEndpoint: string
+  azureOpenaiApiVersion: string
+  azureOpenaiStatus: AzureOpenaiStatus
   ollamaOk: boolean
   ollamaError?: string
   baseUrl: string
@@ -28,6 +38,11 @@ interface SettingsProps {
   onSetOpenaiEnabled: (enabled: boolean) => void
   onSetOpenaiApiKey: (key: string | null) => void
   onValidateOpenai: () => void
+  onSetAzureEnabled: (enabled: boolean) => void
+  onSetAzureApiKey: (key: string | null) => void
+  onSetAzureEndpoint: (endpoint: string | null) => void
+  onSetAzureApiVersion: (version: string) => void
+  onValidateAzure: () => void
   onOpenModelsPage: () => void
   onSetDefaultImageModel: (model: string | null) => void
 }
@@ -37,6 +52,11 @@ export function Settings({
   openaiEnabled,
   openaiApiKeyDraft,
   openaiStatus,
+  azureOpenaiEnabled,
+  azureOpenaiApiKeyDraft,
+  azureOpenaiEndpoint,
+  azureOpenaiApiVersion,
+  azureOpenaiStatus,
   ollamaOk,
   ollamaError,
   baseUrl,
@@ -59,6 +79,11 @@ export function Settings({
   onSetOpenaiEnabled,
   onSetOpenaiApiKey,
   onValidateOpenai,
+  onSetAzureEnabled,
+  onSetAzureApiKey,
+  onSetAzureEndpoint,
+  onSetAzureApiVersion,
+  onValidateAzure,
   onOpenModelsPage,
   onSetDefaultImageModel
 }: SettingsProps): React.JSX.Element {
@@ -67,6 +92,9 @@ export function Settings({
   const [showOpenAiKey, setShowOpenAiKey] = useState(false)
   const [tokenDraft, setTokenDraft] = useState(telegramTokenDraft)
   const [openaiKeyDraft, setOpenaiKeyDraft] = useState(openaiApiKeyDraft)
+  const [azureKeyDraft, setAzureKeyDraft] = useState(azureOpenaiApiKeyDraft)
+  const [azureEndpointDraft, setAzureEndpointDraft] = useState(azureOpenaiEndpoint)
+  const [azureVersionDraft, setAzureVersionDraft] = useState(azureOpenaiApiVersion)
   const [allowedIdsDraft, setAllowedIdsDraft] = useState(
     telegramAllowedUserIds.join(', ')
   )
@@ -86,6 +114,12 @@ export function Settings({
   useEffect(() => {
     setOpenaiKeyDraft(openaiApiKeyDraft)
   }, [openaiApiKeyDraft])
+
+  useEffect(() => {
+    setAzureKeyDraft(azureOpenaiApiKeyDraft)
+    setAzureEndpointDraft(azureOpenaiEndpoint)
+    setAzureVersionDraft(azureOpenaiApiVersion)
+  }, [azureOpenaiApiKeyDraft, azureOpenaiEndpoint, azureOpenaiApiVersion])
 
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0f1419]">
@@ -110,11 +144,98 @@ export function Settings({
             >
               <option value="ollama">Ollama (local)</option>
               <option value="openai">OpenAI (cloud)</option>
+              <option value="azure-openai">Azure OpenAI</option>
             </select>
             <p className="mt-2 text-xs text-[#6b7a8c]">
               Chat uses the selected provider. If OpenAI is unavailable, the app falls back to
               Ollama with a warning.
             </p>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#8b9aab]">
+              Azure OpenAI
+            </h2>
+            <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-lg border border-[#2a3a4d] bg-[#121820] px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={azureOpenaiEnabled}
+                onChange={(e) => onSetAzureEnabled(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#2a3a4d] bg-[#161d27] text-[#2d6cb5] focus:ring-[#2d6cb5]/40"
+              />
+              <span>
+                <span className="block text-sm text-[#e7ecf1]">Enable Azure OpenAI</span>
+                <span className="mt-0.5 block text-xs text-[#6b7a8c]">
+                  Configure an Azure resource and manage deployment names on the Models page.
+                </span>
+              </span>
+            </label>
+            <div className="mb-3 flex items-center gap-2 text-sm">
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  azureOpenaiStatus.validationOk ? 'bg-emerald-400' : 'bg-rose-400'
+                }`}
+              />
+              <span className="text-[#c5d0dc]">
+                {azureOpenaiStatus.validationOk
+                  ? `Validated · ${azureOpenaiStatus.enabledDeploymentCount} deployment${azureOpenaiStatus.enabledDeploymentCount === 1 ? '' : 's'} enabled`
+                  : azureOpenaiStatus.validationError ?? 'Not validated'}
+              </span>
+            </div>
+            <label className="mb-1 block text-xs text-[#8b9aab]">API key</label>
+            <input
+              type="password"
+              value={azureKeyDraft}
+              disabled={!azureOpenaiEnabled}
+              onChange={(e) => setAzureKeyDraft(e.target.value)}
+              onBlur={() => {
+                if (azureKeyDraft.trim()) onSetAzureApiKey(azureKeyDraft.trim())
+              }}
+              placeholder="Configured key is hidden"
+              className="mb-2 w-full rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0] disabled:opacity-50"
+            />
+            <label className="mb-1 block text-xs text-[#8b9aab]">Endpoint</label>
+            <input
+              value={azureEndpointDraft}
+              disabled={!azureOpenaiEnabled}
+              onChange={(e) => setAzureEndpointDraft(e.target.value)}
+              onBlur={() => {
+                if (azureEndpointDraft !== azureOpenaiEndpoint) {
+                  onSetAzureEndpoint(azureEndpointDraft.trim() || null)
+                }
+              }}
+              placeholder="https://resource.openai.azure.com"
+              className="mb-2 w-full rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0] disabled:opacity-50"
+            />
+            <label className="mb-1 block text-xs text-[#8b9aab]">API version</label>
+            <input
+              value={azureVersionDraft}
+              disabled={!azureOpenaiEnabled}
+              onChange={(e) => setAzureVersionDraft(e.target.value)}
+              onBlur={() => onSetAzureApiVersion(azureVersionDraft.trim() || '2024-10-21')}
+              className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0] disabled:opacity-50"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!azureOpenaiEnabled}
+                onClick={() => {
+                  if (azureKeyDraft.trim()) onSetAzureApiKey(azureKeyDraft.trim())
+                  onValidateAzure()
+                }}
+                className="rounded border border-[#2a3a4d] px-3 py-1.5 text-sm text-[#c5d0dc] hover:bg-[#1a2430] disabled:opacity-50"
+              >
+                Validate &amp; fetch catalog
+              </button>
+              <button
+                type="button"
+                disabled={!azureOpenaiEnabled}
+                onClick={onOpenModelsPage}
+                className="text-sm text-[#6eb5ff] hover:underline disabled:opacity-50"
+              >
+                Manage deployments on Models page
+              </button>
+            </div>
           </section>
 
           <section className="mb-8">

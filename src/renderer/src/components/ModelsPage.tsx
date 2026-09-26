@@ -3,6 +3,9 @@ import type {
   LibraryCapability,
   LibraryModelDetail,
   LibraryModelSummary,
+  AzureOpenaiDeploymentEntry,
+  AzureOpenaiModelEntry,
+  AzureOpenaiStatus,
   OpenAiModelEntry,
   OpenAiStatus,
   OllamaModel,
@@ -11,7 +14,7 @@ import type {
 } from '../../../shared/types'
 import { MarkdownContent } from './MarkdownContent'
 
-type ModelsTab = 'installed' | 'library' | 'openai'
+type ModelsTab = 'installed' | 'library' | 'openai' | 'azure'
 type LibrarySort = 'popular' | 'newest' | 'smallest' | 'largest'
 type InstalledSort = 'name' | 'smallest' | 'largest'
 
@@ -24,10 +27,19 @@ interface ModelsPageProps {
   openaiCatalog: OpenAiModelEntry[]
   openaiModelEnabled: Record<string, boolean>
   selectedOpenAiModel: string | null
+  azureOpenaiEnabled: boolean
+  azureOpenaiStatus: AzureOpenaiStatus
+  azureOpenaiCatalog: AzureOpenaiModelEntry[]
+  azureOpenaiDeployments: AzureOpenaiDeploymentEntry[]
+  selectedAzureOpenaiModel: string | null
   active?: boolean
   onRefreshModels: () => Promise<void>
   onRefreshOpenAi: () => Promise<void>
   onToggleOpenAiModel: (id: string, enabled: boolean) => Promise<void>
+  onRefreshAzure: () => Promise<void>
+  onAddAzureDeployment: (name: string) => Promise<void>
+  onRemoveAzureDeployment: (name: string) => Promise<void>
+  onToggleAzureDeployment: (name: string, enabled: boolean) => Promise<void>
   onUseInChat: (model: string) => void
 }
 
@@ -186,14 +198,24 @@ export function ModelsPage({
   openaiCatalog,
   openaiModelEnabled,
   selectedOpenAiModel,
+  azureOpenaiEnabled,
+  azureOpenaiStatus,
+  azureOpenaiCatalog,
+  azureOpenaiDeployments,
+  selectedAzureOpenaiModel,
   active = true,
   onRefreshModels,
   onRefreshOpenAi,
   onToggleOpenAiModel,
+  onRefreshAzure,
+  onAddAzureDeployment,
+  onRemoveAzureDeployment,
+  onToggleAzureDeployment,
   onUseInChat
 }: ModelsPageProps): React.JSX.Element {
   const [tab, setTab] = useState<ModelsTab>('installed')
   const [openaiQuery, setOpenaiQuery] = useState('')
+  const [azureDeploymentDraft, setAzureDeploymentDraft] = useState('')
   const [installedQuery, setInstalledQuery] = useState('')
   const [installedCap, setInstalledCap] = useState<string | null>(null)
   const [installedSort, setInstalledSort] = useState<InstalledSort>('name')
@@ -535,11 +557,12 @@ export function ModelsPage({
       ? Math.min(100, Math.round((pullProgress.completed / pullProgress.total) * 100))
       : null
 
-  const tabIds = (
-    openaiEnabled
-      ? (['installed', 'openai', 'library'] as const)
-      : (['installed', 'library'] as const)
-  )
+  const tabIds = [
+    'installed',
+    ...(openaiEnabled ? ['openai'] : []),
+    ...(azureOpenaiEnabled ? ['azure'] : []),
+    'library'
+  ] as ModelsTab[]
 
   const filteredOpenAi = useMemo(() => {
     const q = openaiQuery.trim().toLowerCase()
@@ -552,7 +575,7 @@ export function ModelsPage({
         <div>
           <h2 className="text-lg font-semibold text-[#f0f4f8]">Models</h2>
           <p className="text-xs text-[#8b9aab]">
-            Ollama local models, OpenAI catalog, and the Ollama library
+            Ollama local models, OpenAI/Azure catalogs, and the Ollama library
           </p>
         </div>
         <div className="titlebar-no-drag flex gap-1 rounded-lg border border-[#2a3a4d] bg-[#121820] p-0.5">
@@ -567,7 +590,7 @@ export function ModelsPage({
                   : 'text-[#8b9aab] hover:text-[#e7ecf1]'
               }`}
             >
-              {id === 'openai' ? 'OpenAI' : id}
+              {id === 'openai' ? 'OpenAI' : id === 'azure' ? 'Azure OpenAI' : id}
             </button>
           ))}
         </div>
@@ -666,6 +689,130 @@ export function ModelsPage({
               {openaiStatus.validationOk && filteredOpenAi.length === 0 && (
                 <p className="text-sm text-[#8b9aab]">No models match your filter.</p>
               )}
+            </div>
+          ) : tab === 'azure' ? (
+            <div className="space-y-5">
+              {!azureOpenaiStatus.validationOk && (
+                <p className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">
+                  Validate Azure OpenAI settings to load the model catalog.
+                  {azureOpenaiStatus.validationError
+                    ? ` (${azureOpenaiStatus.validationError})`
+                    : ''}
+                </p>
+              )}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-[#f0f4f8]">Model catalog</h3>
+                  <p className="text-xs text-[#6b7a8c]">
+                    Azure model IDs and capabilities returned by your resource.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void onRefreshAzure()}
+                  className="rounded-lg border border-[#2a3a4d] px-3 py-2 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+                >
+                  Refresh catalog
+                </button>
+              </div>
+              {azureOpenaiCatalog.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-[#2a3a4d] px-3 py-4 text-xs text-[#6b7a8c]">
+                  No catalog models yet. Validate Azure settings to fetch available metadata.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {azureOpenaiCatalog.map((model) => (
+                    <li key={model.id} className="rounded-lg border border-[#2a3a4d] bg-[#121820] px-3 py-2">
+                      <p className="text-sm text-[#e7ecf1]">{model.id}</p>
+                      {model.capabilities?.length ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {model.capabilities.map((capability) => (
+                            <span key={capability} className="rounded bg-[#1a2430] px-1.5 py-0.5 text-[10px] text-[#9aa8b8]">
+                              {capability}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="border-t border-[#243041] pt-4">
+                <h3 className="mb-1 text-sm font-semibold text-[#f0f4f8]">Deployments</h3>
+                <p className="mb-3 text-xs text-[#6b7a8c]">
+                  Add the deployment names configured in Azure. These are separate from catalog model IDs.
+                </p>
+                <form
+                  className="mb-3 flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    const name = azureDeploymentDraft.trim()
+                    if (!name) return
+                    if (azureOpenaiDeployments.some((deployment) => deployment.name === name)) {
+                      setActionError(`Deployment "${name}" already exists.`)
+                      return
+                    }
+                    setActionError(null)
+                    setAzureDeploymentDraft('')
+                    void onAddAzureDeployment(name)
+                  }}
+                >
+                  <input
+                    value={azureDeploymentDraft}
+                    onChange={(event) => setAzureDeploymentDraft(event.target.value)}
+                    placeholder="Deployment name"
+                    className="min-w-0 flex-1 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2 text-sm text-[#e7ecf1] placeholder:text-[#6b7a8c] focus:border-[#2d6cb5] focus:outline-none"
+                  />
+                  <button type="submit" className="rounded-lg bg-[#2d6cb5] px-3 py-2 text-xs font-medium text-white hover:bg-[#3a7cc9]">
+                    Add deployment
+                  </button>
+                </form>
+                {azureOpenaiDeployments.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-[#2a3a4d] px-3 py-4 text-xs text-[#6b7a8c]">
+                    No deployments configured. Add a deployment name to enable Azure chat.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {azureOpenaiDeployments.map((deployment) => (
+                      <li key={deployment.name} className="flex items-start justify-between gap-3 rounded-lg border border-[#2a3a4d] bg-[#121820] px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm text-[#e7ecf1]">{deployment.name}</p>
+                          {deployment.matchedCatalogMetadata ? (
+                            <p className="mt-1 text-[11px] text-[#6b7a8c]">
+                              Catalog match: {deployment.matchedCatalogMetadata.id}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-[11px] text-amber-300">No catalog metadata match</p>
+                          )}
+                          {deployment.name === selectedAzureOpenaiModel && (
+                            <p className="text-[11px] text-[#6eb5ff]">Selected in chat</p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <label className="flex items-center gap-1.5 text-[11px] text-[#c5d0dc]">
+                            <input
+                              type="checkbox"
+                              checked={deployment.enabled}
+                              onChange={(event) =>
+                                void onToggleAzureDeployment(deployment.name, event.target.checked)
+                              }
+                            />
+                            Enabled
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => void onRemoveAzureDeployment(deployment.name)}
+                            className="rounded border border-rose-900/40 px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-950/30"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           ) : tab === 'installed' ? (
             <div className="space-y-4">

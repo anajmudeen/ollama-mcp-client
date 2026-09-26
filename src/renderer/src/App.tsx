@@ -8,6 +8,9 @@ import type {
   LlmProvider,
   McpToolInfo,
   OllamaModel,
+  AzureOpenaiDeploymentEntry,
+  AzureOpenaiModelEntry,
+  AzureOpenaiStatus,
   OpenAiStatus,
   ScheduleNotificationPayload,
   SessionQueueStatus,
@@ -94,6 +97,24 @@ export default function App(): React.JSX.Element {
     {}
   )
   const [selectedOpenAiModel, setSelectedOpenAiModel] = useState<string | null>(null)
+  const [azureOpenaiEnabled, setAzureOpenaiEnabled] = useState(false)
+  const [azureOpenaiApiKeyDraft, setAzureOpenaiApiKeyDraft] = useState('')
+  const [azureOpenaiEndpoint, setAzureOpenaiEndpoint] = useState('')
+  const [azureOpenaiApiVersion, setAzureOpenaiApiVersion] = useState('2024-10-21')
+  const [azureOpenaiStatus, setAzureOpenaiStatus] = useState<AzureOpenaiStatus>({
+    enabled: false,
+    validationOk: false,
+    validationError: null,
+    catalogCount: 0,
+    enabledCount: 0,
+    deploymentCount: 0,
+    enabledDeploymentCount: 0
+  })
+  const [azureOpenaiCatalog, setAzureOpenaiCatalog] = useState<AzureOpenaiModelEntry[]>([])
+  const [azureOpenaiDeployments, setAzureOpenaiDeployments] = useState<
+    AzureOpenaiDeploymentEntry[]
+  >([])
+  const [selectedAzureOpenaiModel, setSelectedAzureOpenaiModel] = useState<string | null>(null)
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<UiMessage[]>([])
@@ -360,16 +381,19 @@ export default function App(): React.JSX.Element {
 
   const refreshModelsForProvider = useCallback(
     async (provider: LlmProvider) => {
-      if (provider === 'openai') {
+      if (provider === 'openai' || provider === 'azure-openai') {
         try {
-          const list = await window.api.openai.listChatModels()
+          const list =
+            provider === 'openai'
+              ? await window.api.openai.listChatModels()
+              : await window.api.azureOpenai.listChatModels()
           setModels(list)
           const names = list.map((m) => m.name)
           setSelectedModel((current) => {
             if (current && names.includes(current)) return current
             const next = names[0] ?? null
             if (next) {
-              void window.api.setSelectedModelForProvider('openai', next)
+              void window.api.setSelectedModelForProvider(provider, next)
             }
             return next
           })
@@ -415,6 +439,13 @@ export default function App(): React.JSX.Element {
       setOpenaiCatalog(config.openaiModelsCatalog)
       setOpenaiModelEnabled(config.openaiModelEnabled)
       setSelectedOpenAiModel(config.selectedModelByProvider.openai)
+      setAzureOpenaiEnabled(config.azureOpenaiEnabled)
+      setAzureOpenaiApiKeyDraft('')
+      setAzureOpenaiEndpoint(config.azureOpenaiEndpoint ?? '')
+      setAzureOpenaiApiVersion(config.azureOpenaiApiVersion || '2024-10-21')
+      setAzureOpenaiCatalog(config.azureOpenaiModelsCatalog)
+      setAzureOpenaiDeployments(config.azureOpenaiDeployments)
+      setSelectedAzureOpenaiModel(config.selectedModelByProvider['azure-openai'])
       setSelectedModel(config.selectedModel)
       setShowThinking(Boolean(config.showThinking))
       showThinkingRef.current = Boolean(config.showThinking)
@@ -423,6 +454,7 @@ export default function App(): React.JSX.Element {
       setTelegramEnabled(Boolean(config.telegramEnabled))
       setTelegramAllowedUserIds(config.telegramAllowedUserIds)
       await refreshOpenAiStatus()
+      await window.api.azureOpenai.getStatus().then(setAzureOpenaiStatus)
       await refreshModelsForProvider(config.llmProvider)
     },
     [refreshModelsForProvider, refreshOpenAiStatus]
@@ -1273,6 +1305,8 @@ export default function App(): React.JSX.Element {
     await window.api.setSelectedModelForProvider(llmProvider, model)
     if (llmProvider === 'openai') {
       setSelectedOpenAiModel(model)
+    } else if (llmProvider === 'azure-openai') {
+      setSelectedAzureOpenaiModel(model)
     }
   }
 
@@ -1340,6 +1374,66 @@ export default function App(): React.JSX.Element {
     await refreshOpenAiStatus()
   }
 
+  const refreshAzureConfig = async (): Promise<void> => {
+    const config = await window.api.getConfig()
+    setAzureOpenaiEnabled(config.azureOpenaiEnabled)
+    setAzureOpenaiApiKeyDraft('')
+    setAzureOpenaiEndpoint(config.azureOpenaiEndpoint ?? '')
+    setAzureOpenaiApiVersion(config.azureOpenaiApiVersion || '2024-10-21')
+    setAzureOpenaiCatalog(config.azureOpenaiModelsCatalog)
+    setAzureOpenaiDeployments(config.azureOpenaiDeployments)
+    setSelectedAzureOpenaiModel(config.selectedModelByProvider['azure-openai'])
+    setAzureOpenaiStatus(await window.api.azureOpenai.getStatus())
+    if (llmProvider === 'azure-openai') await refreshModelsForProvider('azure-openai')
+  }
+
+  const handleSetAzureEnabled = async (enabled: boolean): Promise<void> => {
+    await window.api.azureOpenai.setEnabled(enabled)
+    await refreshAzureConfig()
+  }
+
+  const handleSetAzureApiKey = async (key: string | null): Promise<void> => {
+    await window.api.azureOpenai.setApiKey(key)
+    await refreshAzureConfig()
+  }
+
+  const handleSetAzureEndpoint = async (endpoint: string | null): Promise<void> => {
+    await window.api.azureOpenai.setEndpoint(endpoint)
+    await refreshAzureConfig()
+  }
+
+  const handleSetAzureApiVersion = async (version: string): Promise<void> => {
+    await window.api.azureOpenai.setApiVersion(version)
+    await refreshAzureConfig()
+  }
+
+  const handleValidateAzure = async (): Promise<void> => {
+    await window.api.azureOpenai.validateAndFetchModels()
+    await refreshAzureConfig()
+  }
+
+  const handleRefreshAzure = async (): Promise<void> => {
+    await window.api.azureOpenai.refreshModels()
+    await refreshAzureConfig()
+  }
+
+  const handleToggleAzureDeployment = async (name: string, enabled: boolean): Promise<void> => {
+    await window.api.azureOpenai.setDeploymentEnabled(name, enabled)
+    await refreshAzureConfig()
+    if (llmProvider === 'azure-openai') await refreshModelsForProvider('azure-openai')
+  }
+
+  const handleAddAzureDeployment = async (name: string): Promise<void> => {
+    await window.api.azureOpenai.addDeployment(name)
+    await refreshAzureConfig()
+  }
+
+  const handleRemoveAzureDeployment = async (name: string): Promise<void> => {
+    await window.api.azureOpenai.removeDeployment(name)
+    await refreshAzureConfig()
+    if (llmProvider === 'azure-openai') await refreshModelsForProvider('azure-openai')
+  }
+
   const handleValidateOpenai = async (): Promise<void> => {
     const config = await window.api.openai.validateAndFetchModels()
     await applyConfig(config)
@@ -1361,8 +1455,14 @@ export default function App(): React.JSX.Element {
 
   const openAiChatReady =
     openaiStatus.validationOk && openaiStatus.enabledCount > 0
+  const azureChatReady =
+    azureOpenaiStatus.validationOk && azureOpenaiStatus.enabledDeploymentCount > 0
   const canSendBackend =
-    llmProvider === 'openai' ? openAiChatReady || ollamaOk : ollamaOk
+    llmProvider === 'openai'
+      ? openAiChatReady || ollamaOk
+      : llmProvider === 'azure-openai'
+        ? azureChatReady || ollamaOk
+        : ollamaOk
   const imageModelNames = [
     ...new Set([
       ...ollamaModels
@@ -1448,6 +1548,11 @@ export default function App(): React.JSX.Element {
             openaiCatalog={openaiCatalog}
             openaiModelEnabled={openaiModelEnabled}
             selectedOpenAiModel={selectedOpenAiModel}
+            azureOpenaiEnabled={azureOpenaiEnabled}
+            azureOpenaiStatus={azureOpenaiStatus}
+            azureOpenaiCatalog={azureOpenaiCatalog}
+            azureOpenaiDeployments={azureOpenaiDeployments}
+            selectedAzureOpenaiModel={selectedAzureOpenaiModel}
             active={view === 'models'}
             onRefreshModels={async () => {
               await refreshOllama()
@@ -1458,6 +1563,10 @@ export default function App(): React.JSX.Element {
             }}
             onRefreshOpenAi={() => handleRefreshOpenAi()}
             onToggleOpenAiModel={(id, enabled) => handleToggleOpenAiModel(id, enabled)}
+            onRefreshAzure={handleRefreshAzure}
+            onAddAzureDeployment={handleAddAzureDeployment}
+            onRemoveAzureDeployment={handleRemoveAzureDeployment}
+            onToggleAzureDeployment={handleToggleAzureDeployment}
             onUseInChat={(m) => void handleUseModelInChat(m)}
           />
         </div>
@@ -1513,6 +1622,11 @@ export default function App(): React.JSX.Element {
             telegramAllowedUserIds={telegramAllowedUserIds}
             telegramStatus={telegramStatus}
             telegramTokenDraft={telegramTokenDraft}
+            azureOpenaiEnabled={azureOpenaiEnabled}
+            azureOpenaiApiKeyDraft={azureOpenaiApiKeyDraft}
+            azureOpenaiEndpoint={azureOpenaiEndpoint}
+            azureOpenaiApiVersion={azureOpenaiApiVersion}
+            azureOpenaiStatus={azureOpenaiStatus}
             onSetTelegramToken={(token) => void handleSetTelegramToken(token)}
             onSetTelegramEnabled={(enabled) => void handleSetTelegramEnabled(enabled)}
             onSetTelegramAllowedUserIds={(ids) =>
@@ -1526,6 +1640,11 @@ export default function App(): React.JSX.Element {
             onSetOpenaiEnabled={(v) => void handleSetOpenaiEnabled(v)}
             onSetOpenaiApiKey={(k) => void handleSetOpenaiApiKey(k)}
             onValidateOpenai={() => void handleValidateOpenai()}
+            onSetAzureEnabled={(v) => void handleSetAzureEnabled(v)}
+            onSetAzureApiKey={(k) => void handleSetAzureApiKey(k)}
+            onSetAzureEndpoint={(v) => void handleSetAzureEndpoint(v)}
+            onSetAzureApiVersion={(v) => void handleSetAzureApiVersion(v)}
+            onValidateAzure={() => void handleValidateAzure()}
             onOpenModelsPage={() => handleNavigate('models')}
             onSetDefaultImageModel={(model) => void handleSetDefaultImageModel(model)}
           />
