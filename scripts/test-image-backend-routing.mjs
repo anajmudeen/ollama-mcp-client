@@ -45,6 +45,7 @@ test('migrates a legacy Ollama image model when verified as installed', () => {
 
 test('production migration path identifies a legacy Ollama image model locally', () => {
   setImageBackend(null)
+  setDefaultImageModel(null)
   setDefaultImageModel(' flux-schnell ')
   try {
     assert.deepEqual(getImageBackend(), {

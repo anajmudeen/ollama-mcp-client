@@ -22,6 +22,7 @@ const {
   )
 const {
   setDefaultImageModel,
+  setImageBackend,
   setOpenaiApiKey,
   setOpenaiModelEnabled,
   setOpenaiModelsCatalog
@@ -65,7 +66,7 @@ test('routes selected source images to OpenAI editing', async () => {
   setOpenaiApiKey('test-key')
   setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
   setOpenaiModelEnabled('gpt-image-1', true)
-  setDefaultImageModel('gpt-image-1')
+  setImageBackend({ provider: 'openai', model: 'gpt-image-1' })
   const originalFetch = globalThis.fetch
   const calls = []
   globalThis.fetch = async (...args) => {
@@ -114,10 +115,10 @@ test('rejects invalid image arguments with a clear failure', async () => {
   }
 })
 
-test('does not fall back to the other provider when the configured model is stale', async () => {
+test('rejects an unavailable selected backend without provider fallback', async () => {
   setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
   setOpenaiModelEnabled('gpt-image-1', true)
-  setDefaultImageModel('missing-image-model')
+  setImageBackend({ provider: 'ollama', model: 'missing-image-model' })
   const originalFetch = globalThis.fetch
   globalThis.fetch = async (...args) => {
     const url = String(args[0])
@@ -137,21 +138,22 @@ test('does not fall back to the other provider when the configured model is stal
   }
 
   try {
-    const openaiResult = await runGenerateImageTool('openai', { prompt: 'a test image' })
-    assert.equal(openaiResult.ok, true)
-    assert.equal(openaiResult.model, 'gpt-image-1')
-
-    const ollamaResult = await runGenerateImageTool('ollama', { prompt: 'a test image' })
-    assert.equal(ollamaResult.ok, true)
-    assert.equal(ollamaResult.model, 'flux')
+    for (const provider of ['openai', 'ollama', 'azure-openai']) {
+      const result = await runGenerateImageTool(provider, { prompt: 'a test image' })
+      assert.deepEqual(result, {
+        ok: false,
+        message:
+          'The selected image backend is unavailable. Select an available image backend and try again.'
+      })
+    }
   } finally {
     globalThis.fetch = originalFetch
   }
 })
 
-test('offers the tool to OpenAI when Ollama is the configured image backend', async () => {
+test('offers the tool for any chat provider when Ollama is selected', async () => {
   setOpenaiModelsCatalog([])
-  setDefaultImageModel('flux')
+  setImageBackend({ provider: 'ollama', model: 'flux' })
   const originalFetch = globalThis.fetch
   globalThis.fetch = async (...args) => {
     if (String(args[0]).endsWith('/api/tags')) {
@@ -165,6 +167,7 @@ test('offers the tool to OpenAI when Ollama is the configured image backend', as
   try {
     assert.equal(await shouldOfferGenerateImageTool('openai', 'gpt-4.1-mini'), true)
     assert.equal(await shouldOfferGenerateImageTool('ollama', 'llama3.2'), true)
+    assert.equal(await shouldOfferGenerateImageTool('azure-openai', 'gpt-4.1-mini'), true)
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -172,7 +175,7 @@ test('offers the tool to OpenAI when Ollama is the configured image backend', as
 
 test('rejects OpenAI image-tool calls when only Ollama image backend exists', async () => {
   setOpenaiModelsCatalog([])
-  setDefaultImageModel('flux')
+  setImageBackend({ provider: 'ollama', model: 'flux' })
   const originalFetch = globalThis.fetch
   const calls = []
   globalThis.fetch = async (...args) => {
@@ -192,33 +195,27 @@ test('rejects OpenAI image-tool calls when only Ollama image backend exists', as
 
   try {
     const result = await runGenerateImageTool('openai', { prompt: 'a test image' })
-    assert.deepEqual(result, {
-      ok: false,
-      message:
-        'Image generation for the OpenAI provider requires an enabled OpenAI image model.'
-    })
-    assert.equal(calls.some((call) => String(call[0]).endsWith('/api/generate')), false)
+    assert.equal(result.ok, true)
+    assert.equal(result.model, 'flux')
+    assert.equal(calls.some((call) => String(call[0]).endsWith('/api/generate')), true)
   } finally {
     globalThis.fetch = originalFetch
   }
 })
 
-test('rejects Azure image-tool dispatch explicitly', async () => {
+test('returns a clear failure when no image backend is selected', async () => {
+  // Clear the migration-only legacy value so null means no selected backend.
+  setDefaultImageModel(null)
+  setImageBackend(null)
   const generated = await runGenerateImageTool('azure-openai', { prompt: 'a test image' })
   assert.deepEqual(generated, {
     ok: false,
-    message: 'Image generation is not supported by the Azure OpenAI provider.'
-  })
-
-  const edited = await runEditImageTool('azure-openai', 'edit this', ['base64-image'])
-  assert.deepEqual(edited, {
-    ok: false,
-    message: 'Image editing is not supported by the Azure OpenAI provider.'
+    message: 'No image backend selected. Select an image backend to generate images.'
   })
 })
 
 test('offers the tool to Ollama when Ollama is unavailable but OpenAI is the image backend', async () => {
-  setDefaultImageModel('gpt-image-1')
+  setImageBackend({ provider: 'openai', model: 'gpt-image-1' })
   setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
   setOpenaiModelEnabled('gpt-image-1', true)
   const originalFetch = globalThis.fetch
@@ -240,7 +237,7 @@ test('rejects malformed base64 before attempting OpenAI editing', async () => {
   setOpenaiApiKey('test-key')
   setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
   setOpenaiModelEnabled('gpt-image-1', true)
-  setDefaultImageModel('gpt-image-1')
+  setImageBackend({ provider: 'openai', model: 'gpt-image-1' })
   const originalFetch = globalThis.fetch
   let fetchCalled = false
   globalThis.fetch = async (...args) => {
@@ -260,7 +257,7 @@ test('rejects malformed base64 before attempting OpenAI editing', async () => {
 
 test('rejects image editing on Ollama without text generation', async () => {
   setOpenaiModelsCatalog([])
-  setDefaultImageModel('flux')
+  setImageBackend({ provider: 'ollama', model: 'flux' })
   const originalFetch = globalThis.fetch
   globalThis.fetch = async (...args) => {
     if (String(args[0]).endsWith('/api/tags')) {
@@ -287,7 +284,7 @@ test('keeps generation text-only even when extra images are supplied internally'
   setOpenaiApiKey('test-key')
   setOpenaiModelsCatalog([{ id: 'dall-e-3', name: 'dall-e-3' }])
   setOpenaiModelEnabled('dall-e-3', true)
-  setDefaultImageModel('dall-e-3')
+  setImageBackend({ provider: 'openai', model: 'dall-e-3' })
   const originalFetch = globalThis.fetch
   const calls = []
   globalThis.fetch = async (...args) => {
@@ -313,7 +310,7 @@ test('preserves text-only OpenAI result metadata and routing', async () => {
   setOpenaiApiKey('test-key')
   setOpenaiModelsCatalog([{ id: 'dall-e-3', name: 'dall-e-3' }])
   setOpenaiModelEnabled('dall-e-3', true)
-  setDefaultImageModel('dall-e-3')
+  setImageBackend({ provider: 'openai', model: 'dall-e-3' })
   const originalFetch = globalThis.fetch
   const calls = []
   globalThis.fetch = async (...args) => {
@@ -353,7 +350,7 @@ test('preserves text-only OpenAI result metadata and routing', async () => {
 
 test('preserves text-only Ollama result metadata and routing', async () => {
   setOpenaiModelsCatalog([])
-  setDefaultImageModel('flux')
+  setImageBackend({ provider: 'ollama', model: 'flux' })
   const originalFetch = globalThis.fetch
   globalThis.fetch = async (...args) => {
     const url = String(args[0])
