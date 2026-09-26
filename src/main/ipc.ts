@@ -1,6 +1,8 @@
 import { BrowserWindow, dialog, type IpcMain } from 'electron'
 import type {
   AgentSkillInput,
+  AzureOpenaiDeploymentEntry,
+  AzureOpenaiStatus,
   ChatSendPayload,
   ChatSession,
   HtmlPreviewCreatePayload,
@@ -26,13 +28,24 @@ import {
   deleteSession,
   ensureActiveSession,
   getConfig,
+  addAzureOpenaiDeployment,
+  getAzureOpenaiApiKey,
+  getAzureOpenaiApiVersion,
+  getAzureOpenaiDeployments,
+  getAzureOpenaiEnabled,
+  getAzureOpenaiEndpoint,
+  getAzureOpenaiModelsCatalog,
+  getAzureOpenaiValidationState,
   getOpenaiApiKey,
   getSchedule,
   getSelectedModel,
+  getSelectedModelForProvider,
   getSessionsState,
   listSchedules,
   listServers,
   mergeOpenaiCatalog,
+  mergeAzureOpenaiCatalog,
+  removeAzureOpenaiDeployment,
   patchScheduleRun,
   removeServer,
   setActiveSession,
@@ -42,6 +55,12 @@ import {
   setOpenaiEnabled,
   setOpenaiModelEnabled,
   setOpenaiValidationOk,
+  setAzureOpenaiApiKey,
+  setAzureOpenaiApiVersion,
+  setAzureOpenaiDeploymentEnabled,
+  setAzureOpenaiEnabled,
+  setAzureOpenaiEndpoint,
+  setAzureOpenaiValidationOk,
   setSelectedModel,
   setSelectedModelForProvider,
   setServerEnabled,
@@ -55,7 +74,8 @@ import {
   setTelegramMirrorMode,
   updateSession,
   upsertSchedule,
-  upsertServer
+  upsertServer,
+  updateAzureOpenaiDeployment
 } from './config-store'
 import {
   generateSessionTitle,
@@ -95,6 +115,10 @@ import {
 } from './llm'
 import { fetchOpenAiModels, validateOpenAiKey } from './openai-client'
 import {
+  fetchAzureModels,
+  normalizeAzureEndpoint
+} from './azure-openai-client'
+import {
   getTelegramBotStatus,
   restartTelegramBot,
   stopTelegramBot
@@ -114,6 +138,53 @@ async function validateOpenAiAndFetchCatalog(): Promise<ReturnType<typeof getCon
   const models = await fetchOpenAiModels(key)
   mergeOpenaiCatalog(models)
   setOpenaiValidationOk(true)
+  return getConfig()
+}
+
+function getAzureOpenaiStatus(): AzureOpenaiStatus {
+  const { ok, error } = getAzureOpenaiValidationState()
+  const catalog = getAzureOpenaiModelsCatalog()
+  const deployments = getAzureOpenaiDeployments()
+  return {
+    enabled: getAzureOpenaiEnabled(),
+    validationOk: ok,
+    validationError: error,
+    catalogCount: catalog.length,
+    enabledCount: catalog.length,
+    deploymentCount: deployments.length,
+    enabledDeploymentCount: deployments.filter((deployment) => deployment.enabled).length
+  }
+}
+
+async function validateAzureOpenaiAndFetchCatalog(): Promise<ReturnType<typeof getConfig>> {
+  const apiKey = getAzureOpenaiApiKey()
+  const endpoint = getAzureOpenaiEndpoint()
+  const apiVersion = getAzureOpenaiApiVersion()
+  if (!apiKey) {
+    setAzureOpenaiValidationOk(false, 'API key not configured')
+    return getConfig()
+  }
+  if (!endpoint || !normalizeAzureEndpoint(endpoint)) {
+    setAzureOpenaiValidationOk(false, 'Service endpoint not configured')
+    return getConfig()
+  }
+  if (!apiVersion.trim()) {
+    setAzureOpenaiValidationOk(false, 'API version not configured')
+    return getConfig()
+  }
+
+  const options = { apiKey, endpoint, apiVersion }
+  try {
+    const models = await fetchAzureModels(options)
+    mergeAzureOpenaiCatalog(models)
+    setAzureOpenaiValidationOk(true)
+  } catch (err) {
+    setAzureOpenaiValidationOk(
+      false,
+      err instanceof Error ? err.message : String(err)
+    )
+    return getConfig()
+  }
   return getConfig()
 }
 
@@ -156,6 +227,24 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('config:setOpenaiModelEnabled', (_e, id: string, enabled: boolean) =>
     setOpenaiModelEnabled(id, enabled)
   )
+  ipcMain.handle('config:setAzureOpenaiEnabled', (_e, enabled: boolean) => {
+    setAzureOpenaiEnabled(enabled)
+    return getConfig()
+  })
+  ipcMain.handle('config:setAzureOpenaiApiKey', (_e, key: string | null) => {
+    const value = setAzureOpenaiApiKey(key)
+    if (!value) setAzureOpenaiValidationOk(false, 'API key not configured')
+    return getConfig()
+  })
+  ipcMain.handle('config:setAzureOpenaiEndpoint', (_e, endpoint: string | null) => {
+    const value = setAzureOpenaiEndpoint(endpoint)
+    if (!value) setAzureOpenaiValidationOk(false, 'Service endpoint not configured')
+    return getConfig()
+  })
+  ipcMain.handle('config:setAzureOpenaiApiVersion', (_e, version: string) => {
+    setAzureOpenaiApiVersion(version)
+    return getConfig()
+  })
   ipcMain.handle('config:setSelectedModelForProvider', (
     _e,
     provider: LlmProvider,
@@ -169,6 +258,37 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('openai:getStatus', () => getOpenAiStatus())
   ipcMain.handle('openai:listChatModels', () =>
     getLlmProviderAdapter('openai').listModelsForChat()
+  )
+  ipcMain.handle('azureOpenai:validateAndFetchModels', () =>
+    validateAzureOpenaiAndFetchCatalog()
+  )
+  ipcMain.handle('azureOpenai:refreshModels', () =>
+    validateAzureOpenaiAndFetchCatalog()
+  )
+  ipcMain.handle('azureOpenai:getStatus', () => getAzureOpenaiStatus())
+  ipcMain.handle('azureOpenai:addDeployment', (
+    _e,
+    deployment: AzureOpenaiDeploymentEntry | string
+  ) => addAzureOpenaiDeployment(deployment))
+  ipcMain.handle('azureOpenai:updateDeployment', (
+    _e,
+    name: string,
+    patch: Partial<Omit<AzureOpenaiDeploymentEntry, 'name'>>
+  ) => updateAzureOpenaiDeployment(name, patch))
+  ipcMain.handle('azureOpenai:removeDeployment', (_e, name: string) => {
+    const deployments = removeAzureOpenaiDeployment(name)
+    if (getSelectedModelForProvider('azure-openai') === name.trim()) {
+      setSelectedModelForProvider('azure-openai', null)
+    }
+    return deployments
+  })
+  ipcMain.handle('azureOpenai:setDeploymentEnabled', (
+    _e,
+    name: string,
+    enabled: boolean
+  ) => setAzureOpenaiDeploymentEnabled(name, enabled))
+  ipcMain.handle('azureOpenai:listChatModels', () =>
+    getLlmProviderAdapter('azure-openai').listModelsForChat()
   )
   ipcMain.handle('llm:getEffectiveProvider', () => resolveEffectiveLlmProvider())
 

@@ -3,6 +3,8 @@ import type {
   AgentSkill,
   AgentSkillInput,
   AppConfig,
+  AzureOpenaiDeploymentEntry,
+  AzureOpenaiStatus,
   CatalogSkill,
   ChatEnqueueResult,
   ChatEvent,
@@ -71,6 +73,41 @@ const api = {
     getStatus: (): Promise<OpenAiStatus> => ipcRenderer.invoke('openai:getStatus'),
     listChatModels: (): Promise<OllamaModel[]> =>
       ipcRenderer.invoke('openai:listChatModels')
+  },
+
+  azureOpenai: {
+    setEnabled: (enabled: boolean): Promise<AppConfig> =>
+      ipcRenderer.invoke('config:setAzureOpenaiEnabled', enabled),
+    setApiKey: (key: string | null): Promise<AppConfig> =>
+      ipcRenderer.invoke('config:setAzureOpenaiApiKey', key),
+    setEndpoint: (endpoint: string | null): Promise<AppConfig> =>
+      ipcRenderer.invoke('config:setAzureOpenaiEndpoint', endpoint),
+    setApiVersion: (version: string): Promise<AppConfig> =>
+      ipcRenderer.invoke('config:setAzureOpenaiApiVersion', version),
+    validateAndFetchModels: (): Promise<AppConfig> =>
+      ipcRenderer.invoke('azureOpenai:validateAndFetchModels'),
+    refreshModels: (): Promise<AppConfig> =>
+      ipcRenderer.invoke('azureOpenai:refreshModels'),
+    getStatus: (): Promise<AzureOpenaiStatus> =>
+      ipcRenderer.invoke('azureOpenai:getStatus'),
+    addDeployment: (
+      deployment: AzureOpenaiDeploymentEntry | string
+    ): Promise<AzureOpenaiDeploymentEntry[]> =>
+      ipcRenderer.invoke('azureOpenai:addDeployment', deployment),
+    updateDeployment: (
+      name: string,
+      patch: Partial<Omit<AzureOpenaiDeploymentEntry, 'name'>>
+    ): Promise<AzureOpenaiDeploymentEntry[]> =>
+      ipcRenderer.invoke('azureOpenai:updateDeployment', name, patch),
+    removeDeployment: (name: string): Promise<AzureOpenaiDeploymentEntry[]> =>
+      ipcRenderer.invoke('azureOpenai:removeDeployment', name),
+    setDeploymentEnabled: (
+      name: string,
+      enabled: boolean
+    ): Promise<AzureOpenaiDeploymentEntry[]> =>
+      ipcRenderer.invoke('azureOpenai:setDeploymentEnabled', name, enabled),
+    listChatModels: (): Promise<OllamaModel[]> =>
+      ipcRenderer.invoke('azureOpenai:listChatModels')
   },
 
   ollama: {
