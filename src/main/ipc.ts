@@ -150,7 +150,7 @@ function getAzureOpenaiStatus(): AzureOpenaiStatus {
     validationOk: ok,
     validationError: error,
     catalogCount: catalog.length,
-    enabledCount: catalog.length,
+    enabledCount: deployments.filter((deployment) => deployment.enabled).length,
     deploymentCount: deployments.length,
     enabledDeploymentCount: deployments.filter((deployment) => deployment.enabled).length
   }
@@ -232,17 +232,32 @@ export function registerIpc(ipcMain: IpcMain): void {
     return getConfig()
   })
   ipcMain.handle('config:setAzureOpenaiApiKey', (_e, key: string | null) => {
+    const previous = getAzureOpenaiApiKey()
+    const next = key?.trim() || null
     const value = setAzureOpenaiApiKey(key)
     if (!value) setAzureOpenaiValidationOk(false, 'API key not configured')
+    else if (next !== previous) {
+      setAzureOpenaiValidationOk(false, 'Azure OpenAI settings changed; validate again')
+    }
     return getConfig()
   })
   ipcMain.handle('config:setAzureOpenaiEndpoint', (_e, endpoint: string | null) => {
+    const previous = getAzureOpenaiEndpoint()
+    const next = endpoint?.trim().replace(/\/+$/, '') || null
     const value = setAzureOpenaiEndpoint(endpoint)
     if (!value) setAzureOpenaiValidationOk(false, 'Service endpoint not configured')
+    else if (next !== previous) {
+      setAzureOpenaiValidationOk(false, 'Azure OpenAI settings changed; validate again')
+    }
     return getConfig()
   })
   ipcMain.handle('config:setAzureOpenaiApiVersion', (_e, version: string) => {
+    const previous = getAzureOpenaiApiVersion()
+    const next = version.trim() || '2024-10-21'
     setAzureOpenaiApiVersion(version)
+    if (next !== previous) {
+      setAzureOpenaiValidationOk(false, 'Azure OpenAI settings changed; validate again')
+    }
     return getConfig()
   })
   ipcMain.handle('config:setSelectedModelForProvider', (
