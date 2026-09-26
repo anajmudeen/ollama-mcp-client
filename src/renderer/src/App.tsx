@@ -205,6 +205,7 @@ export default function App(): React.JSX.Element {
     raf: null
   })
   const queueStateRef = useRef<ChatQueueState>({ running: null, queued: [] })
+  const modelRefreshRequestRef = useRef(0)
 
   const syncMessages = useCallback((next: UiMessage[]) => {
     messagesRef.current = next
@@ -389,52 +390,64 @@ export default function App(): React.JSX.Element {
 
   const refreshModelsForProvider = useCallback(
     async (provider: LlmProvider) => {
+      const requestId = ++modelRefreshRequestRef.current
+      const isCurrentRequest = (): boolean =>
+        requestId === modelRefreshRequestRef.current
+
       if (provider === 'openai' || provider === 'azure-openai') {
         try {
           const list =
             provider === 'openai'
               ? await window.api.openai.listChatModels()
               : await window.api.azureOpenai.listChatModels()
+          if (!isCurrentRequest()) return
           setModels(list)
           const names = list.map((m) => m.name)
           const config = await window.api.getConfig()
+          if (!isCurrentRequest()) return
           const saved = config.selectedModelByProvider[provider]
-          setSelectedModel(() => {
-            if (saved && names.includes(saved)) return saved
-            const next = names[0] ?? null
+          const next = saved && names.includes(saved) ? saved : names[0] ?? null
+          setSelectedModel(next)
+          if (!saved || !names.includes(saved)) {
             void window.api.setSelectedModelForProvider(provider, next)
-            return next
-          })
+          }
         } catch {
+          if (!isCurrentRequest()) return
           setModels([])
           setSelectedModel(null)
         }
         try {
           const status = await window.api.ollama.getStatus()
-          setOllamaModels(status.ok ? await window.api.ollama.listModels() : [])
+          if (!isCurrentRequest()) return
+          const ollamaList = status.ok ? await window.api.ollama.listModels() : []
+          if (!isCurrentRequest()) return
+          setOllamaModels(ollamaList)
         } catch {
+          if (!isCurrentRequest()) return
           setOllamaModels([])
         }
         return
       }
       const status = await window.api.ollama.getStatus()
+      if (!isCurrentRequest()) return
       if (!status.ok) {
         setOllamaModels([])
         setModels([])
         return
       }
       const list = await window.api.ollama.listModels()
+      if (!isCurrentRequest()) return
       setOllamaModels(list)
       setModels(list)
       const names = list.map((m) => m.name)
       const config = await window.api.getConfig()
+      if (!isCurrentRequest()) return
       const saved = config.selectedModelByProvider.ollama
-      setSelectedModel(() => {
-        if (saved && names.includes(saved)) return saved
-        const next = names[0] ?? null
+      const next = saved && names.includes(saved) ? saved : names[0] ?? null
+      setSelectedModel(next)
+      if (!saved || !names.includes(saved)) {
         void window.api.setSelectedModelForProvider('ollama', next)
-        return next
-      })
+      }
     },
     []
   )
@@ -1451,6 +1464,7 @@ export default function App(): React.JSX.Element {
   const handleRemoveAzureDeployment = async (name: string): Promise<void> => {
     await window.api.azureOpenai.removeDeployment(name)
     await refreshAzureConfig()
+    await refreshEffectiveProvider()
     if (llmProvider === 'azure-openai') await refreshModelsForProvider('azure-openai')
   }
 
