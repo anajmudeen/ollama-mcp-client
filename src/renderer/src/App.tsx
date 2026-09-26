@@ -1365,10 +1365,10 @@ export default function App(): React.JSX.Element {
   const handleSelectModel = async (model: string): Promise<void> => {
     setSelectedModel(model)
     setContextUsage(null)
-    await window.api.setSelectedModelForProvider(llmProvider, model)
-    if (llmProvider === 'openai') {
+    await window.api.setSelectedModelForProvider(effectiveProvider, model)
+    if (effectiveProvider === 'openai') {
       setSelectedOpenAiModel(model)
-    } else if (llmProvider === 'azure-openai') {
+    } else if (effectiveProvider === 'azure-openai') {
       setSelectedAzureOpenaiModel(model)
     }
   }

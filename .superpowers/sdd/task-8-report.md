@@ -238,3 +238,33 @@ remain unchanged.
 No standalone renderer test harness exists in the project; the fallback
 behavior was covered by the typecheck/build path and the existing focused
 provider tests. Live Azure service validation was not run without credentials.
+
+## Final-review fix — fallback selection persistence
+
+Updated renderer model selection persistence to use `effectiveProvider`
+instead of the configured provider. When Azure or OpenAI falls back to
+Ollama, selecting the visible Ollama model now writes only the Ollama slot;
+the configured cloud provider and its saved selection remain unchanged. When
+the cloud provider is effective, its existing slot and UI state continue to
+be updated, and the selected model remains synchronized with the request
+payload.
+
+## Exact verification results
+
+- `npm run typecheck` — exit 0.
+- `npm run build` — exit 0; main, preload, and renderer bundles built.
+- `node scripts/test-config-store-migrations.mjs` — exit 0.
+- `node scripts/test-azure-openai-client.mjs` — exit 0.
+- `node scripts/test-image-gen-tool.mjs` — exit 0.
+- `node scripts/test-agent-image-attachments.mjs` — exit 0.
+- `node scripts/test-openai-image-edit.mjs` — exit 0.
+- `npm run check:openai-vision` — exit 0; OpenAI vision/image classifier
+  checks passed.
+- `git diff --check 4bb3cda HEAD` — exit 0.
+- `git diff --check` — exit 0.
+- IDE linter diagnostics for `src/renderer/src/App.tsx` — no linter errors.
+
+No standalone renderer regression harness exists; the focused persistence
+change is covered by the typecheck/build verification and existing provider
+selection paths. Live cloud-provider validation was not run without
+credentials.
