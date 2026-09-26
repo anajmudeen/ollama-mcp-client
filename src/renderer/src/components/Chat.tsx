@@ -839,7 +839,7 @@ export function Chat({
             Image model selected — your message will be used as a generation prompt.
           </p>
         )}
-        {modelIsImageGen && !imageGenSupported && (
+        {modelIsImageGen && effectiveProvider === 'ollama' && !imageGenSupported && (
           <p className="mb-2 text-xs text-amber-300/90">
             Your Ollama build does not support image generation (removed in v0.32.6+).
             Use Ollama 0.32.5 for models like x/z-image-turbo, or wait for a release that

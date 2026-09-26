@@ -1,3 +1,32 @@
+# Task 5 Report
+
+## Status
+
+Implemented provider-aware Chat image UI and provider-slot preservation.
+
+- Ollama image models alone enable direct Ollama image-generation UI.
+- Explicit OpenAI image models retain direct OpenAI image behavior.
+- Azure deployment names and capabilities cannot enable image-generation UI.
+- The Ollama-only unsupported-build warning is hidden for OpenAI image models.
+- Provider switches read the selected model from the target provider slot.
+- Regression checks cover Azure chat with Ollama/OpenAI image backends, backend
+  switching and unavailable selections, and provider-slot identity preservation.
+
+## Verification
+
+- `npm run typecheck` — passed
+- `npm run build` — passed
+- `node scripts/test-image-backend-routing.mjs` — passed
+- `node scripts/test-image-gen-tool.mjs` — passed
+- `node scripts/check-openai-vision.mjs` — passed
+- `git diff --check` — passed
+- IDE lints for changed files — no errors
+
+## Concerns
+
+No known direct defects remain. Azure-native image generation remains intentionally
+unsupported; Azure chat uses the independently selected Ollama/OpenAI image
+backend through image tools.
 # Task 5 Report: End-to-end verification
 
 **Branch:** `in-built-image-model-tool`

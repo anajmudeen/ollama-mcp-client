@@ -1465,7 +1465,7 @@ export default function App(): React.JSX.Element {
     setLlmProvider(provider)
     const config = await window.api.getConfig()
     if (requestId !== modelRefreshRequestRef.current) return
-    setSelectedModel(config.selectedModel)
+    setSelectedModel(config.selectedModelByProvider[provider] ?? null)
     const effectiveStatus = await refreshEffectiveProvider(requestId)
     if (!effectiveStatus || requestId !== modelRefreshRequestRef.current) return
     await refreshModelsForProvider(effectiveStatus.effective, requestId)

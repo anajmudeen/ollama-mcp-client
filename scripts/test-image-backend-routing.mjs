@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test, { after } from 'node:test'
 import { createServer } from 'vite'
 
@@ -29,6 +30,41 @@ const {
   new URL('../src/main/image-gen-tool.ts', import.meta.url).pathname
 )
 after(() => server.close())
+
+test('keeps Chat image UI scoped to the effective provider', async () => {
+  const chatSource = await readFile(
+    new URL('../src/renderer/src/components/Chat.tsx', import.meta.url),
+    'utf8'
+  )
+  assert.match(
+    chatSource,
+    /effectiveProvider === 'ollama'[\s\S]*?isOpenAiImageGenModel/
+  )
+  assert.match(chatSource, /effectiveProvider === 'openai'[\s\S]*?isOpenAiImageGenModel/)
+  assert.match(
+    chatSource,
+    /modelIsImageGen && effectiveProvider === 'ollama' && !imageGenSupported/
+  )
+  assert.doesNotMatch(
+    chatSource,
+    /effectiveProvider === 'azure-openai'[\s\S]*?isOpenAiImageGenModel/
+  )
+})
+
+test('preserves the selected model slot while switching chat providers', async () => {
+  const appSource = await readFile(
+    new URL('../src/renderer/src/App.tsx', import.meta.url),
+    'utf8'
+  )
+  assert.match(
+    appSource,
+    /setSelectedModel\(config\.selectedModelByProvider\[provider\] \?\? null\)/
+  )
+  assert.match(
+    appSource,
+    /setSelectedModelForProvider\(effectiveProvider, model\)/
+  )
+})
 
 test('migrates a legacy OpenAI image model first', () => {
   assert.deepEqual(
