@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import test, { after } from 'node:test'
 import { createServer } from 'vite'
 
@@ -29,41 +28,40 @@ const {
 } = await server.ssrLoadModule(
   new URL('../src/main/image-gen-tool.ts', import.meta.url).pathname
 )
+const { classifyImageUiModel } = await server.ssrLoadModule(
+  new URL('../src/shared/image-ui.ts', import.meta.url).pathname
+)
+const { selectedModelForProvider } = await server.ssrLoadModule(
+  new URL('../src/shared/provider-selection.ts', import.meta.url).pathname
+)
 after(() => server.close())
 
-test('keeps Chat image UI scoped to the effective provider', async () => {
-  const chatSource = await readFile(
-    new URL('../src/renderer/src/components/Chat.tsx', import.meta.url),
-    'utf8'
-  )
-  assert.match(
-    chatSource,
-    /effectiveProvider === 'ollama'[\s\S]*?isOpenAiImageGenModel/
-  )
-  assert.match(chatSource, /effectiveProvider === 'openai'[\s\S]*?isOpenAiImageGenModel/)
-  assert.match(
-    chatSource,
-    /modelIsImageGen && effectiveProvider === 'ollama' && !imageGenSupported/
-  )
-  assert.doesNotMatch(
-    chatSource,
-    /effectiveProvider === 'azure-openai'[\s\S]*?isOpenAiImageGenModel/
+test('does not show image UI for Azure image-like deployments', () => {
+  assert.equal(
+    classifyImageUiModel('azure-openai', 'gpt-image-1', {
+      tags: ['azure-openai', 'image'],
+      capabilities: ['text-to-image']
+    }),
+    null
   )
 })
 
-test('preserves the selected model slot while switching chat providers', async () => {
-  const appSource = await readFile(
-    new URL('../src/renderer/src/App.tsx', import.meta.url),
-    'utf8'
+test('uses explicit provider behavior for OpenAI and Ollama image models', () => {
+  assert.equal(classifyImageUiModel('openai', 'gpt-image-1'), 'openai')
+  assert.equal(
+    classifyImageUiModel('ollama', 'flux', { capabilities: ['image'] }),
+    'ollama'
   )
-  assert.match(
-    appSource,
-    /setSelectedModel\(config\.selectedModelByProvider\[provider\] \?\? null\)/
-  )
-  assert.match(
-    appSource,
-    /setSelectedModelForProvider\(effectiveProvider, model\)/
-  )
+})
+
+test('Azure fallback selects the Ollama chat slot and model', () => {
+  const slots = {
+    ollama: 'flux',
+    openai: 'gpt-image-1',
+    'azure-openai': 'prod-gpt-image-1'
+  }
+  assert.equal(selectedModelForProvider(slots, 'ollama'), 'flux')
+  assert.equal(selectedModelForProvider(slots, 'azure-openai'), 'prod-gpt-image-1')
 })
 
 test('migrates a legacy OpenAI image model first', () => {
@@ -110,6 +108,21 @@ test('preserves provider identity when model names collide', () => {
   assert.deepEqual(
     migrateImageBackend('same', { provider: 'ollama', model: ' same ' }, ['same'], ['same']),
     { provider: 'ollama', model: 'same' }
+  )
+})
+
+test('preserves structured image backend identity across transitions', () => {
+  const available = [
+    { provider: 'ollama', model: 'same' },
+    { provider: 'openai', model: 'same' }
+  ]
+  assert.deepEqual(
+    resolveImageBackend({ provider: 'ollama', model: 'same' }, available),
+    { provider: 'ollama', model: 'same' }
+  )
+  assert.deepEqual(
+    resolveImageBackend({ provider: 'openai', model: 'same' }, available),
+    { provider: 'openai', model: 'same' }
   )
 })
 

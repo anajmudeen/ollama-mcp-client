@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AgentSkill, LlmProvider, McpToolInfo, OllamaModel, UiMessage } from '../../../shared/types'
-import { isOpenAiImageGenModel } from '../../../shared/openai-models'
+import { classifyImageUiModel } from '../../../shared/image-ui'
 import type { ActivityState } from './ActivityIndicator'
 import { DownloadImageButton } from './DownloadImageButton'
 import { ActivityIndicator } from './ActivityIndicator'
@@ -178,17 +178,12 @@ export function Chat({
         selectedModel ?? ''
       )
   )
-  const modelIsImageGen =
-    effectiveProvider === 'ollama'
-      ? Boolean(
-          selectedMeta?.tags?.some((t) => t.toLowerCase() === 'image') ||
-            selectedMeta?.capabilities?.some((c) => c.toLowerCase() === 'image') ||
-            /z-image|flux|sdxl|stable-diffusion|stable_diffusion|imagen|dreamshaper|animagine/i.test(
-              selectedModel ?? ''
-            )
-        )
-      : effectiveProvider === 'openai' &&
-        isOpenAiImageGenModel(selectedModel ?? '')
+  const imageUiBehavior = classifyImageUiModel(
+    effectiveProvider,
+    selectedModel ?? '',
+    selectedMeta
+  )
+  const modelIsImageGen = imageUiBehavior !== null
   const hasStreamingAssistant = messages.some(
     (m) => m.kind === 'assistant' && m.streaming
   )

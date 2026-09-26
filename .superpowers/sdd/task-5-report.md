@@ -214,3 +214,22 @@ All offline gating smoke checks passed
 | `node --test scripts/test-openai-image-edit.mjs` | **PASS** |
 | `git diff --check` | **PASS** |
 | IDE linter diagnostics for modified files | **PASS** — no errors |
+
+## Review follow-up verification (2026-09-27)
+
+Replaced source-text regex assertions with behavioral tests using pure helpers:
+
+- Azure image-like deployment/capabilities → no image UI behavior
+- OpenAI explicit image model → `openai` behavior
+- Ollama image model → `ollama` behavior
+- Azure fallback → Ollama provider slot/model
+- Structured image backend transitions preserve provider/model identity
+
+| Command | Exact result |
+| --- | --- |
+| `node scripts/test-image-backend-routing.mjs` | **PASS** (exit 0) |
+| `node scripts/test-image-gen-tool.mjs` | **PASS** (exit 0) |
+| `npm run typecheck` | **PASS** (node + web, exit 0) |
+| `npm run build` | **PASS** (typecheck + Electron/Vite bundles, exit 0) |
+| `node scripts/check-openai-vision.mjs` | **PASS** — `OpenAI vision/image classifier checks passed` |
+| `git diff --check` | **PASS** (exit 0) |

@@ -19,6 +19,7 @@ import type {
   UiMessage,
   ImageBackendSelection
 } from '../../shared/types'
+import { selectedModelForProvider } from '../../shared/provider-selection'
 import type { ServerWithStatus } from '../../preload/index'
 import type { ActivityState } from './components/ActivityIndicator'
 import { Chat } from './components/Chat'
@@ -1465,7 +1466,7 @@ export default function App(): React.JSX.Element {
     setLlmProvider(provider)
     const config = await window.api.getConfig()
     if (requestId !== modelRefreshRequestRef.current) return
-    setSelectedModel(config.selectedModelByProvider[provider] ?? null)
+    setSelectedModel(selectedModelForProvider(config.selectedModelByProvider, provider))
     const effectiveStatus = await refreshEffectiveProvider(requestId)
     if (!effectiveStatus || requestId !== modelRefreshRequestRef.current) return
     await refreshModelsForProvider(effectiveStatus.effective, requestId)
