@@ -35,14 +35,25 @@ function hasVisionCapability(capabilities: string[] | undefined): boolean {
   )
 }
 
+function isImageGenerationCapability(capability: string): boolean {
+  return /(?:image[_ -]?generation|image[_ -]?gen|text[_ -]?to[_ -]?image|dall[- ]?e)/i.test(
+    capability
+  )
+}
+
 function azureModelTags(
   deployment: AzureOpenaiDeploymentEntry,
   catalog: AzureOpenaiModelEntry[]
 ): string[] {
   const matched = catalogForDeployment(deployment, catalog)
   const tags = ['azure-openai']
-  if (matched?.capabilities?.length) tags.push(...matched.capabilities)
-  if (hasVisionCapability(matched?.capabilities) || isOpenAiVisionModel(matched?.id ?? deployment.name)) {
+  if (matched?.capabilities?.length) {
+    tags.push(...matched.capabilities.filter((capability) => !isImageGenerationCapability(capability)))
+  }
+  if (
+    hasVisionCapability(matched?.capabilities) ||
+    (matched?.id !== undefined && isOpenAiVisionModel(matched.id))
+  ) {
     tags.push('vision')
   }
   return [...new Set(tags)]
@@ -107,6 +118,7 @@ export const azureOpenaiLlmProvider: LlmProvider = {
   async listModelsForChat(): Promise<OllamaModel[]> {
     const catalog = getAzureOpenaiModelsCatalog()
     return getAzureOpenaiDeployments()
+      .map((deployment) => ({ ...deployment, name: deployment.name.trim() }))
       .filter((deployment) => deployment.enabled && deployment.name)
       .map((deployment) => {
         const matched = catalogForDeployment(deployment, catalog)
@@ -122,7 +134,9 @@ export const azureOpenaiLlmProvider: LlmProvider = {
   },
 
   async getModelInfo(model) {
-    const deployment = getAzureOpenaiDeployments().find((entry) => entry.name === model)
+    const deployment = getAzureOpenaiDeployments().find(
+      (entry) => entry.name.trim() === model.trim()
+    )
     if (!deployment) return null
     return modelInfo(deployment, getAzureOpenaiModelsCatalog())
   },
@@ -131,9 +145,9 @@ export const azureOpenaiLlmProvider: LlmProvider = {
     return false
   },
 
-  detectVisionSupport(model, info) {
+  detectVisionSupport(_model, info) {
     if (hasVisionCapability(info?.capabilities)) return 'yes'
-    if (isOpenAiVisionModel(info?.catalogModelId ?? model)) return 'yes'
+    if (info?.catalogModelId && isOpenAiVisionModel(info.catalogModelId)) return 'yes'
     return 'unknown'
   },
 
