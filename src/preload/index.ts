@@ -63,7 +63,11 @@ const api = {
 
   images: {
     listAvailableModels: (): Promise<AvailableImageModel[]> =>
-      ipcRenderer.invoke('images:listAvailableModels')
+      ipcRenderer.invoke('images:listAvailableModels'),
+    migrateLegacyBackend: (
+      available: AvailableImageModel[]
+    ): Promise<AppConfig['imageBackend']> =>
+      ipcRenderer.invoke('images:migrateLegacyBackend', available)
   },
 
   llm: {

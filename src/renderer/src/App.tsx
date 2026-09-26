@@ -404,9 +404,11 @@ export default function App(): React.JSX.Element {
     try {
       const available = await window.api.images.listAvailableModels()
       if (!isCurrent()) return
+      const migrated = await window.api.images.migrateLegacyBackend(available)
+      if (!isCurrent()) return
       const config = await window.api.getConfig()
       if (!isCurrent()) return
-      const selected = config.imageBackend
+      const selected = migrated ?? config.imageBackend
       const preserved = selected &&
         available.some(
           (entry) =>

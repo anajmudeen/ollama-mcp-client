@@ -4,6 +4,7 @@ import Store from 'electron-store'
 import { isOpenAiImageGenModel } from '../shared/openai-models'
 import type {
   AppConfig,
+  AvailableImageModel,
   ChatMessage,
   ChatSession,
   ImageBackendSelection,
@@ -640,6 +641,25 @@ export function getImageBackend(): ImageBackendSelection | null {
   )
   if (migrated && persisted === undefined) store.set('imageBackend', migrated)
   return migrated
+}
+
+export function migrateImageBackendAfterDiscovery(
+  available: AvailableImageModel[]
+): ImageBackendSelection | null {
+  const persisted = hasPersistedImageBackend() ? store.get('imageBackend') : undefined
+  const migrated = migrateImageBackend(
+    store.get('defaultImageModel', DEFAULT_CONFIG.defaultImageModel),
+    persisted,
+    available.filter((entry) => entry.provider === 'openai').map((entry) => entry.model),
+    available.filter((entry) => entry.provider === 'ollama').map((entry) => entry.model)
+  )
+  if (migrated && persisted === undefined) store.set('imageBackend', migrated)
+  return migrated
+}
+
+/** Test-only reset for exercising first-read migration behavior. */
+export function clearImageBackendForMigrationTest(): void {
+  store.delete('imageBackend')
 }
 
 export function setImageBackend(

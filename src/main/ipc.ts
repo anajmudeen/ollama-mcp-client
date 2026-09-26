@@ -67,6 +67,7 @@ import {
   setShowThinking,
   setMaxToolIterations,
   getDefaultImageModel,
+  migrateImageBackendAfterDiscovery,
   setImageBackend,
   setDefaultImageModel,
   setTelegramAllowedUserIds,
@@ -288,6 +289,9 @@ export function registerIpc(ipcMain: IpcMain): void {
     setImageBackend(selection)
   )
   ipcMain.handle('images:listAvailableModels', () => listAvailableImageModels())
+  ipcMain.handle('images:migrateLegacyBackend', (_e, available) =>
+    migrateImageBackendAfterDiscovery(available)
+  )
   ipcMain.handle('openai:validateAndFetchModels', () => validateOpenAiAndFetchCatalog())
   ipcMain.handle('openai:refreshModels', () => validateOpenAiAndFetchCatalog())
   ipcMain.handle('openai:getStatus', () => getOpenAiStatus())

@@ -150,8 +150,8 @@ All offline gating smoke checks passed
 
 - Agent compaction now receives and uses the provider adapter resolved at turn start, so summaries cannot switch providers mid-turn.
 - Session titles use the same adapter for model listing and title generation.
-- Direct image-model generation is explicitly limited to effective Ollama models; Azure/OpenAI chat paths cannot call Ollama image generation through this branch.
-- Azure chat turns no longer receive the generic image-generation tool, preventing Azure requests from falling through to an Ollama image backend.
+- Direct image-model generation is explicitly limited to effective Ollama models; Azure/OpenAI chat paths use the independently selected image backend through image tools.
+- Azure chat turns intentionally receive image tools when a selected Ollama/OpenAI image backend is available; Azure-native image generation remains unsupported.
 - Scheduled and Telegram turns select the model from the effective provider slot before entering the shared agent queue.
 
 ### Commands and results
@@ -283,3 +283,26 @@ image tools; the backend selection is never inferred from the Azure deployment.
 | `npm run build` | **PASS** — typecheck + Electron/Vite bundles, exit 0 |
 | `npm run check:openai-vision` | **PASS** — `OpenAI vision/image classifier checks passed` |
 | `git diff --check` | **PASS** — exit 0 |
+
+## Final-review gap verification (2026-09-27)
+
+- Added deferred migration after verified image-model discovery. A legacy
+  `defaultImageModel` is persisted as `{ provider: 'ollama', model }` only when
+  `imageBackend` is absent; persisted `null` and structured selections remain
+  authoritative.
+- Updated the superseded Azure wording: Azure chat intentionally receives image
+  tools for independently selected OpenAI/Ollama image backends.
+
+| Command | Exact result |
+| --- | --- |
+| `node --test scripts/test-image-backend-routing.mjs` | **PASS** — 23/23 |
+| `node --test scripts/test-image-gen-tool.mjs` | **PASS** — 13/13 |
+| `node --test scripts/test-agent-image-attachments.mjs` | **PASS** — 11/11 |
+| `node --test scripts/test-openai-image-edit.mjs` | **PASS** — 6/6 |
+| `node --test scripts/test-config-store-migrations.mjs` | **PASS** — 1/1 |
+| `node --test scripts/test-azure-openai-client.mjs` | **PASS** — 5/5 |
+| `npm run check:openai-vision` | **PASS** |
+| `npm run typecheck` | **PASS** — node + web |
+| `npm run build` | **PASS** |
+| `git diff --check` | **PASS** |
+| IDE lints for changed files | **PASS** — no errors |

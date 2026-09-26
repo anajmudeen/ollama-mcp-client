@@ -18,6 +18,8 @@ const {
   setOpenaiValidationOk,
   setOpenaiModelEnabled,
   setOpenaiModelsCatalog,
+  migrateImageBackendAfterDiscovery,
+  clearImageBackendForMigrationTest,
   setAzureOpenaiEnabled,
   setAzureOpenaiApiKey,
   setAzureOpenaiEndpoint,
@@ -119,6 +121,16 @@ test('migrates a legacy Ollama image model when verified as installed', () => {
   )
 })
 
+test('persists deferred legacy Ollama migration after verified discovery', () => {
+  setDefaultImageModel(' flux ')
+  clearImageBackendForMigrationTest()
+  assert.deepEqual(
+    migrateImageBackendAfterDiscovery([{ provider: 'ollama', model: 'flux' }]),
+    { provider: 'ollama', model: 'flux' }
+  )
+  assert.deepEqual(getImageBackend(), { provider: 'ollama', model: 'flux' })
+})
+
 test('does not activate a legacy Ollama image model without verified availability', () => {
   setImageBackend(null)
   setDefaultImageModel(null)
@@ -134,6 +146,10 @@ test('does not activate a legacy Ollama image model without verified availabilit
 test('explicitly persisted null image backend suppresses legacy migration', () => {
   setDefaultImageModel('flux-schnell')
   setImageBackend(null)
+  assert.equal(
+    migrateImageBackendAfterDiscovery([{ provider: 'ollama', model: 'flux-schnell' }]),
+    null
+  )
   assert.equal(getImageBackend(), null)
 })
 
