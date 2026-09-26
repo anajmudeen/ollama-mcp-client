@@ -159,7 +159,7 @@ export function getConfig(): AppConfig {
     openaiModelsCatalog: getOpenaiModelsCatalog(),
     openaiModelEnabled: getOpenaiModelEnabledMap(),
     azureOpenaiEnabled: getAzureOpenaiEnabled(),
-    azureOpenaiApiKey: getAzureOpenaiApiKey(),
+    azureOpenaiApiKey: null,
     azureOpenaiEndpoint: getAzureOpenaiEndpoint(),
     azureOpenaiApiVersion: getAzureOpenaiApiVersion(),
     azureOpenaiValidationOk: getAzureOpenaiValidationState().ok,
