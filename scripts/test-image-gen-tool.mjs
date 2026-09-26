@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test, { after } from 'node:test'
+import test, { after, beforeEach } from 'node:test'
 import { createServer } from 'vite'
 
 const server = await createServer({
@@ -22,14 +22,44 @@ const {
   )
 const {
   setDefaultImageModel,
+  setLlmProvider,
   setImageBackend,
+  setOpenaiEnabled,
   setOpenaiApiKey,
+  setOpenaiValidationOk,
   setOpenaiModelEnabled,
-  setOpenaiModelsCatalog
+  setOpenaiModelsCatalog,
+  setSelectedModelForProvider,
+  setAzureOpenaiEnabled,
+  setAzureOpenaiApiKey,
+  setAzureOpenaiEndpoint,
+  setAzureOpenaiValidationOk,
+  getAzureOpenaiDeployments,
+  removeAzureOpenaiDeployment
 } = await server.ssrLoadModule(
   new URL('../src/main/config-store.ts', import.meta.url).pathname
 )
 after(() => server.close())
+
+beforeEach(() => {
+  setImageBackend(null)
+  setDefaultImageModel(null)
+  setLlmProvider('ollama')
+  setSelectedModelForProvider('ollama', null)
+  setSelectedModelForProvider('openai', null)
+  setSelectedModelForProvider('azure-openai', null)
+  setOpenaiEnabled(false)
+  setOpenaiApiKey(null)
+  setOpenaiValidationOk(false, 'test reset')
+  setOpenaiModelsCatalog([])
+  setAzureOpenaiEnabled(false)
+  setAzureOpenaiApiKey(null)
+  setAzureOpenaiEndpoint(null)
+  setAzureOpenaiValidationOk(false, 'test reset')
+  for (const deployment of getAzureOpenaiDeployments()) {
+    removeAzureOpenaiDeployment(deployment.name)
+  }
+})
 
 function response(body, status = 200) {
   return {

@@ -233,3 +233,21 @@ Replaced source-text regex assertions with behavioral tests using pure helpers:
 | `npm run build` | **PASS** (typecheck + Electron/Vite bundles, exit 0) |
 | `node scripts/check-openai-vision.mjs` | **PASS** — `OpenAI vision/image classifier checks passed` |
 | `git diff --check` | **PASS** (exit 0) |
+
+## Review follow-up: isolated routing state (2026-09-27)
+
+- Added `beforeEach` resets for image backend, legacy image model, provider,
+  provider-selected model slots, OpenAI configuration/catalog, and Azure
+  configuration/deployments in both focused suites.
+- Strengthened the Azure fallback case to configure Azure as enabled and
+  validated but with no enabled deployment, then exercise
+  `resolveEffectiveLlmProvider()` and assert Ollama fallback plus the Ollama
+  selected model.
+
+| Command | Exact result |
+| --- | --- |
+| `node scripts/test-image-backend-routing.mjs && node scripts/test-image-gen-tool.mjs` | **PASS** — routing: 20/20; image tool: 13/13; both exit 0 in sequence |
+| `npm run typecheck` | **PASS** — node + web, exit 0 |
+| `npm run build` | **PASS** — typecheck + Electron/Vite bundles, exit 0 |
+| `npm run check:openai-vision` | **PASS** — `OpenAI vision/image classifier checks passed` |
+| `git diff --check` | **PASS** — exit 0 |

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test, { after } from 'node:test'
+import test, { after, beforeEach } from 'node:test'
 import { createServer } from 'vite'
 
 const server = await createServer({
@@ -14,8 +14,18 @@ const {
   setDefaultImageModel,
   setImageBackend,
   setOpenaiApiKey,
+  setOpenaiEnabled,
+  setOpenaiValidationOk,
   setOpenaiModelEnabled,
   setOpenaiModelsCatalog,
+  setAzureOpenaiEnabled,
+  setAzureOpenaiApiKey,
+  setAzureOpenaiEndpoint,
+  setAzureOpenaiValidationOk,
+  getAzureOpenaiDeployments,
+  removeAzureOpenaiDeployment,
+  setLlmProvider,
+  setSelectedModelForProvider
 } = await server.ssrLoadModule(
   new URL('../src/main/config-store.ts', import.meta.url).pathname
 )
@@ -28,6 +38,9 @@ const {
 } = await server.ssrLoadModule(
   new URL('../src/main/image-gen-tool.ts', import.meta.url).pathname
 )
+const { resolveEffectiveLlmProvider } = await server.ssrLoadModule(
+  new URL('../src/main/llm/effective-provider.ts', import.meta.url).pathname
+)
 const { classifyImageUiModel } = await server.ssrLoadModule(
   new URL('../src/shared/image-ui.ts', import.meta.url).pathname
 )
@@ -35,6 +48,26 @@ const { selectedModelForProvider } = await server.ssrLoadModule(
   new URL('../src/shared/provider-selection.ts', import.meta.url).pathname
 )
 after(() => server.close())
+
+beforeEach(() => {
+  setImageBackend(null)
+  setDefaultImageModel(null)
+  setOpenaiEnabled(false)
+  setOpenaiApiKey(null)
+  setOpenaiValidationOk(false, 'test reset')
+  setOpenaiModelsCatalog([])
+  setLlmProvider('ollama')
+  setSelectedModelForProvider('ollama', null)
+  setSelectedModelForProvider('openai', null)
+  setSelectedModelForProvider('azure-openai', null)
+  setAzureOpenaiEnabled(false)
+  setAzureOpenaiApiKey(null)
+  setAzureOpenaiEndpoint(null)
+  setAzureOpenaiValidationOk(false, 'test reset')
+  for (const deployment of getAzureOpenaiDeployments()) {
+    removeAzureOpenaiDeployment(deployment.name)
+  }
+})
 
 test('does not show image UI for Azure image-like deployments', () => {
   assert.equal(
@@ -55,13 +88,21 @@ test('uses explicit provider behavior for OpenAI and Ollama image models', () =>
 })
 
 test('Azure fallback selects the Ollama chat slot and model', () => {
-  const slots = {
+  setLlmProvider('azure-openai')
+  setAzureOpenaiEnabled(true)
+  setAzureOpenaiApiKey('azure-test-key')
+  setAzureOpenaiEndpoint('https://example.openai.azure.com')
+  setAzureOpenaiValidationOk(true)
+  setSelectedModelForProvider('ollama', 'flux')
+  setSelectedModelForProvider('azure-openai', 'prod-gpt-image-1')
+  const result = resolveEffectiveLlmProvider()
+  assert.equal(result.effective, 'ollama')
+  assert.equal(result.fallback, true)
+  assert.equal(selectedModelForProvider({
     ollama: 'flux',
-    openai: 'gpt-image-1',
+    openai: null,
     'azure-openai': 'prod-gpt-image-1'
-  }
-  assert.equal(selectedModelForProvider(slots, 'ollama'), 'flux')
-  assert.equal(selectedModelForProvider(slots, 'azure-openai'), 'prod-gpt-image-1')
+  }, result.effective), 'flux')
 })
 
 test('migrates a legacy OpenAI image model first', () => {
