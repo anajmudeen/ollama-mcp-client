@@ -1640,11 +1640,11 @@ export default function App(): React.JSX.Element {
             onSetOpenaiEnabled={(v) => void handleSetOpenaiEnabled(v)}
             onSetOpenaiApiKey={(k) => void handleSetOpenaiApiKey(k)}
             onValidateOpenai={() => void handleValidateOpenai()}
-            onSetAzureEnabled={(v) => void handleSetAzureEnabled(v)}
-            onSetAzureApiKey={(k) => void handleSetAzureApiKey(k)}
-            onSetAzureEndpoint={(v) => void handleSetAzureEndpoint(v)}
-            onSetAzureApiVersion={(v) => void handleSetAzureApiVersion(v)}
-            onValidateAzure={() => void handleValidateAzure()}
+            onSetAzureEnabled={handleSetAzureEnabled}
+            onSetAzureApiKey={handleSetAzureApiKey}
+            onSetAzureEndpoint={handleSetAzureEndpoint}
+            onSetAzureApiVersion={handleSetAzureApiVersion}
+            onValidateAzure={handleValidateAzure}
             onOpenModelsPage={() => handleNavigate('models')}
             onSetDefaultImageModel={(model) => void handleSetDefaultImageModel(model)}
           />

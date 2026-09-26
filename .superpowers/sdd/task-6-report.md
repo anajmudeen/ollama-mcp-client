@@ -25,3 +25,16 @@
 ## Commit
 
 Commit: `041b061 feat: add Azure OpenAI settings and deployment UI`
+
+## Fix: serialize Azure draft saves before validation
+
+- Added a serialized Azure save queue in `Settings.tsx`.
+- The Validate & fetch action now awaits persistence of the current non-empty API-key draft, endpoint draft, and API-version draft before invoking validation.
+- Endpoint and API-version blur saves use the same queue, preventing blur-triggered persistence and validation from racing.
+- Preserved masked-key behavior: an empty key draft does not overwrite the configured key, which is never returned to renderer state.
+
+### Fix verification
+
+- `npm run typecheck` — passed (`typecheck:node` and `typecheck:web`).
+- `git diff --check` — passed.
+- `ReadLints` for `src/renderer/src/App.tsx` and `src/renderer/src/components/Settings.tsx` — no linter errors.

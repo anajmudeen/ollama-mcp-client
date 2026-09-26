@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   AzureOpenaiStatus,
   LlmProvider,
@@ -38,11 +38,11 @@ interface SettingsProps {
   onSetOpenaiEnabled: (enabled: boolean) => void
   onSetOpenaiApiKey: (key: string | null) => void
   onValidateOpenai: () => void
-  onSetAzureEnabled: (enabled: boolean) => void
-  onSetAzureApiKey: (key: string | null) => void
-  onSetAzureEndpoint: (endpoint: string | null) => void
-  onSetAzureApiVersion: (version: string) => void
-  onValidateAzure: () => void
+  onSetAzureEnabled: (enabled: boolean) => Promise<void>
+  onSetAzureApiKey: (key: string | null) => Promise<void>
+  onSetAzureEndpoint: (endpoint: string | null) => Promise<void>
+  onSetAzureApiVersion: (version: string) => Promise<void>
+  onValidateAzure: () => Promise<void>
   onOpenModelsPage: () => void
   onSetDefaultImageModel: (model: string | null) => void
 }
@@ -95,6 +95,7 @@ export function Settings({
   const [azureKeyDraft, setAzureKeyDraft] = useState(azureOpenaiApiKeyDraft)
   const [azureEndpointDraft, setAzureEndpointDraft] = useState(azureOpenaiEndpoint)
   const [azureVersionDraft, setAzureVersionDraft] = useState(azureOpenaiApiVersion)
+  const azureSaveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const [allowedIdsDraft, setAllowedIdsDraft] = useState(
     telegramAllowedUserIds.join(', ')
   )
@@ -120,6 +121,27 @@ export function Settings({
     setAzureEndpointDraft(azureOpenaiEndpoint)
     setAzureVersionDraft(azureOpenaiApiVersion)
   }, [azureOpenaiApiKeyDraft, azureOpenaiEndpoint, azureOpenaiApiVersion])
+
+  const persistAzureDrafts = (): Promise<void> => {
+    const save = async (): Promise<void> => {
+    const key = azureKeyDraft.trim()
+    const endpoint = azureEndpointDraft.trim() || null
+    const apiVersion = azureVersionDraft.trim() || '2024-10-21'
+
+    // The stored key is intentionally never returned to the renderer. Only
+    // persist a non-empty draft, preserving an existing masked key otherwise.
+    if (key) await onSetAzureApiKey(key)
+    if (endpoint !== (azureOpenaiEndpoint.trim() || null)) {
+      await onSetAzureEndpoint(endpoint)
+    }
+    if (apiVersion !== (azureOpenaiApiVersion.trim() || '2024-10-21')) {
+      await onSetAzureApiVersion(apiVersion)
+    }
+    }
+    const queued = azureSaveQueueRef.current.then(save, save)
+    azureSaveQueueRef.current = queued.catch(() => {})
+    return queued
+  }
 
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0f1419]">
@@ -188,9 +210,7 @@ export function Settings({
               value={azureKeyDraft}
               disabled={!azureOpenaiEnabled}
               onChange={(e) => setAzureKeyDraft(e.target.value)}
-              onBlur={() => {
-                if (azureKeyDraft.trim()) onSetAzureApiKey(azureKeyDraft.trim())
-              }}
+              onBlur={() => void persistAzureDrafts()}
               placeholder="Configured key is hidden"
               className="mb-2 w-full rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0] disabled:opacity-50"
             />
@@ -199,11 +219,7 @@ export function Settings({
               value={azureEndpointDraft}
               disabled={!azureOpenaiEnabled}
               onChange={(e) => setAzureEndpointDraft(e.target.value)}
-              onBlur={() => {
-                if (azureEndpointDraft !== azureOpenaiEndpoint) {
-                  onSetAzureEndpoint(azureEndpointDraft.trim() || null)
-                }
-              }}
+              onBlur={() => void persistAzureDrafts()}
               placeholder="https://resource.openai.azure.com"
               className="mb-2 w-full rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0] disabled:opacity-50"
             />
@@ -212,7 +228,7 @@ export function Settings({
               value={azureVersionDraft}
               disabled={!azureOpenaiEnabled}
               onChange={(e) => setAzureVersionDraft(e.target.value)}
-              onBlur={() => onSetAzureApiVersion(azureVersionDraft.trim() || '2024-10-21')}
+              onBlur={() => void persistAzureDrafts()}
               className="mb-3 w-full rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0] disabled:opacity-50"
             />
             <div className="flex flex-wrap gap-2">
@@ -220,8 +236,10 @@ export function Settings({
                 type="button"
                 disabled={!azureOpenaiEnabled}
                 onClick={() => {
-                  if (azureKeyDraft.trim()) onSetAzureApiKey(azureKeyDraft.trim())
-                  onValidateAzure()
+                  void (async () => {
+                    await persistAzureDrafts()
+                    await onValidateAzure()
+                  })()
                 }}
                 className="rounded border border-[#2a3a4d] px-3 py-1.5 text-sm text-[#c5d0dc] hover:bg-[#1a2430] disabled:opacity-50"
               >
