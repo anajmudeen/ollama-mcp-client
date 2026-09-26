@@ -399,10 +399,11 @@ export default function App(): React.JSX.Element {
       requestId !== undefined &&
       requestId !== modelRefreshRequestRef.current
     ) {
-      return
+      return null
     }
     setEffectiveProvider(status.effective)
     setProviderFallbackReason(status.fallback ? status.reason : undefined)
+    return status
   }, [])
 
   const refreshModelsForProvider = useCallback(
@@ -503,9 +504,9 @@ export default function App(): React.JSX.Element {
       const azureStatus = await window.api.azureOpenai.getStatus()
       if (requestId !== modelRefreshRequestRef.current) return
       setAzureOpenaiStatus(azureStatus)
-      await refreshEffectiveProvider(requestId)
-      if (requestId !== modelRefreshRequestRef.current) return
-      await refreshModelsForProvider(config.llmProvider, requestId)
+      const effectiveStatus = await refreshEffectiveProvider(requestId)
+      if (!effectiveStatus || requestId !== modelRefreshRequestRef.current) return
+      await refreshModelsForProvider(effectiveStatus.effective, requestId)
     },
     [
       beginProviderOperation,
@@ -1424,9 +1425,9 @@ export default function App(): React.JSX.Element {
     const config = await window.api.getConfig()
     if (requestId !== modelRefreshRequestRef.current) return
     setSelectedModel(config.selectedModel)
-    await refreshEffectiveProvider(requestId)
-    if (requestId !== modelRefreshRequestRef.current) return
-    await refreshModelsForProvider(provider, requestId)
+    const effectiveStatus = await refreshEffectiveProvider(requestId)
+    if (!effectiveStatus || requestId !== modelRefreshRequestRef.current) return
+    await refreshModelsForProvider(effectiveStatus.effective, requestId)
   }
 
   const handleSetOpenaiEnabled = async (enabled: boolean): Promise<void> => {
@@ -1460,9 +1461,9 @@ export default function App(): React.JSX.Element {
     setAzureOpenaiDeployments(config.azureOpenaiDeployments)
     setSelectedAzureOpenaiModel(config.selectedModelByProvider['azure-openai'])
     setAzureOpenaiStatus(status)
-    if (llmProvider === 'azure-openai') {
-      await refreshModelsForProvider('azure-openai', requestId)
-    }
+    const effectiveStatus = await refreshEffectiveProvider(requestId)
+    if (!effectiveStatus || requestId !== modelRefreshRequestRef.current) return
+    await refreshModelsForProvider(effectiveStatus.effective, requestId)
   }
 
   const handleSetAzureEnabled = async (enabled: boolean): Promise<void> => {
@@ -1573,9 +1574,9 @@ export default function App(): React.JSX.Element {
   const azureChatReady =
     azureOpenaiStatus.validationOk && azureOpenaiStatus.enabledDeploymentCount > 0
   const canSendBackend =
-    llmProvider === 'openai'
+    effectiveProvider === 'openai'
       ? openAiChatReady || ollamaOk
-      : llmProvider === 'azure-openai'
+      : effectiveProvider === 'azure-openai'
         ? azureChatReady || ollamaOk
         : ollamaOk
   const imageModelNames = [

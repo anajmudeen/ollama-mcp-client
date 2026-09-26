@@ -208,3 +208,33 @@ Implemented:
 Live Azure service validation was not run because no credentials or reachable
 deployment were available. These fixes were committed in the final review
 fix commit for this branch.
+
+## Final-review fix — renderer Ollama fallback
+
+Updated renderer provider/model synchronization so model catalogs and selected
+model state follow the effective provider returned by main-process fallback
+resolution. When Azure is configured but has no enabled deployments, the
+renderer now loads and displays the selected Ollama model, keeps send
+readiness based on Ollama availability, and sends that Ollama model payload.
+Azure deployment empty-state guidance remains visible only when Azure is the
+effective provider. OpenAI and Ollama provider-specific selection semantics
+remain unchanged.
+
+## Exact verification results
+
+- `npm run typecheck` — exit 0.
+- `npm run build` — exit 0; main, preload, and renderer bundles built.
+- `node scripts/test-config-store-migrations.mjs` — exit 0.
+- `node scripts/test-azure-openai-client.mjs` — exit 0.
+- `node scripts/test-image-gen-tool.mjs` — exit 0.
+- `node scripts/test-agent-image-attachments.mjs` — exit 0.
+- `node scripts/test-openai-image-edit.mjs` — exit 0.
+- `npm run check:openai-vision` — exit 0; OpenAI vision/image classifier
+  checks passed.
+- `git diff --check 4bb3cda HEAD` — exit 0.
+- `git diff --check` — exit 0.
+- IDE linter diagnostics for changed renderer files — no linter errors.
+
+No standalone renderer test harness exists in the project; the fallback
+behavior was covered by the typecheck/build path and the existing focused
+provider tests. Live Azure service validation was not run without credentials.

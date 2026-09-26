@@ -816,12 +816,12 @@ export function Chat({
             {providerFallbackReason}
           </p>
         )}
-        {llmProvider === 'azure-openai' && models.length === 0 && (
+        {effectiveProvider === 'azure-openai' && models.length === 0 && (
           <p className="mb-2 text-xs text-amber-300/90">
             Add and enable an Azure deployment on the Models page to choose an Azure chat model.
           </p>
         )}
-        {llmProvider === 'openai' && !canSend && !readOnly && (
+        {effectiveProvider === 'openai' && !canSend && !readOnly && (
           <p className="mb-2 text-xs text-amber-300/90">
             Select an enabled OpenAI model, or validate your API key in Settings.
           </p>
