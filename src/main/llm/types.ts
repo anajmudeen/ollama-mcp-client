@@ -15,6 +15,8 @@ export interface LlmChatStreamResult {
 export interface LlmModelInfo {
   capabilities?: string[]
   contextLength?: number
+  /** Provider catalog metadata for models whose selectable name is a deployment. */
+  catalogModelId?: string
 }
 
 export interface LlmProvider {

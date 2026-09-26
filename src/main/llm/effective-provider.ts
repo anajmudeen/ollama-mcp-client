@@ -1,5 +1,11 @@
 import type { LlmProvider, OpenAiStatus } from '../../shared/types'
 import {
+  getAzureOpenaiApiKey,
+  getAzureOpenaiApiVersion,
+  getAzureOpenaiDeployments,
+  getAzureOpenaiEnabled,
+  getAzureOpenaiEndpoint,
+  getAzureOpenaiValidationState,
   getLlmProvider,
   getOpenaiApiKey,
   getOpenaiEnabled,
@@ -8,6 +14,7 @@ import {
   getOpenaiValidationState
 } from '../config-store'
 import { isChatModelId } from '../openai-client'
+import { normalizeAzureEndpoint } from '../azure-openai-client'
 
 export interface EffectiveLlmProviderResult {
   configured: LlmProvider
@@ -18,8 +25,67 @@ export interface EffectiveLlmProviderResult {
 
 export function resolveEffectiveLlmProvider(): EffectiveLlmProviderResult {
   const configured = getLlmProvider()
-  if (configured !== 'openai') {
+  if (configured === 'ollama') {
     return { configured, effective: 'ollama', fallback: false }
+  }
+
+  if (configured === 'azure-openai') {
+    if (!getAzureOpenaiEnabled()) {
+      return {
+        configured,
+        effective: 'ollama',
+        fallback: true,
+        reason: 'Azure OpenAI is disabled in Settings.'
+      }
+    }
+
+    if (!getAzureOpenaiApiKey()) {
+      return {
+        configured,
+        effective: 'ollama',
+        fallback: true,
+        reason: 'Azure OpenAI API key is not configured.'
+      }
+    }
+
+    if (!getAzureOpenaiEndpoint() || !normalizeAzureEndpoint(getAzureOpenaiEndpoint() ?? '')) {
+      return {
+        configured,
+        effective: 'ollama',
+        fallback: true,
+        reason: 'Azure OpenAI endpoint is not configured.'
+      }
+    }
+
+    if (!getAzureOpenaiApiVersion().trim()) {
+      return {
+        configured,
+        effective: 'ollama',
+        fallback: true,
+        reason: 'Azure OpenAI API version is not configured.'
+      }
+    }
+
+    const { ok, error } = getAzureOpenaiValidationState()
+    if (!ok) {
+      return {
+        configured,
+        effective: 'ollama',
+        fallback: true,
+        reason: error ?? 'Azure OpenAI configuration is not validated.'
+      }
+    }
+
+    if (!getAzureOpenaiDeployments().some((deployment) => deployment.enabled && deployment.name.trim())) {
+      return {
+        configured,
+        effective: 'ollama',
+        fallback: true,
+        reason: 'Azure OpenAI has no enabled deployments.'
+      }
+    }
+
+    return { configured, effective: 'azure-openai', fallback: false }
   }
 
   if (!getOpenaiEnabled()) {
