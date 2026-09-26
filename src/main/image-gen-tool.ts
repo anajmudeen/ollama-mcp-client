@@ -4,7 +4,11 @@ import {
   getOpenaiModelsCatalog
 } from './config-store'
 import { isOpenAiImageGenModel } from '../shared/openai-models'
-import type { ImageBackendSelection, LlmProvider } from '../shared/types'
+import type {
+  AvailableImageModel,
+  ImageBackendSelection,
+  LlmProvider
+} from '../shared/types'
 import { generateImageBase64 } from './ollama-image'
 import {
   editOpenAiImageBase64,
@@ -49,11 +53,6 @@ export function isImageModelAvailable(
   availableModels: string[]
 ): boolean {
   return availableModels.includes(model)
-}
-
-export interface AvailableImageModel {
-  provider: LlmProvider
-  model: string
 }
 
 export function resolveImageBackend(

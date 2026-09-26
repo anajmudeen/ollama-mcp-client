@@ -67,6 +67,7 @@ import {
   setShowThinking,
   setMaxToolIterations,
   getDefaultImageModel,
+  setImageBackend,
   setDefaultImageModel,
   setTelegramAllowedUserIds,
   setTelegramBotToken,
@@ -114,6 +115,7 @@ import {
   resolveEffectiveLlmProvider
 } from './llm'
 import { fetchOpenAiModels, validateOpenAiKey } from './openai-client'
+import { listAvailableImageModels } from './image-gen-tool'
 import {
   fetchAzureModels,
   normalizeAzureEndpoint
@@ -281,6 +283,10 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('config:setDefaultImageModel', (_e, model: string | null) =>
     setDefaultImageModel(model)
   )
+  ipcMain.handle('config:setImageBackend', (_e, selection) =>
+    setImageBackend(selection)
+  )
+  ipcMain.handle('images:listAvailableModels', () => listAvailableImageModels())
   ipcMain.handle('openai:validateAndFetchModels', () => validateOpenAiAndFetchCatalog())
   ipcMain.handle('openai:refreshModels', () => validateOpenAiAndFetchCatalog())
   ipcMain.handle('openai:getStatus', () => getOpenAiStatus())

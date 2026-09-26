@@ -42,6 +42,11 @@ export interface ImageBackendSelection {
   model: string
 }
 
+export interface AvailableImageModel {
+  provider: ImageBackendProvider
+  model: string
+}
+
 export interface OpenAiModelEntry {
   id: string
   ownedBy?: string

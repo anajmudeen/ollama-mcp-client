@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   ActivityPhase,
+  AvailableImageModel,
   ChatEvent,
   ChatMessage,
   ChatQueueState,
@@ -15,9 +16,9 @@ import type {
   ScheduleNotificationPayload,
   SessionQueueStatus,
   TelegramStatus,
-  UiMessage
+  UiMessage,
+  ImageBackendSelection
 } from '../../shared/types'
-import { isOpenAiImageGenModel } from '../../shared/openai-models'
 import type { ServerWithStatus } from '../../preload/index'
 import type { ActivityState } from './components/ActivityIndicator'
 import { Chat } from './components/Chat'
@@ -124,7 +125,8 @@ export default function App(): React.JSX.Element {
   const [activity, setActivity] = useState<ActivityState>(IDLE_ACTIVITY)
   const [showThinking, setShowThinking] = useState(false)
   const [maxToolIterations, setMaxToolIterations] = useState(30)
-  const [defaultImageModel, setDefaultImageModel] = useState<string | null>(null)
+  const [imageBackend, setImageBackend] = useState<ImageBackendSelection | null>(null)
+  const [availableImageModels, setAvailableImageModels] = useState<AvailableImageModel[]>([])
   const [telegramEnabled, setTelegramEnabled] = useState(false)
   const [telegramAllowedUserIds, setTelegramAllowedUserIds] = useState<number[]>(
     []
@@ -393,6 +395,29 @@ export default function App(): React.JSX.Element {
     setOpenaiStatus(status)
   }, [])
 
+  const refreshAvailableImageModels = useCallback(async (): Promise<void> => {
+    try {
+      const available = await window.api.images.listAvailableModels()
+      const config = await window.api.getConfig()
+      const selected = config.imageBackend
+      const preserved = selected &&
+        available.some(
+          (entry) =>
+            entry.provider === selected.provider && entry.model === selected.model
+        )
+        ? selected
+        : null
+      if (selected && !preserved) {
+        await window.api.setImageBackend(null)
+      }
+      setAvailableImageModels(available)
+      setImageBackend(preserved)
+    } catch {
+      setAvailableImageModels([])
+      setImageBackend(null)
+    }
+  }, [])
+
   const refreshEffectiveProvider = useCallback(async (requestId?: number) => {
     const status = await window.api.llm.getEffectiveProvider()
     if (
@@ -497,7 +522,7 @@ export default function App(): React.JSX.Element {
       setShowThinking(Boolean(config.showThinking))
       showThinkingRef.current = Boolean(config.showThinking)
       setMaxToolIterations(config.maxToolIterations)
-      setDefaultImageModel(config.defaultImageModel ?? null)
+      setImageBackend(config.imageBackend ?? null)
       setTelegramEnabled(Boolean(config.telegramEnabled))
       setTelegramAllowedUserIds(config.telegramAllowedUserIds)
       await refreshOpenAiStatus(requestId)
@@ -508,12 +533,14 @@ export default function App(): React.JSX.Element {
       const effectiveStatus = await refreshEffectiveProvider(requestId)
       if (!effectiveStatus || requestId !== modelRefreshRequestRef.current) return
       await refreshModelsForProvider(effectiveStatus.effective, requestId)
+      await refreshAvailableImageModels()
     },
     [
       beginProviderOperation,
       refreshEffectiveProvider,
       refreshModelsForProvider,
-      refreshOpenAiStatus
+      refreshOpenAiStatus,
+      refreshAvailableImageModels
     ]
   )
 
@@ -553,7 +580,8 @@ export default function App(): React.JSX.Element {
       setOllamaModels([])
       setModels([])
     }
-  }, [beginProviderOperation, llmProvider])
+      await refreshAvailableImageModels()
+  }, [beginProviderOperation, llmProvider, refreshAvailableImageModels])
 
   useEffect(() => {
     void (async () => {
@@ -1396,9 +1424,11 @@ export default function App(): React.JSX.Element {
     setMaxToolIterations(saved)
   }
 
-  const handleSetDefaultImageModel = async (model: string | null): Promise<void> => {
-    const saved = await window.api.setDefaultImageModel(model)
-    setDefaultImageModel(saved)
+  const handleSetImageBackend = async (
+    selection: ImageBackendSelection | null
+  ): Promise<void> => {
+    const saved = await window.api.setImageBackend(selection)
+    setImageBackend(saved)
   }
 
   const handleSetTelegramToken = async (token: string | null): Promise<void> => {
@@ -1560,6 +1590,7 @@ export default function App(): React.JSX.Element {
     if (llmProvider === 'openai') {
       await refreshModelsForProvider('openai', requestId)
     }
+    await refreshAvailableImageModels()
   }
 
   const openAiChatReady =
@@ -1572,24 +1603,6 @@ export default function App(): React.JSX.Element {
       : effectiveProvider === 'azure-openai'
         ? azureChatReady || ollamaOk
         : ollamaOk
-  const imageModelNames = [
-    ...new Set([
-      ...ollamaModels
-        .filter(
-          (m) =>
-            m.tags?.some((t) => t.toLowerCase() === 'image') ||
-            m.capabilities?.some((c) => c.toLowerCase() === 'image') ||
-            /z-image|flux|sdxl|stable-diffusion|stable_diffusion|imagen|dreamshaper|animagine/i.test(
-              m.name
-            )
-        )
-        .map((m) => m.name),
-      ...openaiCatalog
-        .filter((m) => openaiModelEnabled[m.id] && isOpenAiImageGenModel(m.id))
-        .map((m) => m.id)
-    ])
-  ]
-
   const handleNavigate = (
     target: 'chat' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
   ): void => {
@@ -1728,8 +1741,8 @@ export default function App(): React.JSX.Element {
             baseUrl={baseUrl}
             showThinking={showThinking}
             maxToolIterations={maxToolIterations}
-            defaultImageModel={defaultImageModel}
-            imageModelNames={imageModelNames}
+            imageBackend={imageBackend}
+            availableImageModels={availableImageModels}
             telegramEnabled={telegramEnabled}
             telegramAllowedUserIds={telegramAllowedUserIds}
             telegramStatus={telegramStatus}
@@ -1758,7 +1771,7 @@ export default function App(): React.JSX.Element {
             onSetAzureApiVersion={handleSetAzureApiVersion}
             onValidateAzure={handleValidateAzure}
             onOpenModelsPage={() => handleNavigate('models')}
-            onSetDefaultImageModel={(model) => void handleSetDefaultImageModel(model)}
+            onSetImageBackend={(selection) => void handleSetImageBackend(selection)}
           />
         </div>
       ) : null}

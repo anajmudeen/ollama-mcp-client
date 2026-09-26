@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
   AzureOpenaiStatus,
+  AvailableImageModel,
+  ImageBackendSelection,
   LlmProvider,
   OpenAiStatus,
   TelegramStatus
@@ -21,8 +23,8 @@ interface SettingsProps {
   baseUrl: string
   showThinking: boolean
   maxToolIterations: number
-  defaultImageModel: string | null
-  imageModelNames: string[]
+  imageBackend: ImageBackendSelection | null
+  availableImageModels: AvailableImageModel[]
   telegramEnabled: boolean
   telegramAllowedUserIds: number[]
   telegramStatus: TelegramStatus
@@ -44,7 +46,7 @@ interface SettingsProps {
   onSetAzureApiVersion: (version: string) => Promise<void>
   onValidateAzure: () => Promise<void>
   onOpenModelsPage: () => void
-  onSetDefaultImageModel: (model: string | null) => void
+  onSetImageBackend: (selection: ImageBackendSelection | null) => void
 }
 
 export function Settings({
@@ -62,8 +64,8 @@ export function Settings({
   baseUrl,
   showThinking,
   maxToolIterations,
-  defaultImageModel,
-  imageModelNames,
+  imageBackend,
+  availableImageModels,
   telegramEnabled,
   telegramAllowedUserIds,
   telegramStatus,
@@ -85,7 +87,7 @@ export function Settings({
   onSetAzureApiVersion,
   onValidateAzure,
   onOpenModelsPage,
-  onSetDefaultImageModel
+  onSetImageBackend
 }: SettingsProps): React.JSX.Element {
   const [urlDraft, setUrlDraft] = useState(baseUrl)
   const [showToken, setShowToken] = useState(false)
@@ -504,30 +506,58 @@ export function Settings({
               />
             </label>
             <label className="mt-3 block">
-              <span className="mb-1 block text-sm text-[#e7ecf1]">Default image model</span>
+              <span className="mb-1 block text-sm text-[#e7ecf1]">Image backend</span>
               <span className="mb-2 block text-xs text-[#6b7a8c]">
-                Used when a chat model calls generate_image. Auto picks the first available
-                image model.
+                Used when a chat model calls generate_image. Image editing requires OpenAI.
               </span>
-              {imageModelNames.length === 0 ? (
-                <p className="text-xs text-[#6b7a8c]">
-                  No image models available — image generation is disabled until one is available.
-                </p>
-              ) : (
-                <select
-                  value={defaultImageModel ?? ''}
+              <select
+                  value={
+                    imageBackend
+                      ? `${imageBackend.provider}:${imageBackend.model}`
+                      : ''
+                  }
                   onChange={(e) =>
-                    onSetDefaultImageModel(e.target.value === '' ? null : e.target.value)
+                    onSetImageBackend(
+                      e.target.value === ''
+                        ? null
+                        : (() => {
+                            const separator = e.target.value.indexOf(':')
+                            return {
+                              provider: e.target.value.slice(0, separator) as ImageBackendSelection['provider'],
+                              model: e.target.value.slice(separator + 1)
+                            }
+                          })()
+                    )
                   }
                   className="w-full rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
                 >
-                  <option value="">Auto (first available)</option>
-                  {imageModelNames.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
+                  <option value="">Auto / None</option>
+                  {(['ollama', 'openai'] as const).map((provider) => {
+                    const entries = availableImageModels.filter(
+                      (entry) => entry.provider === provider
+                    )
+                    if (entries.length === 0) return null
+                    return (
+                      <optgroup
+                        key={provider}
+                        label={provider === 'openai' ? 'OpenAI' : 'Ollama'}
+                      >
+                        {entries.map((entry) => (
+                          <option
+                            key={`${entry.provider}:${entry.model}`}
+                            value={`${entry.provider}:${entry.model}`}
+                          >
+                            {provider === 'openai' ? 'OpenAI' : 'Ollama'} · {entry.model}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )
+                  })}
                 </select>
+              {availableImageModels.length === 0 && (
+                <p className="mt-2 text-xs text-[#6b7a8c]">
+                  No image models available — image generation is disabled until one is available.
+                </p>
               )}
             </label>
           </section>

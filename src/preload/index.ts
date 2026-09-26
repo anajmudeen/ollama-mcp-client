@@ -5,6 +5,7 @@ import type {
   AppConfig,
   AzureOpenaiDeploymentEntry,
   AzureOpenaiStatus,
+  AvailableImageModel,
   CatalogSkill,
   ChatEnqueueResult,
   ChatEvent,
@@ -55,6 +56,15 @@ const api = {
   ): Promise<void> => ipcRenderer.invoke('config:setSelectedModelForProvider', provider, model),
   setDefaultImageModel: (model: string | null): Promise<string | null> =>
     ipcRenderer.invoke('config:setDefaultImageModel', model),
+  setImageBackend: (
+    selection: AppConfig['imageBackend']
+  ): Promise<AppConfig['imageBackend']> =>
+    ipcRenderer.invoke('config:setImageBackend', selection),
+
+  images: {
+    listAvailableModels: (): Promise<AvailableImageModel[]> =>
+      ipcRenderer.invoke('images:listAvailableModels')
+  },
 
   llm: {
     getEffectiveProvider: (): Promise<{
