@@ -206,6 +206,10 @@ export default function App(): React.JSX.Element {
   })
   const queueStateRef = useRef<ChatQueueState>({ running: null, queued: [] })
   const modelRefreshRequestRef = useRef(0)
+  const beginProviderOperation = useCallback((): number => {
+    modelRefreshRequestRef.current += 1
+    return modelRefreshRequestRef.current
+  }, [])
 
   const syncMessages = useCallback((next: UiMessage[]) => {
     messagesRef.current = next
@@ -405,17 +409,18 @@ export default function App(): React.JSX.Element {
             provider === 'openai'
               ? await window.api.openai.listChatModels()
               : await window.api.azureOpenai.listChatModels()
-          if (!isCurrentRequest()) return
-          setModels(list)
           const names = list.map((m) => m.name)
           const config = await window.api.getConfig()
           if (!isCurrentRequest()) return
           const saved = config.selectedModelByProvider[provider]
           const next = saved && names.includes(saved) ? saved : names[0] ?? null
-          setSelectedModel(next)
           if (!saved || !names.includes(saved)) {
             await window.api.setSelectedModelForProvider(provider, next)
+            if (!isCurrentRequest()) return
           }
+          if (!isCurrentRequest()) return
+          setModels(list)
+          setSelectedModel(next)
         } catch {
           if (!isCurrentRequest()) return
           setModels([])
@@ -441,9 +446,6 @@ export default function App(): React.JSX.Element {
         return
       }
       const list = await window.api.ollama.listModels()
-      if (!isCurrentRequest()) return
-      setOllamaModels(list)
-      setModels(list)
       const names = list.map((m) => m.name)
       const config = await window.api.getConfig()
       if (!isCurrentRequest()) return
@@ -452,7 +454,12 @@ export default function App(): React.JSX.Element {
       setSelectedModel(next)
       if (!saved || !names.includes(saved)) {
         await window.api.setSelectedModelForProvider('ollama', next)
+        if (!isCurrentRequest()) return
       }
+      if (!isCurrentRequest()) return
+      setOllamaModels(list)
+      setModels(list)
+      setSelectedModel(next)
     },
     []
   )
@@ -1383,7 +1390,7 @@ export default function App(): React.JSX.Element {
   }
 
   const handleSetLlmProvider = async (provider: LlmProvider): Promise<void> => {
-    const requestId = ++modelRefreshRequestRef.current
+    const requestId = beginProviderOperation()
     await window.api.setLlmProvider(provider)
     if (requestId !== modelRefreshRequestRef.current) return
     setLlmProvider(provider)
@@ -1409,8 +1416,11 @@ export default function App(): React.JSX.Element {
     await refreshEffectiveProvider()
   }
 
-  const refreshAzureConfig = async (): Promise<void> => {
+  const refreshAzureConfig = async (requestId: number): Promise<void> => {
     const config = await window.api.getConfig()
+    if (requestId !== modelRefreshRequestRef.current) return
+    const status = await window.api.azureOpenai.getStatus()
+    if (requestId !== modelRefreshRequestRef.current) return
     setAzureOpenaiEnabled(config.azureOpenaiEnabled)
     setAzureOpenaiApiKeyDraft('')
     setAzureOpenaiEndpoint(config.azureOpenaiEndpoint ?? '')
@@ -1418,63 +1428,89 @@ export default function App(): React.JSX.Element {
     setAzureOpenaiCatalog(config.azureOpenaiModelsCatalog)
     setAzureOpenaiDeployments(config.azureOpenaiDeployments)
     setSelectedAzureOpenaiModel(config.selectedModelByProvider['azure-openai'])
-    setAzureOpenaiStatus(await window.api.azureOpenai.getStatus())
-    if (llmProvider === 'azure-openai') await refreshModelsForProvider('azure-openai')
+    setAzureOpenaiStatus(status)
+    if (llmProvider === 'azure-openai') {
+      await refreshModelsForProvider('azure-openai', requestId)
+    }
   }
 
   const handleSetAzureEnabled = async (enabled: boolean): Promise<void> => {
+    const requestId = beginProviderOperation()
     await window.api.azureOpenai.setEnabled(enabled)
-    await refreshAzureConfig()
-    await refreshEffectiveProvider()
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
+    await refreshEffectiveProvider(requestId)
   }
 
   const handleSetAzureApiKey = async (key: string | null): Promise<void> => {
+    const requestId = beginProviderOperation()
     await window.api.azureOpenai.setApiKey(key)
-    await refreshAzureConfig()
-    await refreshEffectiveProvider()
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
+    await refreshEffectiveProvider(requestId)
   }
 
   const handleSetAzureEndpoint = async (endpoint: string | null): Promise<void> => {
+    const requestId = beginProviderOperation()
     await window.api.azureOpenai.setEndpoint(endpoint)
-    await refreshAzureConfig()
-    await refreshEffectiveProvider()
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
+    await refreshEffectiveProvider(requestId)
   }
 
   const handleSetAzureApiVersion = async (version: string): Promise<void> => {
+    const requestId = beginProviderOperation()
     await window.api.azureOpenai.setApiVersion(version)
-    await refreshAzureConfig()
-    await refreshEffectiveProvider()
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
+    await refreshEffectiveProvider(requestId)
   }
 
   const handleValidateAzure = async (): Promise<void> => {
+    const requestId = beginProviderOperation()
     await window.api.azureOpenai.validateAndFetchModels()
-    await refreshAzureConfig()
-    await refreshEffectiveProvider()
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
+    await refreshEffectiveProvider(requestId)
   }
 
   const handleRefreshAzure = async (): Promise<void> => {
+    const requestId = beginProviderOperation()
     await window.api.azureOpenai.refreshModels()
-    await refreshAzureConfig()
-    await refreshEffectiveProvider()
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
+    await refreshEffectiveProvider(requestId)
   }
 
   const handleToggleAzureDeployment = async (name: string, enabled: boolean): Promise<void> => {
+    const requestId = beginProviderOperation()
     await window.api.azureOpenai.setDeploymentEnabled(name, enabled)
-    await refreshAzureConfig()
-    await refreshEffectiveProvider()
-    if (llmProvider === 'azure-openai') await refreshModelsForProvider('azure-openai')
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
+    await refreshEffectiveProvider(requestId)
+    if (requestId !== modelRefreshRequestRef.current) return
+    if (llmProvider === 'azure-openai') {
+      await refreshModelsForProvider('azure-openai', requestId)
+    }
   }
 
   const handleAddAzureDeployment = async (name: string): Promise<void> => {
+    const requestId = beginProviderOperation()
     await window.api.azureOpenai.addDeployment(name)
-    await refreshAzureConfig()
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
   }
 
   const handleRemoveAzureDeployment = async (name: string): Promise<void> => {
+    const requestId = beginProviderOperation()
     await window.api.azureOpenai.removeDeployment(name)
-    await refreshAzureConfig()
-    await refreshEffectiveProvider()
-    if (llmProvider === 'azure-openai') await refreshModelsForProvider('azure-openai')
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
+    await refreshEffectiveProvider(requestId)
+    if (requestId !== modelRefreshRequestRef.current) return
+    if (llmProvider === 'azure-openai') {
+      await refreshModelsForProvider('azure-openai', requestId)
+    }
   }
 
   const handleValidateOpenai = async (): Promise<void> => {
