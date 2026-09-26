@@ -7,7 +7,13 @@ const server = await createServer({
   server: { middlewareMode: true },
   appType: 'custom'
 })
-const { migrateImageBackend } = await server.ssrLoadModule(
+const {
+  getConfig,
+  getImageBackend,
+  migrateImageBackend,
+  setDefaultImageModel,
+  setImageBackend
+} = await server.ssrLoadModule(
   new URL('../src/main/config-store.ts', import.meta.url).pathname
 )
 after(() => server.close())
@@ -26,6 +32,20 @@ test('migrates a legacy Ollama image model when verified as installed', () => {
   )
 })
 
+test('production migration path identifies a legacy Ollama image model locally', () => {
+  setImageBackend(null)
+  setDefaultImageModel(' flux-schnell ')
+  try {
+    assert.deepEqual(getImageBackend(), {
+      provider: 'ollama',
+      model: 'flux-schnell'
+    })
+  } finally {
+    setImageBackend(null)
+    setDefaultImageModel(null)
+  }
+})
+
 test('does not migrate an unresolved legacy model', () => {
   assert.equal(migrateImageBackend('unknown', null, [], []), null)
 })
@@ -42,4 +62,9 @@ test('preserves provider identity when model names collide', () => {
     migrateImageBackend('same', { provider: 'ollama', model: ' same ' }, ['same'], ['same']),
     { provider: 'ollama', model: 'same' }
   )
+})
+
+test('does not expose the OpenAI API key through getConfig', () => {
+  const config = getConfig()
+  assert.equal(config.openaiApiKey, null)
 })

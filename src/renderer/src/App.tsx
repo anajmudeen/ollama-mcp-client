@@ -481,7 +481,8 @@ export default function App(): React.JSX.Element {
       setBaseUrl(config.ollamaBaseUrl)
       setLlmProvider(config.llmProvider)
       setOpenaiEnabled(config.openaiEnabled)
-      setOpenaiApiKeyDraft(config.openaiApiKey ?? '')
+      // API keys stay in the main process; the Settings input is write-only.
+      setOpenaiApiKeyDraft('')
       setOpenaiCatalog(config.openaiModelsCatalog)
       setOpenaiModelEnabled(config.openaiModelEnabled)
       setSelectedOpenAiModel(config.selectedModelByProvider.openai)

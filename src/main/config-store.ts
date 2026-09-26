@@ -179,7 +179,7 @@ export function getConfig(): AppConfig {
     selectedModel,
     llmProvider,
     openaiEnabled: store.get('openaiEnabled', DEFAULT_CONFIG.openaiEnabled),
-    openaiApiKey: store.get('openaiApiKey', DEFAULT_CONFIG.openaiApiKey),
+    openaiApiKey: null,
     openaiValidationOk: store.get(
       'openaiValidationOk',
       DEFAULT_CONFIG.openaiValidationOk
@@ -584,6 +584,11 @@ function normalizeImageBackend(
   return { provider, model }
 }
 
+// Keep this conservative and local: getConfig() is synchronous, and a legacy
+// name can only be migrated to Ollama when its name identifies an image model.
+const LEGACY_OLLAMA_IMAGE_MODEL_RE =
+  /z-image|flux|sdxl|stable-diffusion|stable_diffusion|imagen|dreamshaper|animagine/i
+
 /**
  * Resolve a legacy model against already-verified availability.
  *
@@ -628,8 +633,17 @@ export function getImageBackend(): ImageBackendSelection | null {
         isOpenAiImageGenModel(id)
     )
   const legacy = store.get('defaultImageModel', DEFAULT_CONFIG.defaultImageModel)
-  const migrated = migrateImageBackend(legacy, persisted, openaiImageModels, [])
-  if (migrated && !persisted) store.set('imageBackend', migrated)
+  const ollamaImageModels =
+    typeof legacy === 'string' && LEGACY_OLLAMA_IMAGE_MODEL_RE.test(legacy.trim())
+      ? [legacy.trim()]
+      : []
+  const migrated = migrateImageBackend(
+    legacy,
+    persisted,
+    openaiImageModels,
+    ollamaImageModels
+  )
+  if (migrated && !normalizeImageBackend(persisted)) store.set('imageBackend', migrated)
   return migrated
 }
 
