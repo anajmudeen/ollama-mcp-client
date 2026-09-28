@@ -1,7 +1,7 @@
 import type { ChatSession, ChatQueueState, SessionQueueStatus } from '../../../shared/types'
 import appIcon from '../assets/icon-128.png'
 
-type AppView = 'chat' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
+type AppView = 'chat' | 'image' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
 
 function queueStatusForSession(
   sessionId: string,
@@ -37,6 +37,22 @@ function NavIconChat(): React.JSX.Element {
         d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H9l-2.5 2v-2h-4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z"
         stroke="currentColor"
         strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function NavIconImage(): React.JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="5.5" cy="6" r="1" fill="currentColor" />
+      <path
+        d="m3.5 11 2.8-2.7 2.1 1.8 1.4-1.3 2.7 2.2"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
@@ -110,6 +126,7 @@ const VIEW_NAV: Array<{
   icon: () => React.JSX.Element
 }> = [
   { id: 'chat', label: 'Chat', icon: NavIconChat },
+  { id: 'image', label: 'Image', icon: NavIconImage },
   { id: 'models', label: 'Models', icon: NavIconModels },
   { id: 'mcp', label: 'MCP Servers', icon: NavIconMcp },
   { id: 'skills', label: 'Skills', icon: NavIconSkills },

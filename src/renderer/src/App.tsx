@@ -23,6 +23,7 @@ import { selectedModelForProvider } from '../../shared/provider-selection'
 import type { ServerWithStatus } from '../../preload/index'
 import type { ActivityState } from './components/ActivityIndicator'
 import { Chat } from './components/Chat'
+import { ImageGeneration } from './components/ImageGeneration'
 import { McpCatalogPage } from './components/McpCatalogPage'
 import { ModelsPage } from './components/ModelsPage'
 import { Settings } from './components/Settings'
@@ -137,7 +138,7 @@ export default function App(): React.JSX.Element {
   })
   const [telegramTokenDraft, setTelegramTokenDraft] = useState('')
   const [view, setView] = useState<
-    'chat' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
+    'chat' | 'image' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
   >('chat')
   const [modelsVisited, setModelsVisited] = useState(false)
   const [mcpVisited, setMcpVisited] = useState(false)
@@ -1617,7 +1618,7 @@ export default function App(): React.JSX.Element {
         ? azureChatReady || ollamaOk
         : ollamaOk
   const handleNavigate = (
-    target: 'chat' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
+    target: 'chat' | 'image' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
   ): void => {
     if (target === 'models') {
       setModelsVisited(true)
@@ -1788,6 +1789,7 @@ export default function App(): React.JSX.Element {
           />
         </div>
       ) : null}
+      {view === 'image' ? <ImageGeneration active={view === 'image'} /> : null}
       {view === 'chat' ? (
         <Chat
           key={activeSessionId ?? 'chat'}
