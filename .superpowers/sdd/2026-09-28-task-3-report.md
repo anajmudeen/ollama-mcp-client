@@ -78,7 +78,7 @@ remain manually verified only.
 
 ## Commit
 
-- `5f3088e3ac8b0796a7f2a69289d3c5ef30beb46b`
+- `9d2204b fix: show image discovery failure state`
 
 ## Verification
 
@@ -108,3 +108,15 @@ remain manually verified only.
 
 - No focused renderer tests were added because the repository still has no
   configured renderer test runner or established renderer test convention.
+
+## Remaining finding fix
+
+- Discovery failures now render a clear retryable failure/setup state instead of
+  the image model form; generation remains unavailable while discovery fails.
+- Gallery rendering and existing gallery actions remain available independently.
+
+## Final verification
+
+- `npm run typecheck` — passed.
+- `npm run build` — passed.
+- `git diff --check` — passed.
