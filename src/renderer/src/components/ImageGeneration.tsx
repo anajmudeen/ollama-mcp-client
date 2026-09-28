@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AvailableImageModel,
   ImageGalleryItem,
@@ -40,12 +40,19 @@ export function ImageGeneration({
   const [prompt, setPrompt] = useState('')
   const [gallery, setGallery] = useState<ImageGalleryItem[]>([])
   const [selectedPreview, setSelectedPreview] = useState<ImageGalleryItem | null>(null)
+  const [newestResult, setNewestResult] = useState<ImageGalleryItem | null>(null)
+  const [discoveryLoading, setDiscoveryLoading] = useState(true)
+  const [modelLoadFailed, setModelLoadFailed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null)
+  const loadToken = useRef(0)
 
   const load = useCallback(async (): Promise<void> => {
+    const token = ++loadToken.current
     setError(null)
+    setDiscoveryLoading(true)
+    setModelLoadFailed(false)
     const [modelsResult, galleryResult] = await Promise.allSettled([
       window.api.images.listAvailableModels(),
       window.api.images.listGallery()
@@ -53,6 +60,7 @@ export function ImageGeneration({
 
     const errors: string[] = []
     if (modelsResult.status === 'fulfilled') {
+      if (token !== loadToken.current) return
       const available = modelsResult.value
       setModels(available)
       setSelectedModel((current) => {
@@ -68,25 +76,34 @@ export function ImageGeneration({
         return available[0] ?? null
       })
     } else {
+      if (token !== loadToken.current) return
+      setModelLoadFailed(true)
       errors.push('Unable to load image models.')
     }
+    if (token === loadToken.current) setDiscoveryLoading(false)
 
     if (galleryResult.status === 'fulfilled') {
+      if (token !== loadToken.current) return
       setGallery(galleryResult.value)
+      setNewestResult(galleryResult.value[0] ?? null)
       setSelectedPreview((current) => {
         if (!current) return galleryResult.value[0] ?? null
         return galleryResult.value.find((item) => item.id === current.id) ?? null
       })
     } else {
+      if (token !== loadToken.current) return
       errors.push('Unable to load image gallery.')
     }
 
-    if (errors.length) setError(errors.join(' '))
+    if (token === loadToken.current && errors.length) setError(errors.join(' '))
   }, [])
 
   useEffect(() => {
     if (!active) return
     void load()
+    return () => {
+      loadToken.current += 1
+    }
   }, [active, load])
 
   const previewImages = useMemo(
@@ -96,7 +113,7 @@ export function ImageGeneration({
   const previewIndex = selectedPreview
     ? gallery.findIndex((item) => item.id === selectedPreview.id)
     : -1
-  const newest = selectedPreview ?? gallery[0] ?? null
+  const newest = newestResult ?? gallery[0] ?? null
 
   const generate = async (): Promise<void> => {
     const trimmedPrompt = prompt.trim()
@@ -143,6 +160,7 @@ export function ImageGeneration({
           ...current.filter((entry) => entry.id !== item.id)
         ])
       }
+      setNewestResult(previewItem)
       setSelectedPreview(previewItem)
       if (result.persistenceError) setPersistenceWarning(result.persistenceError)
     } catch (cause) {
@@ -161,6 +179,9 @@ export function ImageGeneration({
       }
       setGallery((current) => {
         const next = current.filter((entry) => entry.id !== item.id)
+        setNewestResult((newestItem) =>
+          newestItem?.id === item.id ? next[0] ?? null : newestItem
+        )
         setSelectedPreview((preview) =>
           preview?.id === item.id ? next[0] ?? null : preview
         )
@@ -200,7 +221,13 @@ export function ImageGeneration({
           </div>
         )}
 
-        {models.length === 0 ? (
+        {discoveryLoading ? (
+          <section className="rounded-xl border border-[#2a3a4d] bg-[#121820] p-6">
+            <p className="text-sm text-[#8b9aab]" role="status">
+              Discovering available image models…
+            </p>
+          </section>
+        ) : models.length === 0 && !modelLoadFailed ? (
           <section className="rounded-xl border border-[#2a3a4d] bg-[#121820] p-6">
             <h2 className="text-base font-medium text-[#e7ecf1]">Set up an image model</h2>
             <p className="mt-2 max-w-xl text-sm text-[#8b9aab]">
@@ -327,7 +354,6 @@ export function ImageGeneration({
                     <div className="mt-2 flex flex-wrap gap-1">
                       <DownloadImageButton
                         src={imageSrc(item)}
-                        filename={`ollama-image-${item.id}.${item.mime.split('/')[1] ?? 'png'}`}
                       />
                       <CopyButton text={item.prompt} label="Copy prompt" />
                       <button
