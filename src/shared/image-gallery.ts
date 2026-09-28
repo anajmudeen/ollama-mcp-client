@@ -8,6 +8,14 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+function isIsoTimestamp(value: string): boolean {
+  return (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      value
+    ) && Number.isFinite(Date.parse(value))
+  )
+}
+
 function normalizeItem(value: unknown): ImageGalleryItem | null {
   if (!isRecord(value)) return null
 
@@ -27,7 +35,7 @@ function normalizeItem(value: unknown): ImageGalleryItem | null {
     !model ||
     (provider !== 'ollama' && provider !== 'openai') ||
     !createdAt ||
-    !Number.isFinite(Date.parse(createdAt))
+    !isIsoTimestamp(createdAt)
   ) {
     return null
   }
@@ -55,4 +63,10 @@ export function normalizeImageGallery(value: unknown): ImageGalleryItem[] {
     normalized.push(item)
   }
   return normalized
+}
+
+export function sortImageGalleryItems(items: ImageGalleryItem[]): ImageGalleryItem[] {
+  return [...items].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+  )
 }

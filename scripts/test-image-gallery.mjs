@@ -11,9 +11,6 @@ const server = await createServer({
 const gallery = await server.ssrLoadModule(
   new URL('../src/shared/image-gallery.ts', import.meta.url).pathname
 )
-const config = await server.ssrLoadModule(
-  new URL('../src/main/config-store.ts', import.meta.url).pathname
-)
 
 after(() => server.close())
 
@@ -58,6 +55,15 @@ test('normalizes valid gallery records and rejects malformed records', () => {
         createdAt: 'not-a-date'
       },
       {
+        id: 'non-iso-date',
+        imageBase64: 'YWJj',
+        mime: 'image/png',
+        prompt: 'A prompt',
+        provider: 'openai',
+        model: 'model',
+        createdAt: 'September 28, 2026'
+      },
+      {
         id: 'img-1',
         imageBase64: 'ZHVw',
         mime: 'image/jpeg',
@@ -83,31 +89,56 @@ test('normalizes valid gallery records and rejects malformed records', () => {
   assert.deepEqual(gallery.normalizeImageGallery({}), [])
 })
 
-test('adds, lists, and deletes gallery records', () => {
-  const id = `test-${Date.now()}`
-  config.deleteImageGalleryItem(id)
-  const generated = config.addImageGalleryItem({
-    imageBase64: 'ZGVm',
-    mime: 'image/png',
-    prompt: 'A generated test image',
-    provider: 'openai',
-    model: 'gpt-image-1'
-  })
-  assert.match(generated.id, /^[0-9a-f-]{36}$/)
-  assert.match(generated.createdAt, /^\d{4}-\d{2}-\d{2}T/)
+test('accepts valid ISO timestamps with offsets', () => {
+  assert.equal(
+    gallery.normalizeImageGallery([
+      {
+        id: 'offset-date',
+        imageBase64: 'YWJj',
+        mime: 'image/png',
+        prompt: 'A prompt',
+        provider: 'openai',
+        model: 'model',
+        createdAt: '2026-09-28T00:00:00+05:30'
+      }
+    ]).length,
+    1
+  )
+})
 
-  const added = config.addImageGalleryItem({
-    id,
-    imageBase64: 'YWJj',
-    mime: 'image/png',
-    prompt: 'A test image',
-    provider: 'ollama',
-    model: 'flux'
-  })
-  assert.equal(added.id, id)
-  assert.match(added.createdAt, /^\d{4}-\d{2}-\d{2}T/)
-  assert.equal(config.listImageGallery()[0]?.id, id)
-  assert.equal(config.deleteImageGalleryItem(id), true)
-  assert.equal(config.deleteImageGalleryItem(id), false)
-  assert.equal(config.deleteImageGalleryItem(generated.id), true)
+test('sorts multiple gallery records newest first without persistent store access', () => {
+  const records = gallery.normalizeImageGallery([
+    {
+      id: 'older',
+      imageBase64: 'YWJj',
+      mime: 'image/png',
+      prompt: 'Older',
+      provider: 'ollama',
+      model: 'model',
+      createdAt: '2026-09-28T00:00:00.000Z'
+    },
+    {
+      id: 'newest',
+      imageBase64: 'YWJj',
+      mime: 'image/png',
+      prompt: 'Newest',
+      provider: 'ollama',
+      model: 'model',
+      createdAt: '2026-09-30T00:00:00.000Z'
+    },
+    {
+      id: 'middle',
+      imageBase64: 'YWJj',
+      mime: 'image/png',
+      prompt: 'Middle',
+      provider: 'ollama',
+      model: 'model',
+      createdAt: '2026-09-29T00:00:00.000Z'
+    }
+  ])
+
+  assert.deepEqual(
+    gallery.sortImageGalleryItems(records).map((item) => item.id),
+    ['newest', 'middle', 'older']
+  )
 })

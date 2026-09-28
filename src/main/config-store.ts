@@ -2,7 +2,8 @@ import { randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
 import Store from 'electron-store'
 import {
-  normalizeImageGallery
+  normalizeImageGallery,
+  sortImageGalleryItems
 } from '../shared/image-gallery'
 import { isOpenAiImageGenModel } from '../shared/openai-models'
 import type {
@@ -692,9 +693,7 @@ export function setDefaultImageModel(model: string | null): string | null {
 export function listImageGallery(): ImageGalleryItem[] {
   const normalized = normalizeImageGallery(store.get('imageGallery', []))
   store.set('imageGallery', normalized)
-  return [...normalized].sort(
-    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
-  )
+  return sortImageGalleryItems(normalized)
 }
 
 export function addImageGalleryItem(
