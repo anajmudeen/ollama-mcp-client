@@ -1,6 +1,9 @@
 import { randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
 import Store from 'electron-store'
+import {
+  normalizeImageGallery
+} from '../shared/image-gallery'
 import { isOpenAiImageGenModel } from '../shared/openai-models'
 import type {
   AppConfig,
@@ -8,6 +11,7 @@ import type {
   ChatMessage,
   ChatSession,
   ImageBackendSelection,
+  ImageGalleryItem,
   LlmProvider,
   McpServerConfig,
   AzureOpenaiDeploymentEntry,
@@ -60,6 +64,7 @@ const DEFAULT_CONFIG: AppConfig = {
 interface StoreSchema extends AppConfig, SessionsState {
   skillEnabled: Record<string, boolean>
   schedules: TelegramSchedule[]
+  imageGallery: ImageGalleryItem[]
 }
 
 function sessionOrigin(session: ChatSession): SessionOrigin {
@@ -87,7 +92,8 @@ const store = new Store<StoreSchema>({
     activeSessionId: null,
     telegramActiveSessionId: null,
     skillEnabled: {},
-    schedules: []
+    schedules: [],
+    imageGallery: []
   }
 })
 
@@ -681,6 +687,40 @@ export function setDefaultImageModel(model: string | null): string | null {
   const value = model && model.trim() ? model.trim() : null
   store.set('defaultImageModel', value)
   return value
+}
+
+export function listImageGallery(): ImageGalleryItem[] {
+  const normalized = normalizeImageGallery(store.get('imageGallery', []))
+  store.set('imageGallery', normalized)
+  return [...normalized].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+  )
+}
+
+export function addImageGalleryItem(
+  input: Omit<ImageGalleryItem, 'id' | 'createdAt'> & {
+    id?: string
+    createdAt?: string
+  }
+): ImageGalleryItem {
+  const candidate = {
+    ...input,
+    id: input.id ?? randomUUID(),
+    createdAt: input.createdAt ?? new Date().toISOString()
+  }
+  const item = normalizeImageGallery([candidate])[0]
+  if (!item) throw new Error('Invalid image gallery item')
+  const records = normalizeImageGallery([item, ...store.get('imageGallery', [])])
+  store.set('imageGallery', records)
+  return item
+}
+
+export function deleteImageGalleryItem(id: string): boolean {
+  const records = normalizeImageGallery(store.get('imageGallery', []))
+  const next = records.filter((item) => item.id !== id)
+  if (next.length === records.length) return false
+  store.set('imageGallery', next)
+  return true
 }
 
 export function addTelegramAllowedUserId(id: number): number[] {

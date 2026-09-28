@@ -47,6 +47,16 @@ export interface AvailableImageModel {
   model: string
 }
 
+export interface ImageGalleryItem {
+  id: string
+  imageBase64: string
+  mime: string
+  prompt: string
+  provider: ImageBackendProvider
+  model: string
+  createdAt: string
+}
+
 export interface OpenAiModelEntry {
   id: string
   ownedBy?: string
