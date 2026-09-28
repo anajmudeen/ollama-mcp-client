@@ -33,6 +33,7 @@ const {
 )
 const {
   listAvailableImageModels,
+  listAvailableImageModelsForPage,
   resolveImageBackend,
   shouldOfferGenerateImageTool,
   runEditImageTool,
@@ -255,6 +256,31 @@ test('discovers Ollama and enabled OpenAI image models independently', async () 
       { provider: 'ollama', model: 'flux' },
       { provider: 'openai', model: 'gpt-image-1' }
     ])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('preserves Ollama discovery failures for the Image page while keeping OpenAI models', async () => {
+  setOpenaiEnabled(true)
+  setOpenaiApiKey('test-key')
+  setOpenaiValidationOk(true)
+  setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
+  setOpenaiModelEnabled('gpt-image-1', true)
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (input) => {
+    if (String(input).endsWith('/api/tags')) {
+      throw new Error('Ollama unavailable')
+    }
+    throw new Error(`Unexpected fetch: ${String(input)}`)
+  }
+
+  try {
+    assert.deepEqual(await listAvailableImageModelsForPage(), {
+      ok: false,
+      models: [{ provider: 'openai', model: 'gpt-image-1' }],
+      error: 'Ollama unavailable'
+    })
   } finally {
     globalThis.fetch = originalFetch
   }

@@ -403,8 +403,9 @@ export default function App(): React.JSX.Element {
     const isCurrent = (): boolean =>
       generation === imageDiscoveryGenerationRef.current
     try {
-      const available = await window.api.images.listAvailableModels()
+      const discovery = await window.api.images.listAvailableModels()
       if (!isCurrent()) return
+      const available = discovery.models
       const migrated = await window.api.images.migrateLegacyBackend(available)
       if (!isCurrent()) return
       const config = await window.api.getConfig()

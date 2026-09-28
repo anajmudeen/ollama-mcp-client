@@ -61,8 +61,12 @@ export function ImageGeneration({
     const errors: string[] = []
     if (modelsResult.status === 'fulfilled') {
       if (token !== loadToken.current) return
-      const available = modelsResult.value
+      const available = modelsResult.value.models
       setModels(available)
+      if (!modelsResult.value.ok) {
+        setModelLoadFailed(true)
+        errors.push(`Unable to load image models: ${modelsResult.value.error}`)
+      }
       setSelectedModel((current) => {
         if (
           current &&
@@ -227,7 +231,7 @@ export function ImageGeneration({
               Discovering available image models…
             </p>
           </section>
-        ) : modelLoadFailed ? (
+        ) : modelLoadFailed && models.length === 0 ? (
           <section
             className="rounded-xl border border-[#8f4650]/60 bg-[#3a2026] p-6"
             role="alert"

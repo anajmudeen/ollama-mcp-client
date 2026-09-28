@@ -122,7 +122,7 @@ import {
 import { fetchOpenAiModels, validateOpenAiKey } from './openai-client'
 import {
   generateImageForBackend,
-  listAvailableImageModels
+  listAvailableImageModelsForPage
 } from './image-gen-tool'
 import {
   fetchAzureModels,
@@ -295,7 +295,7 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('config:setImageBackend', (_e, selection) =>
     setImageBackend(selection)
   )
-  ipcMain.handle('images:listAvailableModels', () => listAvailableImageModels())
+  ipcMain.handle('images:listAvailableModels', () => listAvailableImageModelsForPage())
   ipcMain.handle('images:generate', async (_e, request: ImageGenerationRequest) => {
     if (
       !request ||

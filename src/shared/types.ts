@@ -47,6 +47,10 @@ export interface AvailableImageModel {
   model: string
 }
 
+export type ImageModelDiscoveryResult =
+  | { ok: true; models: AvailableImageModel[] }
+  | { ok: false; models: AvailableImageModel[]; error: string }
+
 export interface ImageGenerationRequest {
   provider: ImageBackendProvider
   model: string

@@ -17,6 +17,7 @@ import type {
   ImageGenerationRequest,
   ImageGenerationResult,
   ImageGalleryItem,
+  ImageModelDiscoveryResult,
   LibraryModelDetail,
   LibrarySearchParams,
   LibrarySearchResult,
@@ -65,7 +66,7 @@ const api = {
     ipcRenderer.invoke('config:setImageBackend', selection),
 
   images: {
-    listAvailableModels: (): Promise<AvailableImageModel[]> =>
+    listAvailableModels: (): Promise<ImageModelDiscoveryResult> =>
       ipcRenderer.invoke('images:listAvailableModels'),
     generate: (request: ImageGenerationRequest): Promise<ImageGenerationResult> =>
       ipcRenderer.invoke('images:generate', request),

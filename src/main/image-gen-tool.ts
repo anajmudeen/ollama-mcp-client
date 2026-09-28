@@ -12,6 +12,7 @@ import type {
   ImageBackendSelection,
   ImageGenerationRequest,
   ImageGenerationResult,
+  ImageModelDiscoveryResult,
   LlmProvider
 } from '../shared/types'
 import { generateImageBase64 } from './ollama-image'
@@ -106,6 +107,41 @@ export async function listAvailableImageModels(): Promise<AvailableImageModel[]>
   }
 
   return imageModels
+}
+
+export async function listAvailableImageModelsForPage(): Promise<ImageModelDiscoveryResult> {
+  const imageModels: AvailableImageModel[] = []
+  let ollamaError: string | undefined
+
+  const ollamaStatus = await getOllamaStatus()
+  if (ollamaStatus.ok && ollamaStatus.imageGenSupported !== false) {
+    try {
+      const names = await listInstalledImageModelNames()
+      imageModels.push(
+        ...names.map((model) => ({ provider: 'ollama' as const, model }))
+      )
+    } catch (err) {
+      ollamaError = err instanceof Error ? err.message : String(err)
+    }
+  } else if (!ollamaStatus.ok) {
+    ollamaError = ollamaStatus.error ?? 'Unable to connect to Ollama'
+  }
+
+  const { ok: openaiValidated } = getOpenaiValidationState()
+  if (getOpenaiEnabled() && Boolean(getOpenaiApiKey()) && openaiValidated) {
+    const catalog = getOpenaiModelsCatalog()
+    const enabled = getOpenaiModelEnabledMap()
+    imageModels.push(
+      ...catalog
+        .map((entry) => entry.id)
+        .filter((id) => enabled[id] === true && isOpenAiImageGenModel(id))
+        .map((model) => ({ provider: 'openai' as const, model }))
+    )
+  }
+
+  return ollamaError
+    ? { ok: false, models: imageModels, error: ollamaError }
+    : { ok: true, models: imageModels }
 }
 
 export async function listAvailableImageModelNames(
