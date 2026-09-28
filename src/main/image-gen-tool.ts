@@ -10,6 +10,8 @@ import { isOpenAiImageGenModel } from '../shared/openai-models'
 import type {
   AvailableImageModel,
   ImageBackendSelection,
+  ImageGenerationRequest,
+  ImageGenerationResult,
   LlmProvider
 } from '../shared/types'
 import { generateImageBase64 } from './ollama-image'
@@ -125,6 +127,41 @@ export async function listAvailableImageModelNames(
     return await listInstalledImageModelNames()
   } catch {
     return []
+  }
+}
+
+export async function generateImageForBackend(
+  request: ImageGenerationRequest,
+  signal?: AbortSignal
+): Promise<ImageGenerationResult> {
+  if (request?.provider !== 'ollama' && request?.provider !== 'openai') {
+    return { ok: false, message: 'Invalid image provider' }
+  }
+  const model = typeof request.model === 'string' ? request.model.trim() : ''
+  const prompt = typeof request.prompt === 'string' ? request.prompt.trim() : ''
+  if (!prompt) return { ok: false, message: 'Prompt must not be blank' }
+
+  try {
+    const available = await listAvailableImageModels()
+    const selected = available.find(
+      (entry) => entry.provider === request.provider && entry.model === model
+    )
+    if (!selected) {
+      return { ok: false, message: 'Selected image model is unavailable' }
+    }
+    const generated =
+      request.provider === 'openai'
+        ? await generateOpenAiImageBase64(model, prompt, signal)
+        : { b64: await generateImageBase64(model, prompt, signal) }
+    return {
+      ok: true,
+      provider: request.provider,
+      model,
+      imageBase64: generated.b64,
+      mime: 'image/png'
+    }
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) }
   }
 }
 

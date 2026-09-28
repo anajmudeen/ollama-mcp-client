@@ -15,6 +15,7 @@ const {
   generateImageToolDefinition,
   runEditImageTool,
   runGenerateImageTool,
+  generateImageForBackend,
   shouldOfferGenerateImageTool
 } =
   await server.ssrLoadModule(
@@ -242,6 +243,105 @@ test('returns a clear failure when no image backend is selected', async () => {
     ok: false,
     message: 'No image backend selected. Select an image backend to generate images.'
   })
+})
+
+test('rejects blank prompts for explicit image generation', async () => {
+  const result = await generateImageForBackend({
+    provider: 'ollama',
+    model: 'flux',
+    prompt: '   '
+  })
+  assert.deepEqual(result, {
+    ok: false,
+    message: 'Prompt must not be blank'
+  })
+})
+
+test('rejects invalid providers and unavailable models', async () => {
+  const invalidProvider = await generateImageForBackend({
+    provider: 'azure-openai',
+    model: 'flux',
+    prompt: 'a test image'
+  })
+  assert.deepEqual(invalidProvider, {
+    ok: false,
+    message: 'Invalid image provider'
+  })
+
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (...args) => {
+    if (String(args[0]).endsWith('/api/version')) return response({ version: '0.1.0' })
+    if (String(args[0]).endsWith('/api/tags')) {
+      return response({ models: [{ name: 'flux', details: { families: ['diffusion'] } }] })
+    }
+    throw new Error(`Unexpected fetch: ${String(args[0])}`)
+  }
+  try {
+    const result = await generateImageForBackend({
+      provider: 'ollama',
+      model: 'missing',
+      prompt: 'a test image'
+    })
+    assert.deepEqual(result, {
+      ok: false,
+      message: 'Selected image model is unavailable'
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('routes explicit Ollama and OpenAI image generation selections', async () => {
+  setOpenaiApiKey('test-key')
+  setOpenaiModelsCatalog([{ id: 'gpt-image-1', name: 'gpt-image-1' }])
+  setOpenaiModelEnabled('gpt-image-1', true)
+  const originalFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (...args) => {
+    calls.push(args)
+    const url = String(args[0])
+    if (url.endsWith('/api/version')) return response({ version: '0.1.0' })
+    if (url.endsWith('/api/tags')) {
+      return response({ models: [{ name: 'flux', details: { families: ['diffusion'] } }] })
+    }
+    if (url.endsWith('/api/generate')) {
+      return response({ image: Buffer.alloc(1024, 7).toString('base64') })
+    }
+    if (url.endsWith('/images/generations')) {
+      return response({ data: [{ b64_json: 'openai-image' }] })
+    }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+  try {
+    const ollama = await generateImageForBackend({
+      provider: 'ollama',
+      model: 'flux',
+      prompt: 'ollama image'
+    })
+    assert.deepEqual(ollama, {
+      ok: true,
+      provider: 'ollama',
+      model: 'flux',
+      imageBase64: Buffer.alloc(1024, 7).toString('base64'),
+      mime: 'image/png'
+    })
+    const openai = await generateImageForBackend({
+      provider: 'openai',
+      model: 'gpt-image-1',
+      prompt: 'openai image'
+    })
+    assert.deepEqual(openai, {
+      ok: true,
+      provider: 'openai',
+      model: 'gpt-image-1',
+      imageBase64: 'openai-image',
+      mime: 'image/png'
+    })
+    assert.equal(calls.some((call) => String(call[0]).endsWith('/api/generate')), true)
+    assert.equal(calls.some((call) => String(call[0]).endsWith('/images/generations')), true)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('offers the tool to Ollama when Ollama is unavailable but OpenAI is the image backend', async () => {

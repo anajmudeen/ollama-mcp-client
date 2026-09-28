@@ -6,6 +6,7 @@ import type {
   ChatSendPayload,
   ChatSession,
   HtmlPreviewCreatePayload,
+  ImageGenerationRequest,
   LibrarySearchParams,
   LlmProvider,
   McpServerConfig,
@@ -67,6 +68,9 @@ import {
   setShowThinking,
   setMaxToolIterations,
   getDefaultImageModel,
+  addImageGalleryItem,
+  deleteImageGalleryItem,
+  listImageGallery,
   migrateImageBackendAfterDiscovery,
   setImageBackend,
   setDefaultImageModel,
@@ -116,7 +120,10 @@ import {
   resolveEffectiveLlmProvider
 } from './llm'
 import { fetchOpenAiModels, validateOpenAiKey } from './openai-client'
-import { listAvailableImageModels } from './image-gen-tool'
+import {
+  generateImageForBackend,
+  listAvailableImageModels
+} from './image-gen-tool'
 import {
   fetchAzureModels,
   normalizeAzureEndpoint
@@ -289,6 +296,44 @@ export function registerIpc(ipcMain: IpcMain): void {
     setImageBackend(selection)
   )
   ipcMain.handle('images:listAvailableModels', () => listAvailableImageModels())
+  ipcMain.handle('images:generate', async (_e, request: ImageGenerationRequest) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      (request.provider !== 'ollama' && request.provider !== 'openai') ||
+      typeof request.model !== 'string' ||
+      typeof request.prompt !== 'string'
+    ) {
+      return { ok: false, message: 'Invalid image generation request' }
+    }
+    const normalized = {
+      provider: request.provider,
+      model: request.model.trim(),
+      prompt: request.prompt.trim()
+    }
+    const result = await generateImageForBackend(normalized)
+    if (!result.ok) return result
+    try {
+      const galleryItem = addImageGalleryItem({
+        imageBase64: result.imageBase64,
+        mime: result.mime,
+        prompt: normalized.prompt,
+        provider: result.provider,
+        model: result.model
+      })
+      return { ...result, galleryItem }
+    } catch {
+      return {
+        ...result,
+        persistenceError: 'Image generated but could not be saved to the gallery.'
+      }
+    }
+  })
+  ipcMain.handle('images:listGallery', () => listImageGallery())
+  ipcMain.handle('images:deleteGalleryItem', (_e, id: string) => {
+    if (typeof id !== 'string' || !id.trim()) return false
+    return deleteImageGalleryItem(id)
+  })
   ipcMain.handle('images:migrateLegacyBackend', (_e, available) =>
     migrateImageBackendAfterDiscovery(available)
   )

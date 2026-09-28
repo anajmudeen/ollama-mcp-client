@@ -14,6 +14,9 @@ import type {
   ChatSession,
   HtmlPreviewCreatePayload,
   HtmlPreviewCreateResult,
+  ImageGenerationRequest,
+  ImageGenerationResult,
+  ImageGalleryItem,
   LibraryModelDetail,
   LibrarySearchParams,
   LibrarySearchResult,
@@ -64,6 +67,12 @@ const api = {
   images: {
     listAvailableModels: (): Promise<AvailableImageModel[]> =>
       ipcRenderer.invoke('images:listAvailableModels'),
+    generate: (request: ImageGenerationRequest): Promise<ImageGenerationResult> =>
+      ipcRenderer.invoke('images:generate', request),
+    listGallery: (): Promise<ImageGalleryItem[]> =>
+      ipcRenderer.invoke('images:listGallery'),
+    deleteGalleryItem: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke('images:deleteGalleryItem', id),
     migrateLegacyBackend: (
       available: AvailableImageModel[]
     ): Promise<AppConfig['imageBackend']> =>

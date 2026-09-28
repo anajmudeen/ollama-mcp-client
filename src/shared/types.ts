@@ -47,6 +47,12 @@ export interface AvailableImageModel {
   model: string
 }
 
+export interface ImageGenerationRequest {
+  provider: ImageBackendProvider
+  model: string
+  prompt: string
+}
+
 export interface ImageGalleryItem {
   id: string
   imageBase64: string
@@ -56,6 +62,18 @@ export interface ImageGalleryItem {
   model: string
   createdAt: string
 }
+
+export type ImageGenerationResult =
+  | {
+      ok: true
+      model: string
+      provider: ImageBackendProvider
+      imageBase64: string
+      mime: string
+      galleryItem?: ImageGalleryItem
+      persistenceError?: string
+    }
+  | { ok: false; message: string }
 
 export interface OpenAiModelEntry {
   id: string
