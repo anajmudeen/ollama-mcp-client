@@ -227,7 +227,27 @@ export function ImageGeneration({
               Discovering available image models…
             </p>
           </section>
-        ) : models.length === 0 && !modelLoadFailed ? (
+        ) : modelLoadFailed ? (
+          <section
+            className="rounded-xl border border-[#8f4650]/60 bg-[#3a2026] p-6"
+            role="alert"
+          >
+            <h2 className="text-base font-medium text-[#f0b8bf]">
+              Image model discovery failed
+            </h2>
+            <p className="mt-2 max-w-xl text-sm text-[#d9aeb4]">
+              We could not check for available image models. Retry discovery, or set up
+              an Ollama/OpenAI image model before generating.
+            </p>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="mt-4 rounded-md border border-[#b96470] bg-[#512a32] px-3 py-2 text-sm text-[#ffd7dc] hover:bg-[#67343e]"
+            >
+              Retry model discovery
+            </button>
+          </section>
+        ) : models.length === 0 ? (
           <section className="rounded-xl border border-[#2a3a4d] bg-[#121820] p-6">
             <h2 className="text-base font-medium text-[#e7ecf1]">Set up an image model</h2>
             <p className="mt-2 max-w-xl text-sm text-[#8b9aab]">
