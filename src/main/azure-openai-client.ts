@@ -4,11 +4,12 @@ import {
   formatOpenAiError,
   ollamaMessagesToOpenAi,
   ollamaToolsToOpenAi,
-  openAiModelUsesReasoningEffort,
   parseOpenAiUsageFromJson,
   type OpenAiStreamResult,
   type OpenAiUsageDetails
 } from './openai-client'
+import { getReasoningEffort } from './config-store'
+import { resolveReasoningEffortForRequest } from '../shared/reasoning-effort'
 
 export interface AzureOpenaiRequestOptions {
   endpoint: string
@@ -96,11 +97,13 @@ function buildChatBody(options: AzureChatOptions, stream: boolean): Record<strin
   if (stream) body.stream_options = { include_usage: true }
   if (options.tools?.length) {
     body.tools = ollamaToolsToOpenAi(options.tools)
-    if (openAiModelUsesReasoningEffort(options.deployment)) {
-      // Reasoning models default to non-none effort; tools on chat/completions require none.
-      body.reasoning_effort = 'none'
-    }
   }
+  const effort = resolveReasoningEffortForRequest({
+    model: options.deployment,
+    hasTools: Boolean(options.tools?.length),
+    preference: getReasoningEffort()
+  })
+  if (effort !== undefined) body.reasoning_effort = effort
   return body
 }
 

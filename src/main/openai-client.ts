@@ -4,7 +4,8 @@ import {
   openAiModelUsesReasoningEffort
 } from '../shared/openai-models'
 import type { OllamaChatChunk, OllamaChatMessage, OllamaTool } from './ollama'
-import { getOpenaiApiKey } from './config-store'
+import { getOpenaiApiKey, getReasoningEffort } from './config-store'
+import { resolveReasoningEffortForRequest } from '../shared/reasoning-effort'
 
 export { openAiModelUsesReasoningEffort }
 
@@ -213,17 +214,25 @@ export async function openAiChatOnce(options: {
   const apiKey = options.apiKey ?? getOpenaiApiKey()
   if (!apiKey) throw new Error('OpenAI API key not configured')
 
+  const body: Record<string, unknown> = {
+    model: options.model,
+    messages: ollamaMessagesToOpenAi(options.messages),
+    stream: false
+  }
+  const effort = resolveReasoningEffortForRequest({
+    model: options.model,
+    hasTools: false,
+    preference: getReasoningEffort()
+  })
+  if (effort !== undefined) body.reasoning_effort = effort
+
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      model: options.model,
-      messages: ollamaMessagesToOpenAi(options.messages),
-      stream: false
-    }),
+    body: JSON.stringify(body),
     signal: options.signal
   })
   if (!res.ok) {
@@ -261,11 +270,13 @@ export async function openAiChatStream(options: {
   }
   if (options.tools?.length) {
     body.tools = ollamaToolsToOpenAi(options.tools)
-    if (openAiModelUsesReasoningEffort(options.model)) {
-      // Reasoning models default non-none effort; tools on chat/completions require none.
-      body.reasoning_effort = 'none'
-    }
   }
+  const effort = resolveReasoningEffortForRequest({
+    model: options.model,
+    hasTools: Boolean(options.tools?.length),
+    preference: getReasoningEffort()
+  })
+  if (effort !== undefined) body.reasoning_effort = effort
 
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: 'POST',
