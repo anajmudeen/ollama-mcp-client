@@ -143,6 +143,7 @@ export function applyBackgroundChatEvent(
         ...last,
         content: last.content || '',
         images: dataUrls,
+        imageModel: event.imageModel,
         streaming: false,
         createdAt: finishedAt,
         durationMs: segmentDurationMs(last.startedAt),
@@ -157,6 +158,7 @@ export function applyBackgroundChatEvent(
         id: uid(),
         content: '',
         images: dataUrls,
+        imageModel: event.imageModel,
         createdAt: finishedAt,
         streaming: false,
         responseMs,
@@ -209,7 +211,10 @@ export function applyBackgroundChatEvent(
             {
               ...m,
               status: event.ok ? 'done' : 'error',
-              result: event.result
+              result: event.result,
+              images: event.images,
+              imageModel: event.imageModel,
+              mime: event.mime
             },
             turnStartedAt
           )

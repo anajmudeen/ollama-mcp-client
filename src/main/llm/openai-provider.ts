@@ -1,29 +1,27 @@
 import type { OllamaModel } from '../../shared/types'
 import {
+  isOpenAiImageGenModel,
+  isOpenAiVisionModel
+} from '../../shared/openai-models'
+import {
   getOpenaiModelEnabledMap,
   getOpenaiModelsCatalog
 } from '../config-store'
 import {
   fetchOpenAiChatModels,
+  isChatModelId,
   openAiChatOnce,
   openAiChatStream
 } from '../openai-client'
-import { isOpenAiImageGenModel } from '../openai-image'
-import {
-  detectVisionSupport as ollamaDetectVision,
-  type OllamaChatChunk,
-  type OllamaChatMessage,
-  type OllamaTool
-} from '../ollama'
 import type { LlmModelInfo, LlmProvider } from './types'
 
 const DEFAULT_CTX = 128_000
 
 function openAiModelTags(id: string): string[] {
   const tags: string[] = ['openai']
-  const lower = id.toLowerCase()
   if (isOpenAiImageGenModel(id)) tags.push('image')
-  if (lower.includes('gpt-4o') || lower.includes('vision')) tags.push('vision')
+  if (isOpenAiVisionModel(id)) tags.push('vision')
+  const lower = id.toLowerCase()
   if (lower.startsWith('o1') || lower.startsWith('o3') || lower.includes('reasoning')) {
     tags.push('thinking')
   }
@@ -34,20 +32,16 @@ export const openaiLlmProvider: LlmProvider = {
   id: 'openai',
 
   async chatStream(options) {
-    let content = ''
     const result = await openAiChatStream({
       model: options.model,
       messages: options.messages,
       tools: options.tools,
-      signal: options.signal
+      signal: options.signal,
+      onChunk: options.onChunk
     })
-    content = result.content
-    if (content) {
-      options.onChunk({ message: { content } })
-    }
     options.onChunk({ done: true })
     return {
-      content,
+      content: result.content,
       toolCalls: result.toolCalls,
       promptEvalCount: result.promptEvalCount,
       evalCount: result.evalCount,
@@ -68,6 +62,7 @@ export const openaiLlmProvider: LlmProvider = {
     const catalog = getOpenaiModelsCatalog()
     const enabled = getOpenaiModelEnabledMap()
     return catalog
+      .filter((m) => isChatModelId(m.id))
       .filter((m) => enabled[m.id])
       .map((m) => ({
         name: m.id,
@@ -95,12 +90,8 @@ export const openaiLlmProvider: LlmProvider = {
     return isOpenAiImageGenModel(model)
   },
 
-  detectVisionSupport(model, info) {
-    const support = ollamaDetectVision(model, info ? { capabilities: info.capabilities } : null)
-    if (support !== 'unknown') return support
-    const lower = model.toLowerCase()
-    if (lower.includes('gpt-4o') || lower.includes('vision')) return 'yes'
-    return 'unknown'
+  detectVisionSupport(model, _info) {
+    return isOpenAiVisionModel(model) ? 'yes' : 'unknown'
   },
 
   async resolveContextLength(_model, info) {

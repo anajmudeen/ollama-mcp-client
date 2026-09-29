@@ -51,6 +51,8 @@ interface ChatProps {
   onSend: (payload: {
     content: string
     images?: string[]
+    imageMimes?: string[]
+    displayImages?: string[]
     attachmentLabels?: string[]
     invokedSkill?: string
   }) => void
@@ -481,6 +483,8 @@ export function Chat({
     onSend({
       content: built.content,
       images: built.images,
+      imageMimes: built.imageMimes,
+      displayImages: built.displayImages,
       attachmentLabels: built.labels,
       invokedSkill: invoked.skillName
     })
@@ -615,6 +619,18 @@ export function Chat({
               <div key={m.id} className="msg-enter flex justify-end">
                 <div className="max-w-[80%]">
                   <div className="rounded-2xl rounded-br-md bg-[#1e3a5f] px-3.5 py-2 text-sm leading-relaxed text-[#e7ecf1]">
+                    {m.images && m.images.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {m.images.map((src, index) => (
+                          <img
+                            key={`${m.id}-image-${index}`}
+                            src={src}
+                            alt="Attached image"
+                            className="max-h-40 max-w-40 rounded-lg object-contain"
+                          />
+                        ))}
+                      </div>
+                    )}
                     {m.attachmentLabels && m.attachmentLabels.length > 0 && (
                       <div className="mb-2 flex flex-wrap gap-1">
                         {m.attachmentLabels.map((label) => (
@@ -676,6 +692,11 @@ export function Chat({
                             </div>
                           </div>
                         ))}
+                        {m.imageModel && (
+                          <div className="text-xs text-[#8b9aab]">
+                            {m.imageModel}
+                          </div>
+                        )}
                       </div>
                     )}
                     {(m.content.trim() || m.streaming) && (

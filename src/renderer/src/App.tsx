@@ -14,6 +14,7 @@ import type {
   TelegramStatus,
   UiMessage
 } from '../../shared/types'
+import { isOpenAiImageGenModel } from '../../shared/openai-models'
 import type { ServerWithStatus } from '../../preload/index'
 import type { ActivityState } from './components/ActivityIndicator'
 import { Chat } from './components/Chat'
@@ -59,10 +60,18 @@ function titleFromPrompt(text: string): string {
   return cleaned.length > 40 ? `${cleaned.slice(0, 40)}…` : cleaned
 }
 
+type SessionPersistenceSnapshot = {
+  id: string
+  messages: UiMessage[]
+  history: ChatMessage[]
+  title: string
+}
+
 export default function App(): React.JSX.Element {
   const [servers, setServers] = useState<ServerWithStatus[]>([])
   const [tools, setTools] = useState<McpToolInfo[]>([])
   const [models, setModels] = useState<OllamaModel[]>([])
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([])
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [ollamaOk, setOllamaOk] = useState(false)
   const [ollamaError, setOllamaError] = useState<string | undefined>()
@@ -367,14 +376,22 @@ export default function App(): React.JSX.Element {
         } catch {
           setModels([])
         }
+        try {
+          const status = await window.api.ollama.getStatus()
+          setOllamaModels(status.ok ? await window.api.ollama.listModels() : [])
+        } catch {
+          setOllamaModels([])
+        }
         return
       }
       const status = await window.api.ollama.getStatus()
       if (!status.ok) {
+        setOllamaModels([])
         setModels([])
         return
       }
       const list = await window.api.ollama.listModels()
+      setOllamaModels(list)
       setModels(list)
       const names = list.map((m) => m.name)
       setSelectedModel((current) => {
@@ -417,15 +434,23 @@ export default function App(): React.JSX.Element {
     setOllamaError(status.error)
     setBaseUrl(status.baseUrl)
     setImageGenSupported(status.imageGenSupported !== false)
-    if (status.ok && llmProvider === 'ollama') {
+    if (status.ok) {
       try {
-        await refreshModelsForProvider('ollama')
+        const list = await window.api.ollama.listModels()
+        setOllamaModels(list)
+        if (llmProvider === 'ollama') {
+          await refreshModelsForProvider('ollama')
+        }
       } catch (err) {
+        setOllamaModels([])
         setOllamaOk(false)
         setOllamaError(err instanceof Error ? err.message : String(err))
       }
-    } else if (llmProvider === 'ollama') {
-      setModels([])
+    } else {
+      setOllamaModels([])
+      if (llmProvider === 'ollama') {
+        setModels([])
+      }
     }
   }, [llmProvider, refreshModelsForProvider])
 
@@ -798,6 +823,7 @@ export default function App(): React.JSX.Element {
               ...last,
               content: last.content || '',
               images: dataUrls,
+              imageModel: event.imageModel,
               streaming: false,
               createdAt: finishedAt,
               durationMs: segmentDurationMs(last.startedAt),
@@ -812,6 +838,7 @@ export default function App(): React.JSX.Element {
               id: uid(),
               content: '',
               images: dataUrls,
+              imageModel: event.imageModel,
               createdAt: finishedAt,
               streaming: false,
               responseMs,
@@ -878,7 +905,10 @@ export default function App(): React.JSX.Element {
                   {
                     ...m,
                     status: event.ok ? ('done' as const) : ('error' as const),
-                    result: event.result
+                    result: event.result,
+                    images: event.images,
+                    imageModel: event.imageModel,
+                    mime: event.mime
                   },
                   turnStartedAtRef.current
                 )
@@ -1001,6 +1031,8 @@ export default function App(): React.JSX.Element {
   const handleSend = async (payload: {
     content: string
     images?: string[]
+    imageMimes?: string[]
+    displayImages?: string[]
     attachmentLabels?: string[]
     invokedSkill?: string
   }): Promise<void> => {
@@ -1017,7 +1049,8 @@ export default function App(): React.JSX.Element {
     const userMsg: ChatMessage = {
       role: 'user',
       content: payload.content,
-      images: payload.images
+      images: payload.images,
+      imageMimes: payload.imageMimes
     }
     const nextHistory = [...historyRef.current, userMsg]
     historyRef.current = nextHistory
@@ -1031,7 +1064,6 @@ export default function App(): React.JSX.Element {
             ? payload.content
             : `Sent ${payload.attachmentLabels.length} file(s)`
           : payload.content
-
     const nextMessages: UiMessage[] = [
       ...messagesRef.current,
       {
@@ -1040,6 +1072,7 @@ export default function App(): React.JSX.Element {
         content: uiContent,
         createdAt: nowIso(),
         attachmentLabels: payload.attachmentLabels,
+        images: payload.displayImages,
         model: selectedModel,
         ...(willQueue ? { queueStatus: 'queued' as const } : {})
       }
@@ -1126,37 +1159,65 @@ export default function App(): React.JSX.Element {
     if (sessionId) void writeSession(sessionId, [], [], 'New chat')
   }
 
-  const leaveCurrentSession = useCallback(async (): Promise<void> => {
-    const sessionId = activeSessionIdRef.current
-    if (sessionId && activeTurnIdRef.current) {
-      backgroundSessionsRef.current.set(
-        sessionId,
-        createBackgroundSessionTurn(
-          messagesRef.current,
-          historyRef.current,
-          turnModelRef.current
+  const leaveCurrentSession = useCallback(
+    async (options?: {
+      persist?: boolean
+    }): Promise<SessionPersistenceSnapshot | null> => {
+      if (persistTimer.current !== null) {
+        window.clearTimeout(persistTimer.current)
+        persistTimer.current = null
+      }
+      const sessionId = activeSessionIdRef.current
+      if (sessionId && activeTurnIdRef.current) {
+        backgroundSessionsRef.current.set(
+          sessionId,
+          createBackgroundSessionTurn(
+            messagesRef.current,
+            historyRef.current,
+            turnModelRef.current
+          )
         )
-      )
-    }
-    bumpChatEpoch()
-    activeTurnIdRef.current = null
-    setBusy(false)
-    setActivity(IDLE_ACTIVITY)
-    setContextUsage(null)
-    await flushActiveSession()
-  }, [bumpChatEpoch, flushActiveSession])
+      }
+      bumpChatEpoch()
+      activeTurnIdRef.current = null
+      setBusy(false)
+      setActivity(IDLE_ACTIVITY)
+      setContextUsage(null)
+      const snapshot = sessionId
+        ? {
+            id: sessionId,
+            messages: messagesRef.current,
+            history: historyRef.current,
+            title: sessionTitleRef.current
+          }
+        : null
+      if (options?.persist !== false) {
+        await flushActiveSession()
+      }
+      return snapshot
+    },
+    [bumpChatEpoch, flushActiveSession]
+  )
 
   const handleNewSession = async (): Promise<void> => {
     setView('chat')
-    await leaveCurrentSession()
+    const previous = await leaveCurrentSession({ persist: false })
     const state = await window.api.sessions.create()
     applySessionsState(state)
+    if (previous) {
+      void writeSession(
+        previous.id,
+        previous.messages,
+        previous.history,
+        previous.title
+      )
+    }
   }
 
   const handleSelectSession = async (id: string): Promise<void> => {
     setView('chat')
     if (id === activeSessionIdRef.current) return
-    await leaveCurrentSession()
+    const previous = await leaveCurrentSession({ persist: false })
     const state = await window.api.sessions.setActive(id)
     const bg = backgroundSessionsRef.current.get(id)
     if (bg) {
@@ -1176,6 +1237,14 @@ export default function App(): React.JSX.Element {
     if (running?.sessionId === id) {
       adoptRunningTurn(id, running.turnId)
     }
+    if (previous) {
+      void writeSession(
+        previous.id,
+        previous.messages,
+        previous.history,
+        previous.title
+      )
+    }
   }
 
   const handleDeleteSession = async (id: string): Promise<void> => {
@@ -1185,7 +1254,7 @@ export default function App(): React.JSX.Element {
       cancelAiTitle()
     }
     if (id === activeSessionIdRef.current) {
-      await leaveCurrentSession()
+      await leaveCurrentSession({ persist: false })
     }
     const state = await window.api.sessions.delete(id)
     applySessionsState(state)
@@ -1287,6 +1356,23 @@ export default function App(): React.JSX.Element {
     openaiStatus.validationOk && openaiStatus.enabledCount > 0
   const canSendBackend =
     llmProvider === 'openai' ? openAiChatReady || ollamaOk : ollamaOk
+  const imageModelNames = [
+    ...new Set([
+      ...ollamaModels
+        .filter(
+          (m) =>
+            m.tags?.some((t) => t.toLowerCase() === 'image') ||
+            m.capabilities?.some((c) => c.toLowerCase() === 'image') ||
+            /z-image|flux|sdxl|stable-diffusion|stable_diffusion|imagen|dreamshaper|animagine/i.test(
+              m.name
+            )
+        )
+        .map((m) => m.name),
+      ...openaiCatalog
+        .filter((m) => openaiModelEnabled[m.id] && isOpenAiImageGenModel(m.id))
+        .map((m) => m.id)
+    ])
+  ]
 
   const handleNavigate = (
     target: 'chat' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
@@ -1415,8 +1501,7 @@ export default function App(): React.JSX.Element {
             showThinking={showThinking}
             maxToolIterations={maxToolIterations}
             defaultImageModel={defaultImageModel}
-            models={models}
-            imageGenSupported={imageGenSupported}
+            imageModelNames={imageModelNames}
             telegramEnabled={telegramEnabled}
             telegramAllowedUserIds={telegramAllowedUserIds}
             telegramStatus={telegramStatus}

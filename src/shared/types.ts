@@ -215,6 +215,8 @@ export interface ChatMessage {
   content: string
   /** Raw base64 image payloads for Ollama vision models (no data-URL prefix). */
   images?: string[]
+  /** MIME types aligned with images; omitted for legacy raw payloads. */
+  imageMimes?: string[]
   tool_calls?: ChatToolCall[]
   tool_name?: string
 }
@@ -272,6 +274,7 @@ export type ChatEvent =
   | {
       type: 'assistant_images'
       images: string[]
+      imageModel?: string
       mime?: string
       turnId?: string
       sessionId?: string
@@ -293,6 +296,11 @@ export type ChatEvent =
       name: string
       ok: boolean
       result: string
+      /** Optional generated image payload for image tools; absent for MCP results. */
+      images?: string[]
+      imageModel?: string
+      mime?: string
+      tokenUsage?: TokenUsageBreakdown
       turnId?: string
       sessionId?: string
     }
@@ -340,6 +348,8 @@ export type UiMessage =
       content: string
       createdAt: string
       attachmentLabels?: string[]
+      /** Original image data URLs shown in the prompt bubble. */
+      images?: string[]
       /** Model selected for this turn. */
       model?: string
       /** Waiting for global agent queue. */
@@ -367,6 +377,8 @@ export type UiMessage =
       contextLimit?: number
       /** Generated image data URLs (e.g. data:image/png;base64,...). */
       images?: string[]
+      /** Model used to generate the attached images. */
+      imageModel?: string
       tokenUsage?: TokenUsageBreakdown
       multiCallTurn?: boolean
     }
@@ -392,6 +404,10 @@ export type UiMessage =
       status: 'running' | 'done' | 'error'
       createdAt: string
       result?: string
+      /** Generated image payload returned by an image tool, when present. */
+      images?: string[]
+      imageModel?: string
+      mime?: string
       model?: string
       /** Renderer-only: segment start epoch ms (live timer). */
       startedAt?: number

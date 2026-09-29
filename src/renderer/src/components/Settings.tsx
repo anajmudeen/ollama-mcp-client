@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { LlmProvider, OllamaModel, OpenAiStatus, TelegramStatus } from '../../../shared/types'
+import type { LlmProvider, OpenAiStatus, TelegramStatus } from '../../../shared/types'
 
 interface SettingsProps {
   llmProvider: LlmProvider
@@ -12,8 +12,7 @@ interface SettingsProps {
   showThinking: boolean
   maxToolIterations: number
   defaultImageModel: string | null
-  models: OllamaModel[]
-  imageGenSupported: boolean
+  imageModelNames: string[]
   telegramEnabled: boolean
   telegramAllowedUserIds: number[]
   telegramStatus: TelegramStatus
@@ -44,8 +43,7 @@ export function Settings({
   showThinking,
   maxToolIterations,
   defaultImageModel,
-  models,
-  imageGenSupported,
+  imageModelNames,
   telegramEnabled,
   telegramAllowedUserIds,
   telegramStatus,
@@ -64,14 +62,6 @@ export function Settings({
   onOpenModelsPage,
   onSetDefaultImageModel
 }: SettingsProps): React.JSX.Element {
-  const imageModels = models.filter(
-    (m) =>
-      m.tags?.some((t) => t.toLowerCase() === 'image') ||
-      m.capabilities?.some((c) => c.toLowerCase() === 'image') ||
-      /z-image|flux|sdxl|stable-diffusion|stable_diffusion|imagen|dreamshaper|animagine/i.test(
-        m.name
-      )
-  )
   const [urlDraft, setUrlDraft] = useState(baseUrl)
   const [showToken, setShowToken] = useState(false)
   const [showOpenAiKey, setShowOpenAiKey] = useState(false)
@@ -377,16 +367,12 @@ export function Settings({
             <label className="mt-3 block">
               <span className="mb-1 block text-sm text-[#e7ecf1]">Default image model</span>
               <span className="mb-2 block text-xs text-[#6b7a8c]">
-                Used when a chat model calls generate_image. Auto picks the first installed
+                Used when a chat model calls generate_image. Auto picks the first available
                 image model.
               </span>
-              {!imageGenSupported ? (
-                <p className="text-xs text-amber-300/90">
-                  This Ollama build does not support image generation.
-                </p>
-              ) : imageModels.length === 0 ? (
+              {imageModelNames.length === 0 ? (
                 <p className="text-xs text-[#6b7a8c]">
-                  No image models installed — image generation disabled until you install one.
+                  No image models available — image generation is disabled until one is available.
                 </p>
               ) : (
                 <select
@@ -397,9 +383,9 @@ export function Settings({
                   className="w-full rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
                 >
                   <option value="">Auto (first available)</option>
-                  {imageModels.map((m) => (
-                    <option key={m.name} value={m.name}>
-                      {m.name}
+                  {imageModelNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
                     </option>
                   ))}
                 </select>

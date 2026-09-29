@@ -1,3 +1,4 @@
+import { isOpenAiImageGenModel } from '../shared/openai-models'
 import { getOpenaiApiKey } from './config-store'
 import { OPENAI_BASE, formatOpenAiError, parseOpenAiUsageFromJson, type OpenAiUsageDetails } from './openai-client'
 
@@ -6,13 +7,36 @@ export interface OpenAiImageGenerateResult {
   usage?: OpenAiUsageDetails
 }
 
-/** GPT Image and similar models that generate images from text (not vision chat). */
-export function isOpenAiImageGenModel(model: string): boolean {
-  const lower = model.toLowerCase()
-  if (lower.startsWith('gpt-image')) return true
-  if (lower.startsWith('dall-e')) return true
-  if (/^gpt-[\d].*image/.test(lower)) return true
-  return false
+export interface OpenAiImageSource {
+  base64: string
+  mime?: string
+}
+
+function normalizeBase64(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value) return undefined
+  const match = value.match(/^data:image\/[^;]+;base64,(.+)$/)
+  if (value.startsWith('http://') || value.startsWith('https://')) return undefined
+  return match?.[1] ?? value
+}
+
+function decodeRawBase64Image(value: string): Buffer {
+  const padding = value.match(/=*$/)?.[0].length ?? 0
+  const unpaddedLength = value.length - padding
+  const validAlphabet = /^[A-Za-z0-9+/]*={0,2}$/.test(value)
+  const validLength = unpaddedLength % 4 !== 1
+  const validPadding =
+    padding === 0 ||
+    (value.length % 4 === 0 &&
+      ((padding === 2 && unpaddedLength % 4 === 2) ||
+        (padding === 1 && unpaddedLength % 4 === 3)))
+  if (value.length === 0 || !validAlphabet || !validLength || !validPadding) {
+    throw new Error('Source images must contain valid base64 payloads')
+  }
+  const bytes = Buffer.from(value, 'base64')
+  if (bytes.length === 0) {
+    throw new Error('Source images must contain valid base64 payloads')
+  }
+  return bytes
 }
 
 function extractBase64FromResponsesBody(data: unknown): string | undefined {
@@ -26,25 +50,16 @@ function extractBase64FromResponsesBody(data: unknown): string | undefined {
     const entry = item as Record<string, unknown>
     const type = String(entry.type ?? '')
     if (type === 'image_generation_call') {
-      if (typeof entry.result === 'string' && entry.result.length > 0) {
-        return entry.result
-      }
-      if (typeof entry.b64_json === 'string' && entry.b64_json.length > 0) {
-        return entry.b64_json
-      }
+      const result = normalizeBase64(entry.result) ?? normalizeBase64(entry.b64_json)
+      if (result) return result
     }
     if (type === 'message' && Array.isArray(entry.content)) {
       for (const part of entry.content) {
         if (!part || typeof part !== 'object') continue
         const p = part as Record<string, unknown>
-        if (p.type === 'output_image' && typeof p.image_url === 'string') {
-          const url = p.image_url
-          const m = url.match(/^data:image\/[^;]+;base64,(.+)$/)
-          if (m?.[1]) return m[1]
-        }
-        if (typeof p.b64_json === 'string' && p.b64_json.length > 0) {
-          return p.b64_json
-        }
+        const image = normalizeBase64(p.image_url) ?? normalizeBase64(p.b64_json)
+        if (p.type === 'output_image' && image) return image
+        if (image) return image
       }
     }
   }
@@ -57,18 +72,22 @@ async function openAiImagesGenerate(
   apiKey: string,
   signal?: AbortSignal
 ): Promise<OpenAiImageGenerateResult> {
+  const body: Record<string, unknown> = {
+    model,
+    prompt,
+    n: 1
+  }
+  if (model.toLowerCase().startsWith('dall-e-')) {
+    body.response_format = 'b64_json'
+  }
+
   const res = await fetch(`${OPENAI_BASE}/images/generations`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      model,
-      prompt,
-      n: 1,
-      response_format: 'b64_json'
-    }),
+    body: JSON.stringify(body),
     signal
   })
   if (!res.ok) {
@@ -76,10 +95,70 @@ async function openAiImagesGenerate(
     throw new Error(formatOpenAiError(text, res.status))
   }
   const data = (await res.json()) as {
-    data?: Array<{ b64_json?: string }>
+    data?: Array<{ b64_json?: unknown; url?: unknown }>
     usage?: unknown
   }
-  const b64 = data.data?.[0]?.b64_json
+  const first = data.data?.[0]
+  const b64 = normalizeBase64(first?.b64_json) ?? normalizeBase64(first?.url)
+  if (!b64) throw new Error('Image API returned no image data')
+  return { b64, usage: parseOpenAiUsageFromJson(data.usage) }
+}
+
+/**
+ * Edit one or more source images via the OpenAI Images Edits API.
+ */
+export async function editOpenAiImageBase64(
+  model: string,
+  prompt: string,
+  images: Array<string | OpenAiImageSource>,
+  signal?: AbortSignal
+): Promise<OpenAiImageGenerateResult> {
+  const apiKey = getOpenaiApiKey()
+  if (!apiKey) throw new Error('OpenAI API key not configured')
+  if (!Array.isArray(images) || images.length === 0) {
+    throw new Error('At least one source image is required for image editing')
+  }
+
+  const form = new FormData()
+  form.append('model', model)
+  form.append('prompt', prompt)
+  form.append('n', '1')
+  for (const source of images) {
+    const image = typeof source === 'string' ? source : source?.base64
+    if (!image) {
+      throw new Error('Source images must be non-empty base64 payloads')
+    }
+    const dataUrl = image.match(/^data:(image\/[^;]+);base64,(.+)$/)
+    const rawBase64 = dataUrl?.[2] ?? image
+    const mime = (typeof source === 'string' ? undefined : source.mime) ??
+      dataUrl?.[1] ??
+      'image/png'
+    const safeMime = /^image\/[a-z0-9.+-]+$/i.test(mime) ? mime : 'image/png'
+    const extension = safeMime === 'image/jpeg' ? 'jpg' : safeMime.slice('image/'.length)
+    const bytes = decodeRawBase64Image(rawBase64)
+    const imageBytes = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength
+    ) as ArrayBuffer
+    form.append('image', new Blob([imageBytes], { type: safeMime }), `image.${extension}`)
+  }
+
+  const res = await fetch(`${OPENAI_BASE}/images/edits`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+    signal
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(formatOpenAiError(text, res.status))
+  }
+  const data = (await res.json()) as {
+    data?: Array<{ b64_json?: unknown; url?: unknown }>
+    usage?: unknown
+  }
+  const first = data.data?.[0]
+  const b64 = normalizeBase64(first?.b64_json) ?? normalizeBase64(first?.url)
   if (!b64) throw new Error('Image API returned no image data')
   return { b64, usage: parseOpenAiUsageFromJson(data.usage) }
 }

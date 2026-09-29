@@ -85,7 +85,7 @@ async function optimizeImageForOllama(file: File): Promise<{
   ctx.drawImage(img, 0, 0, width, height)
   const jpegUrl = canvas.toDataURL('image/jpeg', 0.85)
   return {
-    previewUrl: jpegUrl,
+    previewUrl: original,
     imageBase64: stripDataUrlPrefix(jpegUrl)
   }
 }
@@ -147,18 +147,28 @@ export async function fileToAttachment(file: File): Promise<ChatAttachment> {
 export function buildMessageFromAttachments(
   prompt: string,
   attachments: ChatAttachment[]
-): { content: string; images?: string[]; labels: string[] } {
+): {
+  content: string
+  images?: string[]
+  imageMimes?: string[]
+  displayImages?: string[]
+  labels: string[]
+} {
   const parts: string[] = []
   const trimmed = prompt.trim()
   if (trimmed) parts.push(trimmed)
 
   const images: string[] = []
+  const imageMimes: string[] = []
+  const displayImages: string[] = []
   const labels: string[] = []
 
   for (const file of attachments) {
     labels.push(file.name)
     if (file.kind === 'image' && file.imageBase64) {
       images.push(file.imageBase64)
+      imageMimes.push(file.mime)
+      if (file.previewUrl) displayImages.push(file.previewUrl)
       continue
     }
     if (file.kind === 'text' && file.textContent !== undefined) {
@@ -169,15 +179,13 @@ export function buildMessageFromAttachments(
     }
   }
 
-  const content =
-    parts.join('\n\n') ||
-    (images.length
-      ? 'Describe what you see in the attached image(s) in detail.'
-      : '')
+  const content = parts.join('\n\n')
 
   return {
     content,
     images: images.length ? images : undefined,
+    imageMimes: images.length ? imageMimes : undefined,
+    displayImages: displayImages.length ? displayImages : undefined,
     labels
   }
 }
