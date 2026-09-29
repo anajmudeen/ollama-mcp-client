@@ -27,6 +27,11 @@ import type {
   UiMessage
 } from '../shared/types'
 import {
+  DEFAULT_REASONING_EFFORT,
+  normalizeReasoningEffort,
+  type ReasoningEffort
+} from '../shared/reasoning-effort'
+import {
   toSessionSummary,
   toSessionsListState
 } from '../shared/session-summary'
@@ -66,6 +71,7 @@ const DEFAULT_CONFIG: AppConfig = {
   servers: [],
   showThinking: false,
   maxToolIterations: 30,
+  reasoningEffort: DEFAULT_REASONING_EFFORT,
   telegramBotToken: null,
   telegramEnabled: false,
   telegramAllowedUserIds: [],
@@ -224,6 +230,7 @@ export function getConfig(): AppConfig {
     maxToolIterations: clampMaxToolIterations(
       store.get('maxToolIterations', DEFAULT_CONFIG.maxToolIterations)
     ),
+    reasoningEffort: getReasoningEffort(),
     telegramBotToken: store.get('telegramBotToken', DEFAULT_CONFIG.telegramBotToken),
     telegramEnabled: store.get('telegramEnabled', DEFAULT_CONFIG.telegramEnabled),
     telegramAllowedUserIds: store.get(
@@ -524,6 +531,18 @@ export function getShowThinking(): boolean {
 export function setShowThinking(enabled: boolean): boolean {
   store.set('showThinking', enabled)
   return enabled
+}
+
+export function getReasoningEffort(): ReasoningEffort {
+  return normalizeReasoningEffort(
+    store.get('reasoningEffort', DEFAULT_REASONING_EFFORT)
+  )
+}
+
+export function setReasoningEffort(value: ReasoningEffort): ReasoningEffort {
+  const next = normalizeReasoningEffort(value)
+  store.set('reasoningEffort', next)
+  return next
 }
 
 export const MIN_MAX_TOOL_ITERATIONS = 8

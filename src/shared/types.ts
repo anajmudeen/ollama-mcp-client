@@ -1,3 +1,7 @@
+import type { ReasoningEffort } from './reasoning-effort'
+
+export type { ReasoningEffort }
+
 export interface McpServerConfig {
   id: string
   name: string
@@ -146,6 +150,8 @@ export interface AppConfig {
   showThinking: boolean
   /** Max tool-call rounds per user turn (clamped 8–100). */
   maxToolIterations: number
+  /** User preference for OpenAI/Azure reasoning_effort on supported models. */
+  reasoningEffort: ReasoningEffort
   telegramBotToken: string | null
   telegramEnabled: boolean
   telegramAllowedUserIds: number[]

@@ -15,6 +15,7 @@ import type {
   TelegramMirrorMode,
   TelegramSchedule
 } from '../shared/types'
+import type { ReasoningEffort } from '../shared/reasoning-effort'
 import {
   abortCurrentTurn,
   enqueueTurn,
@@ -68,6 +69,7 @@ import {
   setSelectedModelForProvider,
   setServerEnabled,
   setShowThinking,
+  setReasoningEffort,
   setMaxToolIterations,
   getDefaultImageModel,
   addImageGalleryItem,
@@ -232,6 +234,9 @@ export function registerIpc(ipcMain: IpcMain): void {
   )
   ipcMain.handle('config:setMaxToolIterations', (_e, value: number) =>
     setMaxToolIterations(value)
+  )
+  ipcMain.handle('config:setReasoningEffort', (_e, value: ReasoningEffort) =>
+    setReasoningEffort(value)
   )
   ipcMain.handle('config:setLlmProvider', (_e, provider: LlmProvider) =>
     setLlmProvider(provider)

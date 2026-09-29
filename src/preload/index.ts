@@ -37,6 +37,7 @@ import type {
   TelegramSchedule,
   TelegramStatus
 } from '../shared/types'
+import type { ReasoningEffort } from '../shared/reasoning-effort'
 
 export type ServerWithStatus = McpServerConfig & { connected: boolean }
 
@@ -47,6 +48,8 @@ const api = {
     ipcRenderer.invoke('config:setShowThinking', enabled),
   setMaxToolIterations: (value: number): Promise<number> =>
     ipcRenderer.invoke('config:setMaxToolIterations', value),
+  setReasoningEffort: (value: ReasoningEffort): Promise<ReasoningEffort> =>
+    ipcRenderer.invoke('config:setReasoningEffort', value),
   setLlmProvider: (provider: LlmProvider): Promise<LlmProvider> =>
     ipcRenderer.invoke('config:setLlmProvider', provider),
   setOpenaiEnabled: (enabled: boolean): Promise<boolean> =>
