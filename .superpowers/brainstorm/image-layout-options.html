@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Image page layout options</title>
+<style>
+  :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background:#101214; color:#e9edf0; }
+  body { margin:0; padding:32px; }
+  h1 { margin:0 0 8px; font-size:24px; }
+  p { color:#9da7ad; margin:0 0 24px; }
+  .grid { display:grid; grid-template-columns:repeat(3, minmax(260px,1fr)); gap:18px; max-width:1200px; }
+  .card { border:1px solid #30383d; border-radius:14px; overflow:hidden; background:#171b1e; }
+  .card h2 { font-size:16px; margin:0; padding:16px 16px 4px; }
+  .card > p { font-size:13px; padding:0 16px; margin-bottom:14px; }
+  .app { height:330px; display:grid; grid-template-columns:58px 1fr; margin:0 10px 16px; border:1px solid #343d42; border-radius:9px; overflow:hidden; background:#111416; }
+  .side { background:#1c2226; padding:10px 6px; text-align:center; color:#87939a; font-size:10px; }
+  .side div { padding:10px 0; border-radius:6px; margin-bottom:7px; }
+  .side .active { background:#34444d; color:#fff; }
+  .main { padding:14px; }
+  .bar { height:22px; background:#252d32; border-radius:5px; margin-bottom:12px; }
+  .prompt { height:38px; background:#252d32; border:1px solid #49565d; border-radius:7px; margin-top:10px; }
+  .button { display:inline-block; background:#6d9eb5; color:#081015; padding:7px 12px; border-radius:5px; font-size:10px; font-weight:700; margin-top:9px; }
+  .thumbs { display:grid; grid-template-columns:repeat(2,1fr); gap:7px; }
+  .thumb { aspect-ratio:1; border-radius:5px; background:linear-gradient(135deg,#8d6b52,#d6b78d 45%,#526d78); }
+  .thumb:nth-child(2) { background:linear-gradient(135deg,#536f66,#d1a66b,#463e65); }
+  .thumb:nth-child(3) { background:linear-gradient(135deg,#293b69,#b07c6b,#e0c58a); }
+  .large { height:112px; border-radius:6px; background:linear-gradient(135deg,#5f7b89,#d3ae81 48%,#614e6c); margin-bottom:9px; }
+  .row { display:flex; gap:7px; }
+  .row .small { flex:1; height:48px; background:#252d32; border-radius:5px; }
+  .label { font-size:9px; color:#8e9aa1; margin:8px 0 4px; }
+  .note { font-size:12px; padding:0 16px 16px; color:#c1cbd0; }
+  @media(max-width:900px){.grid{grid-template-columns:1fr}.card{max-width:600px}}
+</style>
+</head>
+<body>
+<h1>Image workspace: choose a layout direction</h1>
+<p>All options keep Image separate from Chat, list only image-capable models, and persist full gallery items.</p>
+<div class="grid">
+  <section class="card">
+    <h2>A · Gallery-first</h2>
+    <p>Prompt bar above a dense history grid.</p>
+    <div class="app"><div class="side"><div>◉<br>Chat</div><div class="active">▣<br>Image</div><div>⚙<br>Set</div></div><div class="main"><div class="bar"></div><div class="label">MODEL</div><div class="row"><div class="small"></div><div class="small"></div></div><div class="label">PROMPT</div><div class="prompt"></div><span class="button">Generate</span><div class="label">HISTORY</div><div class="thumbs"><div class="thumb"></div><div class="thumb"></div><div class="thumb"></div></div></div></div>
+    <div class="note">Best for browsing and reusing prior generations; generation controls stay compact.</div>
+  </section>
+  <section class="card">
+    <h2>B · Studio split</h2>
+    <p>Large selected result beside the generation form.</p>
+    <div class="app"><div class="side"><div>◉<br>Chat</div><div class="active">▣<br>Image</div><div>⚙<br>Set</div></div><div class="main"><div class="bar"></div><div class="row"><div style="flex:1"><div class="label">MODEL</div><div class="small"></div><div class="label">PROMPT</div><div class="prompt"></div><span class="button">Generate</span></div><div style="flex:1"><div class="large"></div><div class="row"><div class="small"></div><div class="small"></div></div></div></div></div></div>
+    <div class="note">Best for focused creation and immediate inspection; history can appear below or in a drawer.</div>
+  </section>
+  <section class="card">
+    <h2>C · Feed with composer</h2>
+    <p>Prompt composer fixed at the bottom, history as a visual feed.</p>
+    <div class="app"><div class="side"><div>◉<br>Chat</div><div class="active">▣<br>Image</div><div>⚙<br>Set</div></div><div class="main"><div class="bar"></div><div class="large"></div><div class="label">TODAY · SDXL</div><div class="large" style="height:68px"></div><div class="prompt"></div><span class="button">Generate</span></div></div>
+    <div class="note">Best for chronological storytelling; less efficient for comparing many generations.</div>
+  </section>
+</div>
+</body>
+</html>
