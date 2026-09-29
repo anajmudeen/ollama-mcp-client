@@ -4,7 +4,6 @@ import type {
   LibraryModelDetail,
   LibraryModelSummary,
   AzureOpenaiDeploymentEntry,
-  AzureOpenaiModelEntry,
   AzureOpenaiStatus,
   OpenAiModelEntry,
   OpenAiStatus,
@@ -29,7 +28,6 @@ interface ModelsPageProps {
   selectedOpenAiModel: string | null
   azureOpenaiEnabled: boolean
   azureOpenaiStatus: AzureOpenaiStatus
-  azureOpenaiCatalog: AzureOpenaiModelEntry[]
   azureOpenaiDeployments: AzureOpenaiDeploymentEntry[]
   selectedAzureOpenaiModel: string | null
   active?: boolean
@@ -200,7 +198,6 @@ export function ModelsPage({
   selectedOpenAiModel,
   azureOpenaiEnabled,
   azureOpenaiStatus,
-  azureOpenaiCatalog,
   azureOpenaiDeployments,
   selectedAzureOpenaiModel,
   active = true,
@@ -694,55 +691,28 @@ export function ModelsPage({
             <div className="space-y-5">
               {!azureOpenaiStatus.validationOk && (
                 <p className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">
-                  Validate Azure OpenAI settings to load the model catalog.
+                  Validate Azure OpenAI settings before using deployments.
                   {azureOpenaiStatus.validationError
                     ? ` (${azureOpenaiStatus.validationError})`
                     : ''}
                 </p>
               )}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-[#f0f4f8]">Model catalog</h3>
-                  <p className="text-xs text-[#6b7a8c]">
-                    Azure model IDs and capabilities returned by your resource.
-                  </p>
+              <div>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#f0f4f8]">Deployments</h3>
+                    <p className="text-xs text-[#6b7a8c]">
+                      Add the deployment names configured in Azure. Only enabled deployments appear in chat.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void onRefreshAzure()}
+                    className="rounded-lg border border-[#2a3a4d] px-3 py-2 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
+                  >
+                    Re-validate
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void onRefreshAzure()}
-                  className="rounded-lg border border-[#2a3a4d] px-3 py-2 text-xs text-[#c5d0dc] hover:bg-[#1a2430]"
-                >
-                  Refresh catalog
-                </button>
-              </div>
-              {azureOpenaiCatalog.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-[#2a3a4d] px-3 py-4 text-xs text-[#6b7a8c]">
-                  No catalog models yet. Validate Azure settings to fetch available metadata.
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {azureOpenaiCatalog.map((model) => (
-                    <li key={model.id} className="rounded-lg border border-[#2a3a4d] bg-[#121820] px-3 py-2">
-                      <p className="text-sm text-[#e7ecf1]">{model.id}</p>
-                      {model.capabilities?.length ? (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {model.capabilities.map((capability) => (
-                            <span key={capability} className="rounded bg-[#1a2430] px-1.5 py-0.5 text-[10px] text-[#9aa8b8]">
-                              {capability}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <div className="border-t border-[#243041] pt-4">
-                <h3 className="mb-1 text-sm font-semibold text-[#f0f4f8]">Deployments</h3>
-                <p className="mb-3 text-xs text-[#6b7a8c]">
-                  Add the deployment names configured in Azure. These are separate from catalog model IDs.
-                </p>
                 <form
                   className="mb-3 flex gap-2"
                   onSubmit={(event) => {
@@ -778,13 +748,6 @@ export function ModelsPage({
                       <li key={deployment.name} className="flex items-start justify-between gap-3 rounded-lg border border-[#2a3a4d] bg-[#121820] px-3 py-2">
                         <div className="min-w-0">
                           <p className="truncate text-sm text-[#e7ecf1]">{deployment.name}</p>
-                          {deployment.matchedCatalogMetadata ? (
-                            <p className="mt-1 text-[11px] text-[#6b7a8c]">
-                              Catalog match: {deployment.matchedCatalogMetadata.id}
-                            </p>
-                          ) : (
-                            <p className="mt-1 text-[11px] text-amber-300">No catalog metadata match</p>
-                          )}
                           {deployment.name === selectedAzureOpenaiModel && (
                             <p className="text-[11px] text-[#6eb5ff]">Selected in chat</p>
                           )}

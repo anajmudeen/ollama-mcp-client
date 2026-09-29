@@ -11,7 +11,6 @@ import type {
   McpToolInfo,
   OllamaModel,
   AzureOpenaiDeploymentEntry,
-  AzureOpenaiModelEntry,
   AzureOpenaiStatus,
   OpenAiStatus,
   ScheduleNotificationPayload,
@@ -114,7 +113,6 @@ export default function App(): React.JSX.Element {
     deploymentCount: 0,
     enabledDeploymentCount: 0
   })
-  const [azureOpenaiCatalog, setAzureOpenaiCatalog] = useState<AzureOpenaiModelEntry[]>([])
   const [azureOpenaiDeployments, setAzureOpenaiDeployments] = useState<
     AzureOpenaiDeploymentEntry[]
   >([])
@@ -548,7 +546,6 @@ export default function App(): React.JSX.Element {
       setAzureOpenaiApiKeyDraft('')
       setAzureOpenaiEndpoint(config.azureOpenaiEndpoint ?? '')
       setAzureOpenaiApiVersion(config.azureOpenaiApiVersion || '2024-10-21')
-      setAzureOpenaiCatalog(config.azureOpenaiModelsCatalog)
       setAzureOpenaiDeployments(config.azureOpenaiDeployments)
       setSelectedAzureOpenaiModel(config.selectedModelByProvider['azure-openai'])
       setSelectedModel(config.selectedModel)
@@ -1556,7 +1553,6 @@ export default function App(): React.JSX.Element {
     setAzureOpenaiApiKeyDraft('')
     setAzureOpenaiEndpoint(config.azureOpenaiEndpoint ?? '')
     setAzureOpenaiApiVersion(config.azureOpenaiApiVersion || '2024-10-21')
-    setAzureOpenaiCatalog(config.azureOpenaiModelsCatalog)
     setAzureOpenaiDeployments(config.azureOpenaiDeployments)
     setSelectedAzureOpenaiModel(config.selectedModelByProvider['azure-openai'])
     setAzureOpenaiStatus(status)
@@ -1740,7 +1736,6 @@ export default function App(): React.JSX.Element {
             selectedOpenAiModel={selectedOpenAiModel}
             azureOpenaiEnabled={azureOpenaiEnabled}
             azureOpenaiStatus={azureOpenaiStatus}
-            azureOpenaiCatalog={azureOpenaiCatalog}
             azureOpenaiDeployments={azureOpenaiDeployments}
             selectedAzureOpenaiModel={selectedAzureOpenaiModel}
             active={view === 'models'}
