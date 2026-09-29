@@ -35,6 +35,14 @@ test('deployments read/write strip matchedCatalogMetadata', () => {
   assert.equal('matchedCatalogMetadata' in listed[0], false)
 })
 
+test('azure deployment tags use name heuristics without catalog', async () => {
+  const provider = await server.ssrLoadModule(
+    new URL('../src/main/llm/azure-openai-provider.ts', import.meta.url).pathname
+  )
+  assert.deepEqual(provider.azureDeploymentTags('gpt-4o').sort(), ['azure-openai', 'vision'].sort())
+  assert.deepEqual(provider.azureDeploymentTags('my-custom-deploy'), ['azure-openai'])
+})
+
 test('azure status counts never report catalog', async () => {
   const mod = await server.ssrLoadModule(
     new URL('../src/shared/azure-openai-status.ts', import.meta.url).pathname

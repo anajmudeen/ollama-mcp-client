@@ -1,15 +1,10 @@
-import type {
-  AzureOpenaiDeploymentEntry,
-  AzureOpenaiModelEntry,
-  OllamaModel
-} from '../../shared/types'
+import type { OllamaModel } from '../../shared/types'
 import { isOpenAiVisionModel } from '../../shared/openai-models'
 import {
   getAzureOpenaiApiKey,
   getAzureOpenaiApiVersion,
   getAzureOpenaiDeployments,
-  getAzureOpenaiEndpoint,
-  getAzureOpenaiModelsCatalog
+  getAzureOpenaiEndpoint
 } from '../config-store'
 import {
   azureOpenAiChatOnce,
@@ -20,55 +15,10 @@ import type { LlmModelInfo, LlmProvider } from './types'
 
 const DEFAULT_CTX = 128_000
 
-function catalogForDeployment(
-  deployment: AzureOpenaiDeploymentEntry,
-  catalog: AzureOpenaiModelEntry[]
-): AzureOpenaiModelEntry | undefined {
-  return deployment.matchedCatalogMetadata ?? catalog.find((entry) => entry.id === deployment.name)
-}
-
-function hasVisionCapability(capabilities: string[] | undefined): boolean {
-  return Boolean(
-    capabilities?.some((capability) =>
-      /^(vision|image[_-]?input|image[_-]?understanding|multimodal)$/i.test(capability)
-    )
-  )
-}
-
-function isImageGenerationCapability(capability: string): boolean {
-  return /(?:image[_ -]?generation|image[_ -]?gen|text[_ -]?to[_ -]?image|dall[- ]?e)/i.test(
-    capability
-  )
-}
-
-function azureModelTags(
-  deployment: AzureOpenaiDeploymentEntry,
-  catalog: AzureOpenaiModelEntry[]
-): string[] {
-  const matched = catalogForDeployment(deployment, catalog)
+export function azureDeploymentTags(deploymentName: string): string[] {
   const tags = ['azure-openai']
-  if (matched?.capabilities?.length) {
-    tags.push(...matched.capabilities.filter((capability) => !isImageGenerationCapability(capability)))
-  }
-  if (
-    hasVisionCapability(matched?.capabilities) ||
-    (matched?.id !== undefined && isOpenAiVisionModel(matched.id))
-  ) {
-    tags.push('vision')
-  }
-  return [...new Set(tags)]
-}
-
-function modelInfo(
-  deployment: AzureOpenaiDeploymentEntry,
-  catalog: AzureOpenaiModelEntry[]
-): LlmModelInfo {
-  const matched = catalogForDeployment(deployment, catalog)
-  return {
-    capabilities: azureModelTags(deployment, catalog),
-    contextLength: DEFAULT_CTX,
-    catalogModelId: matched?.id
-  }
+  if (isOpenAiVisionModel(deploymentName)) tags.push('vision')
+  return tags
 }
 
 function azureOptions(deployment: string) {
@@ -116,17 +66,15 @@ export const azureOpenaiLlmProvider: LlmProvider = {
   },
 
   async listModelsForChat(): Promise<OllamaModel[]> {
-    const catalog = getAzureOpenaiModelsCatalog()
     return getAzureOpenaiDeployments()
       .map((deployment) => ({ ...deployment, name: deployment.name.trim() }))
       .filter((deployment) => deployment.enabled && deployment.name)
       .map((deployment) => {
-        const matched = catalogForDeployment(deployment, catalog)
-        const tags = azureModelTags(deployment, catalog)
+        const tags = azureDeploymentTags(deployment.name)
         return {
           name: deployment.name,
           size: 0,
-          modifiedAt: matched?.created ? new Date(matched.created * 1000).toISOString() : '',
+          modifiedAt: '',
           tags,
           capabilities: tags
         }
@@ -138,7 +86,12 @@ export const azureOpenaiLlmProvider: LlmProvider = {
       (entry) => entry.name.trim() === model.trim()
     )
     if (!deployment) return null
-    return modelInfo(deployment, getAzureOpenaiModelsCatalog())
+    const tags = azureDeploymentTags(deployment.name)
+    return {
+      capabilities: tags,
+      contextLength: DEFAULT_CTX,
+      catalogModelId: isOpenAiVisionModel(deployment.name) ? deployment.name : undefined
+    }
   },
 
   modelIsImageGen() {
@@ -146,7 +99,7 @@ export const azureOpenaiLlmProvider: LlmProvider = {
   },
 
   detectVisionSupport(_model, info) {
-    if (hasVisionCapability(info?.capabilities)) return 'yes'
+    if (info?.capabilities?.includes('vision')) return 'yes'
     if (info?.catalogModelId && isOpenAiVisionModel(info.catalogModelId)) return 'yes'
     return 'unknown'
   },
