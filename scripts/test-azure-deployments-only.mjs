@@ -34,3 +34,18 @@ test('deployments read/write strip matchedCatalogMetadata', () => {
   assert.equal(listed[0].enabled, true)
   assert.equal('matchedCatalogMetadata' in listed[0], false)
 })
+
+test('azure status counts never report catalog', async () => {
+  const mod = await server.ssrLoadModule(
+    new URL('../src/shared/azure-openai-status.ts', import.meta.url).pathname
+  )
+  assert.deepEqual(
+    mod.azureOpenaiStatusCounts([{ enabled: true }, { enabled: false }]),
+    {
+      catalogCount: 0,
+      enabledCount: 1,
+      deploymentCount: 2,
+      enabledDeploymentCount: 1
+    }
+  )
+})

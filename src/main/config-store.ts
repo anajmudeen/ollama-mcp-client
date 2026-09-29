@@ -487,18 +487,6 @@ export function setAzureOpenaiDeploymentEnabled(
   return deployments
 }
 
-/** @deprecated Task 2 removes IPC usage; clears catalog and strips deployment metadata. */
-export function mergeAzureOpenaiCatalog(
-  _entries: AzureOpenaiModelEntry[]
-): AzureOpenaiModelEntry[] {
-  store.set('azureOpenaiModelsCatalog', [])
-  store.set(
-    'azureOpenaiDeployments',
-    getAzureOpenaiDeployments().map(normalizeAzureDeployment)
-  )
-  return []
-}
-
 export function getSelectedModelByProvider(): SelectedModelByProvider {
   return readSelectedModelByProvider()
 }

@@ -39,7 +39,6 @@ import {
   getAzureOpenaiDeployments,
   getAzureOpenaiEnabled,
   getAzureOpenaiEndpoint,
-  getAzureOpenaiModelsCatalog,
   getAzureOpenaiValidationState,
   getOpenaiApiKey,
   getSchedule,
@@ -48,7 +47,6 @@ import {
   listSchedules,
   listServers,
   mergeOpenaiCatalog,
-  mergeAzureOpenaiCatalog,
   removeAzureOpenaiDeployment,
   patchScheduleRun,
   removeServer,
@@ -64,6 +62,7 @@ import {
   setAzureOpenaiDeploymentEnabled,
   setAzureOpenaiEnabled,
   setAzureOpenaiEndpoint,
+  setAzureOpenaiModelsCatalog,
   setAzureOpenaiValidationOk,
   setSelectedModel,
   setSelectedModelForProvider,
@@ -136,6 +135,7 @@ import {
   restartTelegramBot,
   stopTelegramBot
 } from './telegram-bot'
+import { azureOpenaiStatusCounts } from '../shared/azure-openai-status'
 
 let azureValidationGeneration = 0
 
@@ -162,20 +162,17 @@ async function validateOpenAiAndFetchCatalog(): Promise<ReturnType<typeof getCon
 
 function getAzureOpenaiStatus(): AzureOpenaiStatus {
   const { ok, error } = getAzureOpenaiValidationState()
-  const catalog = getAzureOpenaiModelsCatalog()
   const deployments = getAzureOpenaiDeployments()
+  const counts = azureOpenaiStatusCounts(deployments)
   return {
     enabled: getAzureOpenaiEnabled(),
     validationOk: ok,
     validationError: error,
-    catalogCount: catalog.length,
-    enabledCount: deployments.filter((deployment) => deployment.enabled).length,
-    deploymentCount: deployments.length,
-    enabledDeploymentCount: deployments.filter((deployment) => deployment.enabled).length
+    ...counts
   }
 }
 
-async function validateAzureOpenaiAndFetchCatalog(): Promise<ReturnType<typeof getConfig>> {
+async function validateAzureOpenaiCredentials(): Promise<ReturnType<typeof getConfig>> {
   const generation = ++azureValidationGeneration
   const isCurrent = (): boolean => generation === azureValidationGeneration
   const apiKey = getAzureOpenaiApiKey()
@@ -194,11 +191,10 @@ async function validateAzureOpenaiAndFetchCatalog(): Promise<ReturnType<typeof g
     return getConfig()
   }
 
-  const options = { apiKey, endpoint, apiVersion }
   try {
-    const models = await fetchAzureModels(options)
+    await fetchAzureModels({ apiKey, endpoint, apiVersion })
     if (!isCurrent()) return getConfig()
-    mergeAzureOpenaiCatalog(models)
+    setAzureOpenaiModelsCatalog([])
     if (isCurrent()) setAzureOpenaiValidationOk(true)
   } catch (err) {
     if (!isCurrent()) return getConfig()
@@ -206,7 +202,6 @@ async function validateAzureOpenaiAndFetchCatalog(): Promise<ReturnType<typeof g
       false,
       err instanceof Error ? err.message : String(err)
     )
-    return getConfig()
   }
   return getConfig()
 }
@@ -347,10 +342,10 @@ export function registerIpc(ipcMain: IpcMain): void {
     getLlmProviderAdapter('openai').listModelsForChat()
   )
   ipcMain.handle('azureOpenai:validateAndFetchModels', () =>
-    validateAzureOpenaiAndFetchCatalog()
+    validateAzureOpenaiCredentials()
   )
   ipcMain.handle('azureOpenai:refreshModels', () =>
-    validateAzureOpenaiAndFetchCatalog()
+    validateAzureOpenaiCredentials()
   )
   ipcMain.handle('azureOpenai:getStatus', () => getAzureOpenaiStatus())
   ipcMain.handle('azureOpenai:addDeployment', (
