@@ -30,6 +30,5 @@ Removed Azure catalog state from `App.tsx` (`azureOpenaiCatalog` / `setAzureOpen
 
 ## Commit
 
-`f158195` — feat: show only Azure deployments on Models page
-
-(Follow-up commit hash recorded after fix commit.)
+`f158195` — feat: show only Azure deployments on Models page  
+`92652e5` — fix: Azure Settings validate button copy
