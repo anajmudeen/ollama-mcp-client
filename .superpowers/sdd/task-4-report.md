@@ -21,8 +21,15 @@ Removed Azure catalog state from `App.tsx` (`azureOpenaiCatalog` / `setAzureOpen
 
 ## Concerns
 
-- Settings still says “Validate & fetch catalog” for Azure; out of Task 4 scope per brief (ModelsPage + App only).
+- ~~Settings still says “Validate & fetch catalog” for Azure; out of Task 4 scope per brief (ModelsPage + App only).~~ Addressed in Fix below.
+
+## Fix
+
+- **Settings.tsx:** Azure CTA label `Validate & fetch catalog` → `Validate settings`. No other Azure catalog-fetch copy in that section (enable hint already points to Models page for deployments).
+- **grep** `fetch catalog` under `src/renderer`: no matches (Azure Settings CTA cleared).
 
 ## Commit
 
-(See git log for hash after commit.)
+`f158195` — feat: show only Azure deployments on Models page
+
+(Follow-up commit hash recorded after fix commit.)

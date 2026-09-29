@@ -245,7 +245,7 @@ export function Settings({
                 }}
                 className="rounded border border-[#2a3a4d] px-3 py-1.5 text-sm text-[#c5d0dc] hover:bg-[#1a2430] disabled:opacity-50"
               >
-                Validate &amp; fetch catalog
+                Validate settings
               </button>
               <button
                 type="button"
