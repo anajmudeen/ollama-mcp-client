@@ -20,6 +20,10 @@ import type {
   ImageBackendSelection
 } from '../../shared/types'
 import { selectedModelForProvider } from '../../shared/provider-selection'
+import {
+  normalizeReasoningEffort,
+  type ReasoningEffort
+} from '../../shared/reasoning-effort'
 import type { ServerWithStatus } from '../../preload/index'
 import type { ActivityState } from './components/ActivityIndicator'
 import { Chat } from './components/Chat'
@@ -125,6 +129,7 @@ export default function App(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [activity, setActivity] = useState<ActivityState>(IDLE_ACTIVITY)
   const [showThinking, setShowThinking] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('low')
   const [maxToolIterations, setMaxToolIterations] = useState(30)
   const [imageBackend, setImageBackend] = useState<ImageBackendSelection | null>(null)
   const [availableImageModels, setAvailableImageModels] = useState<AvailableImageModel[]>([])
@@ -551,6 +556,7 @@ export default function App(): React.JSX.Element {
       setSelectedModel(config.selectedModel)
       setShowThinking(Boolean(config.showThinking))
       showThinkingRef.current = Boolean(config.showThinking)
+      setReasoningEffort(normalizeReasoningEffort(config.reasoningEffort))
       setMaxToolIterations(config.maxToolIterations)
       setImageBackend(config.imageBackend ?? null)
       setTelegramEnabled(Boolean(config.telegramEnabled))
@@ -1483,6 +1489,11 @@ export default function App(): React.JSX.Element {
     await window.api.setShowThinking(enabled)
   }
 
+  const handleSetReasoningEffort = async (value: ReasoningEffort): Promise<void> => {
+    const saved = await window.api.setReasoningEffort(value)
+    setReasoningEffort(saved)
+  }
+
   const handleSetMaxToolIterations = async (value: number): Promise<void> => {
     const saved = await window.api.setMaxToolIterations(value)
     setMaxToolIterations(saved)
@@ -1863,6 +1874,8 @@ export default function App(): React.JSX.Element {
           imageGenSupported={imageGenSupported}
           models={models}
           selectedModel={selectedModel}
+          reasoningEffort={reasoningEffort}
+          onSetReasoningEffort={(v) => void handleSetReasoningEffort(v)}
           tools={tools}
           contextUsage={contextUsage}
           onSelectModel={(m) => void handleSelectModel(m)}

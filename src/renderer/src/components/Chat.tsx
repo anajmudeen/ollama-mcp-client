@@ -1,5 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AgentSkill, LlmProvider, McpToolInfo, OllamaModel, UiMessage } from '../../../shared/types'
+import {
+  shouldShowReasoningEffortControl,
+  type ReasoningEffort
+} from '../../../shared/reasoning-effort'
 import { classifyImageUiModel } from '../../../shared/image-ui'
 import type { ActivityState } from './ActivityIndicator'
 import { DownloadImageButton } from './DownloadImageButton'
@@ -48,6 +52,8 @@ interface ChatProps {
   imageGenSupported?: boolean
   models: OllamaModel[]
   selectedModel: string | null
+  reasoningEffort: ReasoningEffort
+  onSetReasoningEffort: (value: ReasoningEffort) => void
   tools: McpToolInfo[]
   contextUsage: { used: number; limit: number } | null
   onSelectModel: (model: string) => void
@@ -79,6 +85,8 @@ export function Chat({
   imageGenSupported = true,
   models,
   selectedModel,
+  reasoningEffort,
+  onSetReasoningEffort,
   tools,
   contextUsage,
   onSelectModel,
@@ -93,6 +101,7 @@ export function Chat({
   const [slashExpanded, setSlashExpanded] = useState(false)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
+  const [effortOpen, setEffortOpen] = useState(false)
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
@@ -106,7 +115,23 @@ export function Chat({
   const scrollTimeoutRef = useRef<number | null>(null)
   const [animateEnter, setAnimateEnter] = useState(false)
   const modelMenuRef = useRef<HTMLDivElement>(null)
+  const effortMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const REASONING_EFFORT_OPTIONS: { value: ReasoningEffort; label: string }[] = [
+    { value: 'none', label: 'None' },
+    { value: 'low', label: 'Low' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High' }
+  ]
+
+  const reasoningEffortLabel =
+    REASONING_EFFORT_OPTIONS.find((o) => o.value === reasoningEffort)?.label ?? 'Low'
+
+  const showReasoningEffortControl = shouldShowReasoningEffortControl({
+    provider: effectiveProvider,
+    model: selectedModel
+  })
 
   const clearProgrammaticScroll = (): void => {
     programmaticScrollRef.current = false
@@ -312,6 +337,17 @@ export function Chat({
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
   }, [modelOpen])
+
+  useEffect(() => {
+    if (!effortOpen) return
+    const onDoc = (e: MouseEvent): void => {
+      if (!effortMenuRef.current?.contains(e.target as Node)) {
+        setEffortOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [effortOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -1004,11 +1040,68 @@ export function Chat({
               </button>
             )}
 
+            {showReasoningEffortControl && (
+              <div className="relative" ref={effortMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEffortOpen((o) => !o)
+                    setModelOpen(false)
+                  }}
+                  title="Reasoning effort"
+                  className="flex max-w-[200px] items-center gap-1.5 rounded-full bg-[#3a424d] px-3.5 py-2 text-[13px] font-medium text-[#f0f4f8] transition hover:bg-[#454e5a]"
+                >
+                  <span className="truncate">Effort: {reasoningEffortLabel}</span>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    aria-hidden
+                    className="shrink-0 opacity-80"
+                  >
+                    <path
+                      d="M3 4.5L6 7.5L9 4.5"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+
+                {effortOpen && (
+                  <div className="absolute bottom-full right-0 z-40 mb-2 min-w-[160px] overflow-hidden rounded-xl border border-[#2a3a4d] bg-[#161d27] py-1 shadow-xl">
+                    {REASONING_EFFORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          onSetReasoningEffort(opt.value)
+                          setEffortOpen(false)
+                        }}
+                        className={`flex w-full px-3 py-2 text-left text-[13px] hover:bg-[#1f2833] ${
+                          opt.value === reasoningEffort
+                            ? 'bg-[#1a3050] text-[#9ec5f0]'
+                            : 'text-[#e7ecf1]'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="relative" ref={modelMenuRef}>
               <button
                 type="button"
                 disabled={modelNames.length === 0}
-                onClick={() => setModelOpen((o) => !o)}
+                onClick={() => {
+                  setModelOpen((o) => !o)
+                  setEffortOpen(false)
+                }}
                 title="Select model"
                 className="flex max-w-[220px] items-center gap-1.5 rounded-full bg-[#3a424d] px-3.5 py-2 text-[13px] font-medium text-[#f0f4f8] transition hover:bg-[#454e5a] disabled:cursor-not-allowed disabled:opacity-40"
               >
