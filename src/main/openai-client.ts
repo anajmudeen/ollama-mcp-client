@@ -1,7 +1,12 @@
 import type { OpenAiModelEntry } from '../shared/types'
-import { isOpenAiImageGenModel } from '../shared/openai-models'
+import {
+  isOpenAiImageGenModel,
+  openAiModelUsesReasoningEffort
+} from '../shared/openai-models'
 import type { OllamaChatChunk, OllamaChatMessage, OllamaTool } from './ollama'
 import { getOpenaiApiKey } from './config-store'
+
+export { openAiModelUsesReasoningEffort }
 
 export const OPENAI_BASE = 'https://api.openai.com/v1'
 
@@ -13,19 +18,6 @@ export function isChatModelId(id: string): boolean {
   if (isOpenAiImageGenModel(id)) return false
   if (lower.includes('realtime')) return false
   return true
-}
-
-/**
- * Models that accept `reasoning_effort` on Chat Completions (o-series, GPT-5+, etc.).
- * Standard GPT-4.x / GPT-4o models reject the parameter entirely.
- */
-export function openAiModelUsesReasoningEffort(model: string): boolean {
-  const lower = model.toLowerCase()
-  if (/^o\d/.test(lower)) return true
-  const major = lower.match(/^gpt-(\d+)/)?.[1]
-  if (major && Number.parseInt(major, 10) >= 5) return true
-  if (lower.includes('reasoning')) return true
-  return false
 }
 
 export async function fetchOpenAiModels(apiKey: string): Promise<OpenAiModelEntry[]> {

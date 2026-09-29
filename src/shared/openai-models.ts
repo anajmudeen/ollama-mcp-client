@@ -1,3 +1,16 @@
+/**
+ * Models that accept `reasoning_effort` on Chat Completions (o-series, GPT-5+, etc.).
+ * Standard GPT-4.x / GPT-4o models reject the parameter entirely.
+ */
+export function openAiModelUsesReasoningEffort(model: string): boolean {
+  const lower = model.toLowerCase()
+  if (/^o\d/.test(lower)) return true
+  const major = lower.match(/^gpt-(\d+)/)?.[1]
+  if (major && Number.parseInt(major, 10) >= 5) return true
+  if (lower.includes('reasoning')) return true
+  return false
+}
+
 /** GPT Image and similar models that generate images from text (not vision chat). */
 export function isOpenAiImageGenModel(model: string): boolean {
   const lower = model.toLowerCase()

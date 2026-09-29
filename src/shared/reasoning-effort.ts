@@ -1,0 +1,31 @@
+import { openAiModelUsesReasoningEffort } from './openai-models'
+import type { LlmProvider } from './types'
+
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high'
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'low'
+const ALLOWED = new Set<ReasoningEffort>(['none', 'low', 'medium', 'high'])
+
+export function normalizeReasoningEffort(value: unknown): ReasoningEffort {
+  return typeof value === 'string' && ALLOWED.has(value as ReasoningEffort)
+    ? (value as ReasoningEffort)
+    : DEFAULT_REASONING_EFFORT
+}
+
+export function resolveReasoningEffortForRequest(options: {
+  model: string
+  hasTools: boolean
+  preference: ReasoningEffort
+}): ReasoningEffort | undefined {
+  if (!openAiModelUsesReasoningEffort(options.model)) return undefined
+  if (options.hasTools) return 'none'
+  return normalizeReasoningEffort(options.preference)
+}
+
+export function shouldShowReasoningEffortControl(options: {
+  provider: LlmProvider
+  model: string | null
+}): boolean {
+  if (options.provider === 'ollama') return false
+  if (!options.model?.trim()) return false
+  return openAiModelUsesReasoningEffort(options.model)
+}
