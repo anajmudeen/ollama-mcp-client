@@ -402,24 +402,36 @@ export function setAzureOpenaiValidationOk(ok: boolean, error?: string | null): 
 }
 
 export function getAzureOpenaiModelsCatalog(): AzureOpenaiModelEntry[] {
-  return [...store.get('azureOpenaiModelsCatalog', DEFAULT_CONFIG.azureOpenaiModelsCatalog)]
+  const stored = store.get('azureOpenaiModelsCatalog', DEFAULT_CONFIG.azureOpenaiModelsCatalog)
+  if (Array.isArray(stored) && stored.length > 0) {
+    store.set('azureOpenaiModelsCatalog', [])
+  }
+  return []
 }
 
 export function setAzureOpenaiModelsCatalog(
-  entries: AzureOpenaiModelEntry[]
+  _entries: AzureOpenaiModelEntry[]
 ): AzureOpenaiModelEntry[] {
-  store.set('azureOpenaiModelsCatalog', entries)
-  return entries
+  store.set('azureOpenaiModelsCatalog', [])
+  return []
 }
 
 export function getAzureOpenaiDeployments(): AzureOpenaiDeploymentEntry[] {
-  return [...store.get('azureOpenaiDeployments', DEFAULT_CONFIG.azureOpenaiDeployments)]
+  const raw = store.get('azureOpenaiDeployments', DEFAULT_CONFIG.azureOpenaiDeployments)
+  const normalized = raw.map(normalizeAzureDeployment)
+  if (JSON.stringify(raw) !== JSON.stringify(normalized)) {
+    store.set('azureOpenaiDeployments', normalized)
+  }
+  return [...normalized]
 }
 
 function normalizeAzureDeployment(
   deployment: AzureOpenaiDeploymentEntry
 ): AzureOpenaiDeploymentEntry {
-  return { ...deployment, name: deployment.name.trim() }
+  return {
+    name: deployment.name.trim(),
+    enabled: Boolean(deployment.enabled)
+  }
 }
 
 export function addAzureOpenaiDeployment(
@@ -475,20 +487,16 @@ export function setAzureOpenaiDeploymentEnabled(
   return deployments
 }
 
+/** @deprecated Task 2 removes IPC usage; clears catalog and strips deployment metadata. */
 export function mergeAzureOpenaiCatalog(
-  entries: AzureOpenaiModelEntry[]
+  _entries: AzureOpenaiModelEntry[]
 ): AzureOpenaiModelEntry[] {
-  const byId = new Map(entries.map((entry) => [entry.id, entry]))
-  const deployments = getAzureOpenaiDeployments().map((deployment) => {
-    const matched = byId.get(deployment.name)
-    if (!matched) {
-      const { matchedCatalogMetadata: _matched, ...withoutMetadata } = deployment
-      return withoutMetadata
-    }
-    return { ...deployment, matchedCatalogMetadata: matched }
-  })
-  store.set('azureOpenaiDeployments', deployments)
-  return setAzureOpenaiModelsCatalog(entries)
+  store.set('azureOpenaiModelsCatalog', [])
+  store.set(
+    'azureOpenaiDeployments',
+    getAzureOpenaiDeployments().map(normalizeAzureDeployment)
+  )
+  return []
 }
 
 export function getSelectedModelByProvider(): SelectedModelByProvider {
