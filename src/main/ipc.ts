@@ -27,8 +27,12 @@ import {
   createScheduleRecord,
   deleteScheduleRecord,
   deleteSession,
-  ensureActiveSession,
+  ensureActiveSessionList,
   getConfig,
+  getSession,
+  getSessionsListState,
+  migrateRemainingSessionImagesInBackground,
+  toSessionSummary,
   addAzureOpenaiDeployment,
   getAzureOpenaiApiKey,
   getAzureOpenaiApiVersion,
@@ -41,7 +45,6 @@ import {
   getSchedule,
   getSelectedModel,
   getSelectedModelForProvider,
-  getSessionsState,
   listSchedules,
   listServers,
   mergeOpenaiCatalog,
@@ -491,15 +494,21 @@ export function registerIpc(ipcMain: IpcMain): void {
     }
   )
 
-  ipcMain.handle('sessions:list', () => ensureActiveSession())
+  ipcMain.handle('sessions:list', () => {
+    const state = ensureActiveSessionList()
+    migrateRemainingSessionImagesInBackground()
+    return state
+  })
+  ipcMain.handle('sessions:get', (_e, id: string) => getSession(id))
   ipcMain.handle('sessions:create', () => {
     createSession()
-    const state = getSessionsState()
+    const state = getSessionsListState()
     broadcastSessionsChanged()
     return state
   })
   ipcMain.handle('sessions:setActive', (_e, id: string) => {
-    const state = setActiveSession(id)
+    setActiveSession(id)
+    const state = getSessionsListState()
     broadcastSessionsChanged()
     return state
   })
@@ -510,14 +519,15 @@ export function registerIpc(ipcMain: IpcMain): void {
       id: string,
       patch: Partial<Pick<ChatSession, 'title' | 'uiMessages' | 'history'>>
     ) => {
-      updateSession(id, patch)
-      return getSessionsState()
+      const updated = updateSession(id, patch)
+      return toSessionSummary(updated)
     }
   )
   ipcMain.handle('sessions:delete', (_e, id: string) => {
     removeSessionTurns(id)
     clearLatestGeneratedImage(id)
-    const state = deleteSession(id)
+    deleteSession(id)
+    const state = getSessionsListState()
     broadcastSessionsChanged()
     return state
   })
@@ -527,7 +537,7 @@ export function registerIpc(ipcMain: IpcMain): void {
       const fallback = snippetFromPrompt(prompt ?? '')
       const title = await generateSessionTitle(prompt ?? '', fallback)
       try {
-        const current = getSessionsState().sessions.find((s) => s.id === id)
+        const current = getSession(id)
         // Skip if the chat was cleared or deleted while the title model ran.
         if (!current) return title
         if (current.uiMessages.length === 0 && current.title === 'New chat') {

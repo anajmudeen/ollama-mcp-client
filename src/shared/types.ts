@@ -520,6 +520,21 @@ export interface ChatSession {
   origin?: SessionOrigin
 }
 
+export interface SessionSummary {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  origin?: SessionOrigin
+}
+
+export interface SessionsListState {
+  sessions: SessionSummary[]
+  activeSessionId: string | null
+  telegramActiveSessionId: string | null
+}
+
+/** @deprecated Prefer SessionsListState for IPC; full bodies via sessions:get */
 export interface SessionsState {
   sessions: ChatSession[]
   activeSessionId: string | null

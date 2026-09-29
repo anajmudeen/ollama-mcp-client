@@ -14,17 +14,20 @@ interface PreviewEntry {
 
 const previews = new Map<string, PreviewEntry>()
 
+export const HTML_PREVIEW_SCHEME_PRIVILEGES = {
+  standard: true,
+  secure: true,
+  supportFetchAPI: true,
+  corsEnabled: true,
+  stream: true
+} as const
+
+/** @deprecated Prefer combined registerAppSchemes in index.ts */
 export function registerHtmlPreviewScheme(): void {
   protocol.registerSchemesAsPrivileged([
     {
       scheme: HTML_PREVIEW_SCHEME,
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        corsEnabled: true,
-        stream: true
-      }
+      privileges: { ...HTML_PREVIEW_SCHEME_PRIVILEGES }
     }
   ])
 }

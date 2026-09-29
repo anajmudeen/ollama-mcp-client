@@ -20,11 +20,23 @@ import type {
   OpenAiModelEntry,
   SelectedModelByProvider,
   SessionOrigin,
+  SessionsListState,
   SessionsState,
   TelegramMirrorMode,
   TelegramSchedule,
   UiMessage
 } from '../shared/types'
+import {
+  toSessionSummary,
+  toSessionsListState
+} from '../shared/session-summary'
+import {
+  deleteSessionImages,
+  externalizeUiMessageImages,
+  uiMessagesHaveInlineImages
+} from './session-images'
+
+export { toSessionSummary }
 
 const DEFAULT_SELECTED_BY_PROVIDER: SelectedModelByProvider = {
   ollama: null,
@@ -798,6 +810,71 @@ export function listSessions(): ChatSession[] {
   return sortSessions(cachedSessions())
 }
 
+export function getSession(id: string): ChatSession | null {
+  return listSessions().find((s) => s.id === id) ?? null
+}
+
+function applyExternalizedMessages(
+  sessionId: string,
+  uiMessages: UiMessage[]
+): UiMessage[] {
+  const { messages, changed } = externalizeUiMessageImages(sessionId, uiMessages)
+  return changed ? messages : uiMessages
+}
+
+function externalizeSessionInCache(sessionId: string): boolean {
+  const sessions = [...cachedSessions()]
+  const idx = sessions.findIndex((s) => s.id === sessionId)
+  if (idx < 0) return false
+  const current = sessions[idx]!
+  if (!uiMessagesHaveInlineImages(current.uiMessages)) return false
+  const { messages, changed } = externalizeUiMessageImages(
+    sessionId,
+    current.uiMessages
+  )
+  if (!changed) return false
+  sessions[idx] = { ...current, uiMessages: messages }
+  sessionsCache = sessions
+  scheduleSessionsPersist()
+  return true
+}
+
+/** Sync: externalize inline images for the active session before first list. */
+export function migrateActiveSessionImages(): void {
+  const activeId = getActiveSessionId()
+  if (!activeId) return
+  externalizeSessionInCache(activeId)
+}
+
+let remainingMigrateStarted = false
+
+/** Async: externalize remaining sessions after UI is up. */
+export function migrateRemainingSessionImagesInBackground(): void {
+  if (remainingMigrateStarted) return
+  remainingMigrateStarted = true
+  setImmediate(() => {
+    const sessions = [...cachedSessions()]
+    const activeId = getActiveSessionId()
+    let any = false
+    for (let i = 0; i < sessions.length; i++) {
+      const session = sessions[i]!
+      if (session.id === activeId) continue
+      if (!uiMessagesHaveInlineImages(session.uiMessages)) continue
+      const { messages, changed } = externalizeUiMessageImages(
+        session.id,
+        session.uiMessages
+      )
+      if (!changed) continue
+      sessions[i] = { ...session, uiMessages: messages }
+      any = true
+    }
+    if (any) {
+      sessionsCache = sessions
+      scheduleSessionsPersist()
+    }
+  })
+}
+
 export function getActiveSessionId(): string | null {
   if (activeSessionIdCache === undefined) {
     activeSessionIdCache = store.get('activeSessionId', null)
@@ -855,6 +932,10 @@ export function getSessionsState(): SessionsState {
   return { sessions, activeSessionId, telegramActiveSessionId }
 }
 
+export function getSessionsListState(): SessionsListState {
+  return toSessionsListState(getSessionsState())
+}
+
 export function createSession(origin: SessionOrigin = 'desktop'): ChatSession {
   const now = new Date().toISOString()
   const session: ChatSession = {
@@ -901,19 +982,22 @@ export function updateSession(
   id: string,
   patch: Partial<Pick<ChatSession, 'title' | 'uiMessages' | 'history'>>
 ): ChatSession {
-  const sessions = listSessions()
+  const sessions = [...cachedSessions()]
   const idx = sessions.findIndex((s) => s.id === id)
   if (idx < 0) throw new Error('Session not found')
 
-  const nextMessages = patch.uiMessages ?? sessions[idx].uiMessages
+  const nextMessages = applyExternalizedMessages(
+    id,
+    patch.uiMessages ?? sessions[idx]!.uiMessages
+  )
   const updated: ChatSession = {
-    ...sessions[idx],
+    ...sessions[idx]!,
     ...patch,
     history: patch.history
       ? stripHeavyHistory(patch.history)
-      : sessions[idx].history,
+      : sessions[idx]!.history,
     uiMessages: nextMessages,
-    updatedAt: lastMessageCreatedAt(nextMessages) ?? sessions[idx].createdAt
+    updatedAt: lastMessageCreatedAt(nextMessages) ?? sessions[idx]!.createdAt
   }
   sessions[idx] = updated
   sessionsCache = sessions
@@ -922,6 +1006,7 @@ export function updateSession(
 }
 
 export function deleteSession(id: string): SessionsState {
+  deleteSessionImages(id)
   let sessions = listSessions().filter((s) => s.id !== id)
   let activeSessionId = getActiveSessionId()
   let telegramActiveSessionId = getTelegramActiveSessionId()
@@ -983,12 +1068,21 @@ export function ensureActiveSession(): SessionsState {
     const nextActive = desktopSessions[0]?.id ?? state.sessions[0]?.id ?? null
     if (nextActive) {
       store.set('activeSessionId', nextActive)
+      activeSessionIdCache = nextActive
+      migrateActiveSessionImages()
       return getSessionsState()
     }
     createSession('desktop')
+    migrateActiveSessionImages()
     return getSessionsState()
   }
-  return state
+  migrateActiveSessionImages()
+  return getSessionsState()
+}
+
+export function ensureActiveSessionList(): SessionsListState {
+  ensureActiveSession()
+  return getSessionsListState()
 }
 
 export function ensureTelegramActiveSession(): SessionsState {

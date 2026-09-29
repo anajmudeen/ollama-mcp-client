@@ -5,7 +5,8 @@ import type {
   ChatEvent,
   ChatMessage,
   ChatQueueState,
-  ChatSession,
+  SessionSummary,
+  SessionsListState,
   LlmProvider,
   McpToolInfo,
   OllamaModel,
@@ -120,7 +121,7 @@ export default function App(): React.JSX.Element {
   const [selectedAzureOpenaiModel, setSelectedAzureOpenaiModel] = useState<string | null>(null)
   const [effectiveProvider, setEffectiveProvider] = useState<LlmProvider>('ollama')
   const [providerFallbackReason, setProviderFallbackReason] = useState<string | undefined>()
-  const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [busy, setBusy] = useState(false)
@@ -169,7 +170,7 @@ export default function App(): React.JSX.Element {
   const turnModelRef = useRef<string | null>(null)
   const selectedModelRef = useRef<string | null>(null)
   const showThinkingRef = useRef(false)
-  const sessionsRef = useRef<ChatSession[]>([])
+  const sessionsRef = useRef<SessionSummary[]>([])
   const backgroundSessionsRef = useRef<Map<string, BackgroundSessionTurn>>(new Map())
   const writeSessionRef = useRef<
     (
@@ -221,26 +222,36 @@ export default function App(): React.JSX.Element {
     setMessages(next)
   }, [])
 
-  const applySessionsState = useCallback(
-    (state: { sessions: ChatSession[]; activeSessionId: string | null }) => {
-      setSessions(state.sessions)
-      setActiveSessionId(state.activeSessionId)
-      activeSessionIdRef.current = state.activeSessionId
-      const active = state.sessions.find((s) => s.id === state.activeSessionId)
-      if (active) {
-        messagesRef.current = active.uiMessages
-        setMessages(active.uiMessages)
-        historyRef.current = active.history
-        sessionTitleRef.current = active.title
-      } else {
-        messagesRef.current = []
-        setMessages([])
-        historyRef.current = []
-        sessionTitleRef.current = 'New chat'
-      }
-    },
-    []
-  )
+  const applySessionsList = useCallback((state: SessionsListState) => {
+    setSessions(state.sessions)
+    sessionsRef.current = state.sessions
+  }, [])
+
+  const loadSessionBody = useCallback(async (id: string | null): Promise<void> => {
+    if (!id) {
+      messagesRef.current = []
+      setMessages([])
+      historyRef.current = []
+      sessionTitleRef.current = 'New chat'
+      setActiveSessionId(null)
+      activeSessionIdRef.current = null
+      return
+    }
+    const body = await window.api.sessions.get(id)
+    setActiveSessionId(id)
+    activeSessionIdRef.current = id
+    if (body) {
+      messagesRef.current = body.uiMessages
+      setMessages(body.uiMessages)
+      historyRef.current = body.history
+      sessionTitleRef.current = body.title
+    } else {
+      messagesRef.current = []
+      setMessages([])
+      historyRef.current = []
+      sessionTitleRef.current = 'New chat'
+    }
+  }, [])
 
   const writeSession = useCallback(
     async (
@@ -250,17 +261,25 @@ export default function App(): React.JSX.Element {
       title?: string
     ): Promise<void> => {
       try {
-        const patch: Partial<
-          Pick<ChatSession, 'title' | 'uiMessages' | 'history'>
-        > = {
+        const patch: Partial<{
+          title: string
+          uiMessages: UiMessage[]
+          history: ChatMessage[]
+        }> = {
           uiMessages,
           history
         }
         if (title !== undefined) patch.title = title
-        const state = await window.api.sessions.update(id, patch)
-        // Refresh list only — never reload the open chat from this response
+        const summary = await window.api.sessions.update(id, patch)
+        // Refresh list metadata only — never reload the open chat from this response
         // (that races with an in-progress switch).
-        setSessions(state.sessions)
+        setSessions((prev) => {
+          const next = prev.map((s) => (s.id === summary.id ? summary : s))
+          const has = next.some((s) => s.id === summary.id)
+          const merged = has ? next : [summary, ...next]
+          sessionsRef.current = merged
+          return merged
+        })
       } catch (err) {
         console.error('Failed to persist session', err)
       }
@@ -603,7 +622,8 @@ export default function App(): React.JSX.Element {
       const config = await window.api.getConfig()
       setTelegramStatus(await window.api.telegram.getStatus())
       const sessionState = await window.api.sessions.list()
-      applySessionsState(sessionState)
+      applySessionsList(sessionState)
+      await loadSessionBody(sessionState.activeSessionId)
       await refreshServers()
       await applyConfig(config, requestId)
       const status = await window.api.ollama.getStatus()
@@ -612,7 +632,13 @@ export default function App(): React.JSX.Element {
       setOllamaError(status.error)
       setImageGenSupported(status.imageGenSupported !== false)
     })()
-  }, [applyConfig, applySessionsState, beginProviderOperation, refreshServers])
+  }, [
+    applyConfig,
+    applySessionsList,
+    beginProviderOperation,
+    loadSessionBody,
+    refreshServers
+  ])
 
   useEffect(() => {
     queueStateRef.current = queueState
@@ -669,13 +695,24 @@ export default function App(): React.JSX.Element {
     })
 
     const unsub = window.api.sessions.onChanged((state) => {
-      applySessionsState(state)
+      // Summaries only — never replace open-chat messages from broadcast.
+      applySessionsList(state)
+      const activeId = activeSessionIdRef.current
+      if (activeId && !state.sessions.some((s) => s.id === activeId)) {
+        void loadSessionBody(state.activeSessionId)
+      } else if (!activeId && state.activeSessionId) {
+        void loadSessionBody(state.activeSessionId)
+      } else if (activeId) {
+        const summary = state.sessions.find((s) => s.id === activeId)
+        if (summary) sessionTitleRef.current = summary.title
+        setActiveSessionId(activeId)
+      }
     })
     return () => {
       unsubSchedules()
       unsub()
     }
-  }, [applySessionsState])
+  }, [applySessionsList, loadSessionBody])
 
   useEffect(() => {
     if (!scheduleToast) return
@@ -794,28 +831,39 @@ export default function App(): React.JSX.Element {
 
       if (event.turnId && eventSessionId) {
         if (eventSessionId !== activeSessionIdRef.current) {
-          let bg = backgroundSessionsRef.current.get(eventSessionId)
-          if (!bg) {
-            const session = sessionsRef.current.find((s) => s.id === eventSessionId)
-            if (!session) return
-            bg = createBackgroundSessionTurn(
-              session.uiMessages,
-              session.history,
-              selectedModelRef.current
+          const applyToBackground = (bg: BackgroundSessionTurn): void => {
+            applyBackgroundChatEvent(
+              event,
+              bg,
+              (ui, hist) => {
+                void writeSessionRef.current(eventSessionId, ui, hist)
+              },
+              showThinkingRef.current
             )
-            backgroundSessionsRef.current.set(eventSessionId, bg)
+            if (event.type === 'done' || event.type === 'error') {
+              backgroundSessionsRef.current.delete(eventSessionId)
+            }
           }
-          applyBackgroundChatEvent(
-            event,
-            bg,
-            (ui, hist) => {
-              void writeSessionRef.current(eventSessionId, ui, hist)
-            },
-            showThinkingRef.current
-          )
-          if (event.type === 'done' || event.type === 'error') {
-            backgroundSessionsRef.current.delete(eventSessionId)
+          const bg = backgroundSessionsRef.current.get(eventSessionId)
+          if (bg) {
+            applyToBackground(bg)
+            return
           }
+          // List is summaries-only — hydrate body from main, then apply.
+          void window.api.sessions.get(eventSessionId).then((body) => {
+            if (!body) return
+            if (eventSessionId === activeSessionIdRef.current) return
+            let next = backgroundSessionsRef.current.get(eventSessionId)
+            if (!next) {
+              next = createBackgroundSessionTurn(
+                body.uiMessages,
+                body.history,
+                selectedModelRef.current
+              )
+              backgroundSessionsRef.current.set(eventSessionId, next)
+            }
+            applyToBackground(next)
+          })
           return
         }
       }
@@ -1348,7 +1396,8 @@ export default function App(): React.JSX.Element {
     setView('chat')
     const previous = await leaveCurrentSession({ persist: false })
     const state = await window.api.sessions.create()
-    applySessionsState(state)
+    applySessionsList(state)
+    await loadSessionBody(state.activeSessionId)
     if (previous) {
       void writeSession(
         previous.id,
@@ -1364,10 +1413,10 @@ export default function App(): React.JSX.Element {
     if (id === activeSessionIdRef.current) return
     const previous = await leaveCurrentSession({ persist: false })
     const state = await window.api.sessions.setActive(id)
+    applySessionsList(state)
     const bg = backgroundSessionsRef.current.get(id)
     if (bg) {
       backgroundSessionsRef.current.delete(id)
-      setSessions(state.sessions)
       setActiveSessionId(id)
       activeSessionIdRef.current = id
       messagesRef.current = bg.messages
@@ -1376,7 +1425,7 @@ export default function App(): React.JSX.Element {
       const session = state.sessions.find((s) => s.id === id)
       sessionTitleRef.current = session?.title ?? 'New chat'
     } else {
-      applySessionsState(state)
+      await loadSessionBody(id)
     }
     const running = queueStateRef.current.running
     if (running?.sessionId === id) {
@@ -1398,11 +1447,15 @@ export default function App(): React.JSX.Element {
     if (pendingAiTitleRef.current?.sessionId === id) {
       cancelAiTitle()
     }
-    if (id === activeSessionIdRef.current) {
+    const wasActive = id === activeSessionIdRef.current
+    if (wasActive) {
       await leaveCurrentSession({ persist: false })
     }
     const state = await window.api.sessions.delete(id)
-    applySessionsState(state)
+    applySessionsList(state)
+    if (wasActive) {
+      await loadSessionBody(state.activeSessionId)
+    }
   }
 
   const handleSelectModel = async (model: string): Promise<void> => {

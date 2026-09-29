@@ -30,7 +30,8 @@ import type {
   OllamaStatus,
   PullProgressEvent,
   ScheduleNotificationPayload,
-  SessionsState,
+  SessionSummary,
+  SessionsListState,
   SkillImportResult,
   TelegramMirrorMode,
   TelegramSchedule,
@@ -200,20 +201,25 @@ const api = {
   },
 
   sessions: {
-    list: (): Promise<SessionsState> => ipcRenderer.invoke('sessions:list'),
-    create: (): Promise<SessionsState> => ipcRenderer.invoke('sessions:create'),
-    setActive: (id: string): Promise<SessionsState> =>
+    list: (): Promise<SessionsListState> => ipcRenderer.invoke('sessions:list'),
+    get: (id: string): Promise<ChatSession | null> =>
+      ipcRenderer.invoke('sessions:get', id),
+    create: (): Promise<SessionsListState> => ipcRenderer.invoke('sessions:create'),
+    setActive: (id: string): Promise<SessionsListState> =>
       ipcRenderer.invoke('sessions:setActive', id),
     update: (
       id: string,
       patch: Partial<Pick<ChatSession, 'title' | 'uiMessages' | 'history'>>
-    ): Promise<SessionsState> => ipcRenderer.invoke('sessions:update', id, patch),
-    delete: (id: string): Promise<SessionsState> =>
+    ): Promise<SessionSummary> => ipcRenderer.invoke('sessions:update', id, patch),
+    delete: (id: string): Promise<SessionsListState> =>
       ipcRenderer.invoke('sessions:delete', id),
     generateTitle: (id: string, prompt: string): Promise<string> =>
       ipcRenderer.invoke('sessions:generateTitle', id, prompt),
-    onChanged: (callback: (state: SessionsState) => void): (() => void) => {
-      const handler = (_: Electron.IpcRendererEvent, state: SessionsState): void => {
+    onChanged: (callback: (state: SessionsListState) => void): (() => void) => {
+      const handler = (
+        _: Electron.IpcRendererEvent,
+        state: SessionsListState
+      ): void => {
         callback(state)
       }
       ipcRenderer.on('sessions:changed', handler)

@@ -1,4 +1,4 @@
-import type { ChatSession, ChatQueueState, SessionQueueStatus } from '../../../shared/types'
+import type { SessionSummary, ChatQueueState, SessionQueueStatus } from '../../../shared/types'
 import appIcon from '../assets/icon-128.png'
 
 type AppView = 'chat' | 'image' | 'models' | 'mcp' | 'skills' | 'schedules' | 'settings'
@@ -135,7 +135,7 @@ const VIEW_NAV: Array<{
 ]
 
 interface SidebarProps {
-  sessions: ChatSession[]
+  sessions: SessionSummary[]
   activeSessionId: string | null
   queueState: ChatQueueState
   view: AppView
@@ -264,11 +264,7 @@ export function Sidebar({
                         title="Queued"
                       />
                     )}
-                    {formatRelativeTime(
-                      session.uiMessages.at(-1)?.createdAt ??
-                        session.updatedAt ??
-                        session.createdAt
-                    )}
+                    {formatRelativeTime(session.updatedAt || session.createdAt)}
                   </span>
                 </button>
                 <button

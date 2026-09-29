@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
-  ChatSession,
   ScheduleDelivery,
   ScheduleRecurrence,
+  SessionSummary,
   TelegramSchedule
 } from '../../../shared/types'
 
@@ -103,7 +103,7 @@ export function SchedulesPage({
   sessions
 }: {
   active: boolean
-  sessions: ChatSession[]
+  sessions: SessionSummary[]
 }): React.JSX.Element {
   const [schedules, setSchedules] = useState<TelegramSchedule[]>([])
   const [loading, setLoading] = useState(true)

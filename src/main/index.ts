@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, protocol, shell } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { registerIpc, restoreMcpConnections } from './ipc'
@@ -7,15 +7,30 @@ import { reloadScheduleRunner, stopScheduleRunner } from './schedule-runner'
 import { restartTelegramBot, stopTelegramBot } from './telegram-bot'
 import {
   destroyAllHtmlPreviews,
-  registerHtmlPreviewProtocol,
-  registerHtmlPreviewScheme
+  HTML_PREVIEW_SCHEME,
+  HTML_PREVIEW_SCHEME_PRIVILEGES,
+  registerHtmlPreviewProtocol
 } from './html-preview'
+import {
+  registerSessionImgProtocol,
+  SESSION_IMG_SCHEME,
+  SESSION_IMG_SCHEME_PRIVILEGES
+} from './session-images'
 
 const isDev = Boolean(process.env.ELECTRON_RENDERER_URL)
 
 app.setName('Ollama MCP')
 
-registerHtmlPreviewScheme()
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: HTML_PREVIEW_SCHEME,
+    privileges: { ...HTML_PREVIEW_SCHEME_PRIVILEGES }
+  },
+  {
+    scheme: SESSION_IMG_SCHEME,
+    privileges: { ...SESSION_IMG_SCHEME_PRIVILEGES }
+  }
+])
 
 function resourcesDir(): string {
   // Dev / electron-vite preview: project root. Packaged: next to the app binary.
@@ -119,6 +134,7 @@ app.whenReady().then(async () => {
   }
 
   registerHtmlPreviewProtocol()
+  registerSessionImgProtocol()
   registerIpc(ipcMain)
   await restoreMcpConnections()
   reloadScheduleRunner()
