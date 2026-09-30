@@ -205,7 +205,7 @@ export function getConfig(): AppConfig {
     selectedModel,
     llmProvider,
     openaiEnabled: store.get('openaiEnabled', DEFAULT_CONFIG.openaiEnabled),
-    openaiApiKey: null,
+    openaiApiKey: getOpenaiApiKey(),
     openaiValidationOk: store.get(
       'openaiValidationOk',
       DEFAULT_CONFIG.openaiValidationOk
@@ -217,7 +217,7 @@ export function getConfig(): AppConfig {
     openaiModelsCatalog: getOpenaiModelsCatalog(),
     openaiModelEnabled: getOpenaiModelEnabledMap(),
     azureOpenaiEnabled: getAzureOpenaiEnabled(),
-    azureOpenaiApiKey: null,
+    azureOpenaiApiKey: getAzureOpenaiApiKey(),
     azureOpenaiEndpoint: getAzureOpenaiEndpoint(),
     azureOpenaiApiVersion: getAzureOpenaiApiVersion(),
     azureOpenaiValidationOk: getAzureOpenaiValidationState().ok,

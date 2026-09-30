@@ -4,6 +4,7 @@ import {
   shouldShowReasoningEffortControl,
   type ReasoningEffort
 } from '../../../shared/reasoning-effort'
+import { chatProviderReadinessBanners } from '../../../shared/chat-provider-banners'
 import { classifyImageUiModel } from '../../../shared/image-ui'
 import type { ActivityState } from './ActivityIndicator'
 import { DownloadImageButton } from './DownloadImageButton'
@@ -841,17 +842,23 @@ export function Chat({
             Telegram session — view only on desktop. Send messages from Telegram.
           </p>
         )}
-        {effectiveProvider === 'ollama' && !ollamaOk && (
-          <p className="mb-2 text-xs text-amber-300/90">
-            Ollama is offline — check Settings or switch to OpenAI.
+        {chatProviderReadinessBanners({
+          configuredProvider: llmProvider,
+          effectiveProvider,
+          ollamaOk,
+          providerFallbackReason
+        }).map((text) => (
+          <p
+            key={text}
+            className={
+              providerFallbackReason
+                ? 'mb-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200'
+                : 'mb-2 text-xs text-amber-300/90'
+            }
+          >
+            {text}
           </p>
-        )}
-        {llmProvider === 'azure-openai' && providerFallbackReason && (
-          <p className="mb-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
-            Azure OpenAI is unavailable, so this message will use Ollama instead.{' '}
-            {providerFallbackReason}
-          </p>
-        )}
+        ))}
         {effectiveProvider === 'azure-openai' && models.length === 0 && (
           <p className="mb-2 text-xs text-amber-300/90">
             Add and enable an Azure deployment on the Models page to choose an Azure chat model.

@@ -7,6 +7,11 @@ import type {
   OpenAiStatus,
   TelegramStatus
 } from '../../../shared/types'
+import {
+  CONFIGURED_SECRET_PLACEHOLDER,
+  nonEmptySecretDraft,
+  secretDraftInputType
+} from '../../../shared/secret-draft-field'
 
 interface SettingsProps {
   llmProvider: LlmProvider
@@ -92,6 +97,7 @@ export function Settings({
   const [urlDraft, setUrlDraft] = useState(baseUrl)
   const [showToken, setShowToken] = useState(false)
   const [showOpenAiKey, setShowOpenAiKey] = useState(false)
+  const [showAzureKey, setShowAzureKey] = useState(false)
   const [tokenDraft, setTokenDraft] = useState(telegramTokenDraft)
   const [openaiKeyDraft, setOpenaiKeyDraft] = useState(openaiApiKeyDraft)
   const [azureKeyDraft, setAzureKeyDraft] = useState(azureOpenaiApiKeyDraft)
@@ -126,7 +132,7 @@ export function Settings({
 
   const persistAzureDrafts = (): Promise<void> => {
     const save = async (): Promise<void> => {
-    const key = azureKeyDraft.trim()
+    const key = nonEmptySecretDraft(azureKeyDraft)
     const endpoint = azureEndpointDraft.trim() || null
     const apiVersion = azureVersionDraft.trim() || '2024-10-21'
 
@@ -207,15 +213,28 @@ export function Settings({
               </span>
             </div>
             <label className="mb-1 block text-xs text-[#8b9aab]">API key</label>
-            <input
-              type="password"
-              value={azureKeyDraft}
-              disabled={!azureOpenaiEnabled}
-              onChange={(e) => setAzureKeyDraft(e.target.value)}
-              onBlur={() => void persistAzureDrafts()}
-              placeholder="Configured key is hidden"
-              className="mb-2 w-full rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0] disabled:opacity-50"
-            />
+            <div className="mb-2 flex gap-1">
+              <input
+                key={showAzureKey ? 'azure-key-shown' : 'azure-key-hidden'}
+                type={secretDraftInputType(showAzureKey)}
+                value={azureKeyDraft}
+                disabled={!azureOpenaiEnabled}
+                onChange={(e) => setAzureKeyDraft(e.target.value)}
+                onBlur={() => void persistAzureDrafts()}
+                placeholder={CONFIGURED_SECRET_PLACEHOLDER}
+                autoComplete="off"
+                className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0] disabled:opacity-50"
+              />
+              <button
+                type="button"
+                disabled={!azureOpenaiEnabled}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setShowAzureKey((v) => !v)}
+                className="rounded border border-[#2a3a4d] px-3 text-sm text-[#c5d0dc] hover:bg-[#1a2430] disabled:opacity-50"
+              >
+                {showAzureKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
             <label className="mb-1 block text-xs text-[#8b9aab]">Endpoint</label>
             <input
               value={azureEndpointDraft}
@@ -291,21 +310,23 @@ export function Settings({
             <label className="mb-1 block text-xs text-[#8b9aab]">API key</label>
             <div className="mb-2 flex gap-1">
               <input
-                type={showOpenAiKey ? 'text' : 'password'}
+                key={showOpenAiKey ? 'openai-key-shown' : 'openai-key-hidden'}
+                type={secretDraftInputType(showOpenAiKey)}
                 value={openaiKeyDraft}
                 disabled={!openaiEnabled}
                 onChange={(e) => setOpenaiKeyDraft(e.target.value)}
                 onBlur={() => {
-                  if (openaiKeyDraft !== openaiApiKeyDraft) {
-                    onSetOpenaiApiKey(openaiKeyDraft.trim() || null)
-                  }
+                  const key = nonEmptySecretDraft(openaiKeyDraft)
+                  if (key) onSetOpenaiApiKey(key)
                 }}
-                placeholder="sk-…"
+                placeholder={CONFIGURED_SECRET_PLACEHOLDER}
+                autoComplete="off"
                 className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0] disabled:opacity-50"
               />
               <button
                 type="button"
                 disabled={!openaiEnabled}
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowOpenAiKey((v) => !v)}
                 className="rounded border border-[#2a3a4d] px-3 text-sm text-[#c5d0dc] hover:bg-[#1a2430] disabled:opacity-50"
               >
@@ -317,7 +338,8 @@ export function Settings({
                 type="button"
                 disabled={!openaiEnabled}
                 onClick={() => {
-                  onSetOpenaiApiKey(openaiKeyDraft.trim() || null)
+                  const key = nonEmptySecretDraft(openaiKeyDraft)
+                  if (key) onSetOpenaiApiKey(key)
                   onValidateOpenai()
                 }}
                 className="rounded border border-[#2a3a4d] px-3 py-1.5 text-sm text-[#c5d0dc] hover:bg-[#1a2430] disabled:opacity-50"
@@ -389,19 +411,21 @@ export function Settings({
             <label className="mb-1 block text-xs text-[#8b9aab]">Bot token</label>
             <div className="mb-3 flex gap-1">
               <input
-                type={showToken ? 'text' : 'password'}
+                key={showToken ? 'telegram-token-shown' : 'telegram-token-hidden'}
+                type={secretDraftInputType(showToken)}
                 value={tokenDraft}
                 onChange={(e) => setTokenDraft(e.target.value)}
                 onBlur={() => {
-                  if (tokenDraft !== telegramTokenDraft) {
-                    onSetTelegramToken(tokenDraft.trim() || null)
-                  }
+                  const token = nonEmptySecretDraft(tokenDraft)
+                  if (token) onSetTelegramToken(token)
                 }}
-                placeholder="123456:ABC-DEF…"
+                placeholder={CONFIGURED_SECRET_PLACEHOLDER}
+                autoComplete="off"
                 className="min-w-0 flex-1 rounded border border-[#2a3a4d] bg-[#121820] px-2 py-1.5 text-sm text-[#e7ecf1] outline-none focus:border-[#4a7ab0]"
               />
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowToken((v) => !v)}
                 className="rounded border border-[#2a3a4d] px-3 text-sm text-[#c5d0dc] hover:bg-[#1a2430]"
               >

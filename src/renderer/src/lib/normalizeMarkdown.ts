@@ -1,3 +1,9 @@
+import { convertBracketDisplayMath } from './bracketDisplayMath'
+import { fixLatexRowBreaks, wrapBareLatexEnvironments } from './latexEnvironmentMath'
+import { mapOutsideCode } from './linkNumericCitations'
+import { convertLatexDelimiterMath } from './latexDelimiterMath'
+import { convertParentheticalInlineMath } from './parentheticalInlineMath'
+
 /**
  * Models often indent reasoning/lists with 4+ spaces. CommonMark treats that as
  * a code block, so bullets show up as literal "* …" in a monospace box.
@@ -18,8 +24,22 @@ export function normalizeMarkdown(source: string): string {
       : lines
 
   const unindentedLists = unindentOrphanLists(dedented).join('\n')
+  const delimiterFixed = mapOutsideCode(unindentedLists, convertLatexDelimiterMath)
+  const latexFixed = mapOutsideCode(delimiterFixed, (chunk) =>
+    wrapBareLatexEnvironments(fixLatexRowBreaks(chunk))
+  )
 
-  return sanitizeMathCurrency(unindentedLists)
+  const parenFixed = mapOutsideCode(latexFixed, convertParentheticalInlineMath)
+
+  return sanitizeMathCurrency(normalizeBracketDisplayMath(parenFixed))
+}
+
+/**
+ * Models often emit display math as `[ … ]` instead of `$$…$$` or `\[…\]`.
+ * Skips fenced code blocks; ignores link/reference bracket syntax.
+ */
+function normalizeBracketDisplayMath(source: string): string {
+  return mapOutsideCode(source, convertBracketDisplayMath)
 }
 
 /** KaTeX has no glyph metrics for many currency symbols (₹, etc.). */

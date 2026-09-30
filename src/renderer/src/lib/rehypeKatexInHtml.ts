@@ -3,6 +3,7 @@ import type { KatexOptions } from 'katex'
 import { fromHtmlIsomorphic } from 'hast-util-from-html-isomorphic'
 import katex from 'katex'
 import { SKIP, visitParents } from 'unist-util-visit-parents'
+import { convertBracketDisplayMath } from './bracketDisplayMath'
 
 const SKIP_TAGS = new Set(['code', 'pre', 'script', 'style', 'textarea', 'kbd', 'samp'])
 
@@ -107,7 +108,7 @@ export function rehypeKatexInHtml(options: KatexOptions = {}) {
       const parent = parents[parents.length - 1]
       if (!parent || !('children' in parent)) return
 
-      const pieces = splitMathText(node.value)
+      const pieces = splitMathText(convertBracketDisplayMath(node.value))
       if (pieces.length === 1 && pieces[0].kind === 'text') return
 
       const next: ElementContent[] = []

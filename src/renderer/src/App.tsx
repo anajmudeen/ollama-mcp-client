@@ -542,13 +542,12 @@ export default function App(): React.JSX.Element {
       setBaseUrl(config.ollamaBaseUrl)
       setLlmProvider(config.llmProvider)
       setOpenaiEnabled(config.openaiEnabled)
-      // API keys stay in the main process; the Settings input is write-only.
-      setOpenaiApiKeyDraft('')
+      setOpenaiApiKeyDraft(config.openaiApiKey ?? '')
       setOpenaiCatalog(config.openaiModelsCatalog)
       setOpenaiModelEnabled(config.openaiModelEnabled)
       setSelectedOpenAiModel(config.selectedModelByProvider.openai)
       setAzureOpenaiEnabled(config.azureOpenaiEnabled)
-      setAzureOpenaiApiKeyDraft('')
+      setAzureOpenaiApiKeyDraft(config.azureOpenaiApiKey ?? '')
       setAzureOpenaiEndpoint(config.azureOpenaiEndpoint ?? '')
       setAzureOpenaiApiVersion(config.azureOpenaiApiVersion || '2024-10-21')
       setAzureOpenaiDeployments(config.azureOpenaiDeployments)
@@ -561,6 +560,7 @@ export default function App(): React.JSX.Element {
       setImageBackend(config.imageBackend ?? null)
       setTelegramEnabled(Boolean(config.telegramEnabled))
       setTelegramAllowedUserIds(config.telegramAllowedUserIds)
+      setTelegramTokenDraft(config.telegramBotToken ?? '')
       await refreshOpenAiStatus(requestId)
       if (requestId !== modelRefreshRequestRef.current) return
       const azureStatus = await window.api.azureOpenai.getStatus()
@@ -1510,7 +1510,7 @@ export default function App(): React.JSX.Element {
   const handleSetTelegramToken = async (token: string | null): Promise<void> => {
     const status = await window.api.telegram.setToken(token)
     setTelegramStatus(status)
-    setTelegramTokenDraft('')
+    setTelegramTokenDraft(token ?? '')
   }
 
   const handleSetTelegramEnabled = async (enabled: boolean): Promise<void> => {
@@ -1561,7 +1561,7 @@ export default function App(): React.JSX.Element {
     const status = await window.api.azureOpenai.getStatus()
     if (requestId !== modelRefreshRequestRef.current) return
     setAzureOpenaiEnabled(config.azureOpenaiEnabled)
-    setAzureOpenaiApiKeyDraft('')
+    setAzureOpenaiApiKeyDraft(config.azureOpenaiApiKey ?? '')
     setAzureOpenaiEndpoint(config.azureOpenaiEndpoint ?? '')
     setAzureOpenaiApiVersion(config.azureOpenaiApiVersion || '2024-10-21')
     setAzureOpenaiDeployments(config.azureOpenaiDeployments)
