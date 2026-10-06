@@ -5,6 +5,7 @@ import type {
   LibraryModelSummary,
   AzureOpenaiDeploymentEntry,
   AzureOpenaiStatus,
+  LlmProvider,
   OpenAiModelEntry,
   OpenAiStatus,
   OllamaModel,
@@ -26,8 +27,11 @@ type LibrarySort = 'popular' | 'newest' | 'smallest' | 'largest'
 type InstalledSort = 'name' | 'smallest' | 'largest'
 
 interface ModelsPageProps {
+  /** Local Ollama tags from `ollama:listModels` — not the active chat provider catalog. */
   models: OllamaModel[]
   ollamaOk: boolean
+  /** Configured chat LLM provider (Settings). Use-in-chat is Ollama-only when this is `ollama`. */
+  llmProvider: LlmProvider
   selectedModel: string | null
   openaiEnabled: boolean
   openaiStatus: OpenAiStatus
@@ -194,6 +198,7 @@ function pickLocalPullTag(
 export function ModelsPage({
   models,
   ollamaOk,
+  llmProvider,
   selectedModel,
   openaiEnabled,
   openaiStatus,
@@ -611,6 +616,8 @@ export function ModelsPage({
     pullProgress?.total && pullProgress.completed != null && pullProgress.total > 0
       ? Math.min(100, Math.round((pullProgress.completed / pullProgress.total) * 100))
       : null
+
+  const showOllamaUseInChat = llmProvider === 'ollama' && ollamaOk
 
   const tabIds = [
     'ollama',
@@ -1112,6 +1119,14 @@ export function ModelsPage({
                             >
                               View tags
                             </button>
+                          ) : installed ? (
+                            <button
+                              type="button"
+                              onClick={() => void openLocalFamilyDetail(m.name)}
+                              className="h-fit shrink-0 rounded-md border border-[#2a3a4d] px-2.5 py-1.5 text-[11px] text-[#c5d0dc] hover:bg-[#1a2430]"
+                            >
+                              Manage
+                            </button>
                           ) : (
                             <button
                               type="button"
@@ -1266,15 +1281,22 @@ export function ModelsPage({
                     </div>
                   )}
                   <div className="flex flex-col gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (detailName) onUseInChat(detailName)
-                      }}
-                      className="rounded-lg bg-[#2d6cb5] px-3 py-2 text-xs font-medium text-white hover:bg-[#3a7cc9]"
-                    >
-                      Use in chat
-                    </button>
+                    {showOllamaUseInChat ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (detailName) onUseInChat(detailName)
+                        }}
+                        className="rounded-lg bg-[#2d6cb5] px-3 py-2 text-xs font-medium text-white hover:bg-[#3a7cc9]"
+                      >
+                        Use in chat
+                      </button>
+                    ) : (
+                      <p className="text-xs text-[#6b7a8c]">
+                        Select Ollama as the chat provider in Settings and ensure Ollama is
+                        running to use this model in chat.
+                      </p>
+                    )}
                     <button
                       type="button"
                       title="Delete model"
@@ -1313,13 +1335,15 @@ export function ModelsPage({
                             </p>
                           </button>
                           <div className="flex shrink-0 items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => onUseInChat(tag.name)}
-                              className="rounded-md bg-[#2d6cb5] px-2 py-1 text-[10px] font-medium text-white hover:bg-[#3a7cc9]"
-                            >
-                              Use
-                            </button>
+                            {showOllamaUseInChat ? (
+                              <button
+                                type="button"
+                                onClick={() => onUseInChat(tag.name)}
+                                className="rounded-md bg-[#2d6cb5] px-2 py-1 text-[10px] font-medium text-white hover:bg-[#3a7cc9]"
+                              >
+                                Use
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               title="Delete model"

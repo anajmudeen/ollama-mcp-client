@@ -1474,8 +1474,11 @@ export default function App(): React.JSX.Element {
     }
   }
 
-  const handleUseModelInChat = async (model: string): Promise<void> => {
-    await handleSelectModel(model)
+  const handleUseOllamaModelInChat = async (model: string): Promise<void> => {
+    if (llmProvider !== 'ollama' || !ollamaOk) return
+    setSelectedModel(model)
+    setContextUsage(null)
+    await window.api.setSelectedModelForProvider('ollama', model)
     setView('chat')
   }
 
@@ -1739,8 +1742,9 @@ export default function App(): React.JSX.Element {
           }
         >
           <ModelsPage
-            models={models}
+            models={ollamaModels}
             ollamaOk={ollamaOk}
+            llmProvider={llmProvider}
             selectedModel={selectedModel}
             openaiEnabled={openaiEnabled}
             openaiStatus={openaiStatus}
@@ -1768,7 +1772,7 @@ export default function App(): React.JSX.Element {
             onAddAzureDeployment={handleAddAzureDeployment}
             onRemoveAzureDeployment={handleRemoveAzureDeployment}
             onToggleAzureDeployment={handleToggleAzureDeployment}
-            onUseInChat={(m) => void handleUseModelInChat(m)}
+            onUseInChat={(m) => void handleUseOllamaModelInChat(m)}
           />
         </div>
       ) : null}
