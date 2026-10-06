@@ -12,8 +12,16 @@ import type {
   PullProgressEvent
 } from '../../../shared/types'
 import { MarkdownContent } from './MarkdownContent'
+import {
+  familyMatchesCapability,
+  groupLocalModelsByFamily,
+  isInstalledFamily,
+  localBaseName,
+  partitionLibraryInstalledFirst,
+  type LocalModelFamily
+} from '../lib/ollamaModelFamilies'
 
-type ModelsTab = 'installed' | 'library' | 'openai' | 'azure'
+type ModelsTab = 'ollama' | 'openai' | 'azure'
 type LibrarySort = 'popular' | 'newest' | 'smallest' | 'largest'
 type InstalledSort = 'name' | 'smallest' | 'largest'
 
@@ -50,6 +58,10 @@ const LIBRARY_FILTERS: Array<{ id: LibraryCapability | null; label: string }> = 
   { id: 'thinking', label: 'Thinking' },
   { id: 'embedding', label: 'Embedding' },
   { id: 'cloud', label: 'Cloud' }
+]
+
+const OLLAMA_INSTALLED_EXTRA_FILTERS: Array<{ id: string; label: string }> = [
+  { id: 'image', label: 'Image' }
 ]
 
 function formatBytes(n?: number): string {
@@ -117,14 +129,6 @@ function TrashIcon({ className }: { className?: string }): React.JSX.Element {
       />
     </svg>
   )
-}
-
-function localBaseName(name: string): string {
-  return name.split(':')[0] ?? name
-}
-
-function isInstalledFamily(local: OllamaModel[], libraryName: string): boolean {
-  return local.some((m) => localBaseName(m.name) === libraryName)
 }
 
 function isTagInstalled(local: OllamaModel[], tagName: string): boolean {
@@ -210,17 +214,17 @@ export function ModelsPage({
   onToggleAzureDeployment,
   onUseInChat
 }: ModelsPageProps): React.JSX.Element {
-  const [tab, setTab] = useState<ModelsTab>('installed')
+  const [tab, setTab] = useState<ModelsTab>('ollama')
+  const [ollamaInstalledOnly, setOllamaInstalledOnly] = useState(false)
   const [openaiQuery, setOpenaiQuery] = useState('')
   const [azureDeploymentDraft, setAzureDeploymentDraft] = useState('')
   const [installedQuery, setInstalledQuery] = useState('')
-  const [installedCap, setInstalledCap] = useState<string | null>(null)
+  const [ollamaCap, setOllamaCap] = useState<LibraryCapability | string | null>(null)
   const [installedSort, setInstalledSort] = useState<InstalledSort>('name')
   const [installedPage, setInstalledPage] = useState(1)
 
   const [libraryQuery, setLibraryQuery] = useState('')
   const [libraryDraft, setLibraryDraft] = useState('')
-  const [libraryCap, setLibraryCap] = useState<LibraryCapability | null>(null)
   const [libraryOrder, setLibraryOrder] = useState<LibrarySort>('popular')
   const [libraryPage, setLibraryPage] = useState(0)
   const [libraryModels, setLibraryModels] = useState<LibraryModelSummary[]>([])
@@ -232,8 +236,11 @@ export function ModelsPage({
   const librarySentinelRef = useRef<HTMLDivElement>(null)
   const libraryRequestIdRef = useRef(0)
 
-  const [detailKind, setDetailKind] = useState<'local' | 'remote' | null>(null)
+  const [detailKind, setDetailKind] = useState<'local' | 'local-family' | 'remote' | null>(
+    null
+  )
   const [detailName, setDetailName] = useState<string | null>(null)
+  const [familyTags, setFamilyTags] = useState<OllamaModel[]>([])
   const [localDetail, setLocalDetail] = useState<OllamaModelDetails | null>(null)
   const [remoteDetail, setRemoteDetail] = useState<LibraryModelDetail | null>(null)
   const [readmeMd, setReadmeMd] = useState<string | null>(null)
@@ -295,9 +302,11 @@ export function ModelsPage({
       }
       try {
         const apiOrder = libraryOrder === 'newest' ? 'newest' : 'popular'
+        const libraryCategory =
+          ollamaCap && ollamaCap !== 'image' ? (ollamaCap as LibraryCapability) : undefined
         const result = await window.api.ollama.searchLibrary({
           q: libraryQuery || undefined,
-          category: libraryCap,
+          category: libraryCategory,
           order: apiOrder,
           page
         })
@@ -317,7 +326,13 @@ export function ModelsPage({
                   return next
                 })()
               : result.models
-          return sortLibraryModels(merged)
+          let sorted = sortLibraryModels(merged)
+          if (ollamaCap === 'image') {
+            sorted = sorted.filter(
+              (m) => m.capabilities.includes('vision') || /image/i.test(m.name)
+            )
+          }
+          return partitionLibraryInstalledFirst(sorted, models)
         })
         setLibraryHasMore(result.hasMore)
         setLibraryPage(result.page)
@@ -335,28 +350,30 @@ export function ModelsPage({
         }
       }
     },
-    [libraryQuery, libraryCap, libraryOrder, sortLibraryModels]
+    [libraryQuery, ollamaCap, libraryOrder, sortLibraryModels, models]
   )
 
+  const ollamaBrowseActive = tab === 'ollama' && !ollamaInstalledOnly
+
   useEffect(() => {
-    if (tab !== 'library') return
+    if (!ollamaBrowseActive) return
     libraryRequestIdRef.current += 1
     setLibraryModels([])
     setLibraryPage(0)
     setLibraryHasMore(true)
     setLibraryError(null)
     void loadLibraryPage(1, 'replace')
-  }, [tab, libraryQuery, libraryCap, libraryOrder, loadLibraryPage])
+  }, [ollamaBrowseActive, libraryQuery, ollamaCap, libraryOrder, loadLibraryPage])
 
   useLayoutEffect(() => {
-    if (!active || tab !== 'library') return
+    if (!active || !ollamaBrowseActive) return
     const el = libraryScrollRef.current
     if (!el) return
     el.scrollTop = 0
-  }, [active, tab, libraryQuery, libraryCap, libraryOrder])
+  }, [active, ollamaBrowseActive, libraryQuery, ollamaCap, libraryOrder])
 
   useEffect(() => {
-    if (tab !== 'library') return
+    if (!ollamaBrowseActive) return
     const root = libraryScrollRef.current
     const sentinel = librarySentinelRef.current
     if (!root || !sentinel) return
@@ -373,7 +390,7 @@ export function ModelsPage({
     observer.observe(sentinel)
     return () => observer.disconnect()
   }, [
-    tab,
+    ollamaBrowseActive,
     libraryHasMore,
     libraryLoading,
     libraryLoadingMore,
@@ -382,38 +399,44 @@ export function ModelsPage({
     libraryModels.length
   ])
 
-  const filteredInstalled = useMemo(() => {
+  const familySortKey = (family: LocalModelFamily, dir: 1 | -1): number => {
+    const sizes = family.tags.map((t) => t.size).filter((s) => Number.isFinite(s))
+    if (!sizes.length) return dir > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
+    return dir > 0 ? Math.min(...sizes) : Math.max(...sizes)
+  }
+
+  const filteredFamilies = useMemo(() => {
     const q = installedQuery.trim().toLowerCase()
-    const list = models.filter((m) => {
-      if (q && !m.name.toLowerCase().includes(q) && !(m.family ?? '').toLowerCase().includes(q)) {
-        return false
-      }
-      if (installedCap) {
-        const caps = (m.capabilities ?? []).map((c) => c.toLowerCase())
-        const tags = m.tags.map((t) => t.toLowerCase())
-        if (!caps.includes(installedCap) && !tags.includes(installedCap)) return false
-      }
-      return true
-    })
+    let families = groupLocalModelsByFamily(models)
+    if (q) {
+      families = families.filter(
+        (f) =>
+          f.base.toLowerCase().includes(q) ||
+          f.tags.some((t) => t.name.toLowerCase().includes(q))
+      )
+    }
+    families = families.filter((f) => familyMatchesCapability(f, ollamaCap))
     if (installedSort === 'name') {
-      return [...list].sort((a, b) => a.name.localeCompare(b.name))
+      return [...families].sort((a, b) => a.base.localeCompare(b.base))
     }
     const dir = installedSort === 'smallest' ? 1 : -1
-    return [...list].sort((a, b) => {
-      if (a.size === b.size) return a.name.localeCompare(b.name)
-      return (a.size - b.size) * dir
+    return [...families].sort((a, b) => {
+      const ak = familySortKey(a, dir)
+      const bk = familySortKey(b, dir)
+      if (ak === bk) return a.base.localeCompare(b.base)
+      return (ak - bk) * dir
     })
-  }, [models, installedQuery, installedCap, installedSort])
+  }, [models, installedQuery, ollamaCap, installedSort])
 
-  const installedPages = Math.max(1, Math.ceil(filteredInstalled.length / PAGE_SIZE))
-  const installedSlice = filteredInstalled.slice(
+  const installedPages = Math.max(1, Math.ceil(filteredFamilies.length / PAGE_SIZE))
+  const familySlice = filteredFamilies.slice(
     (installedPage - 1) * PAGE_SIZE,
     installedPage * PAGE_SIZE
   )
 
   useEffect(() => {
     setInstalledPage(1)
-  }, [installedQuery, installedCap, installedSort])
+  }, [installedQuery, ollamaCap, installedSort])
 
   const openLocalDetail = async (name: string): Promise<void> => {
     const requestId = ++detailRequestRef.current
@@ -444,6 +467,32 @@ export function ModelsPage({
         setDetailLoading(false)
         setReadmeLoading(false)
       }
+    }
+  }
+
+  const openLocalFamilyDetail = async (base: string): Promise<void> => {
+    const requestId = ++detailRequestRef.current
+    const tags = models.filter((m) => localBaseName(m.name) === base)
+    setDetailKind('local-family')
+    setDetailName(base)
+    setFamilyTags(tags)
+    setLocalDetail(null)
+    setRemoteDetail(null)
+    setReadmeMd(null)
+    setReadmeMissing(false)
+    setReadmeLoading(true)
+    setDetailLoading(false)
+    setDetailError(null)
+    try {
+      const readme = await window.api.ollama.getLibraryReadme(base).catch(() => undefined)
+      if (requestId !== detailRequestRef.current) return
+      setReadmeMd(readme ?? null)
+      setReadmeMissing(!readme)
+    } catch {
+      if (requestId !== detailRequestRef.current) return
+      setReadmeMissing(true)
+    } finally {
+      if (requestId === detailRequestRef.current) setReadmeLoading(false)
     }
   }
 
@@ -480,6 +529,7 @@ export function ModelsPage({
     detailRequestRef.current += 1
     setDetailKind(null)
     setDetailName(null)
+    setFamilyTags([])
     setLocalDetail(null)
     setRemoteDetail(null)
     setReadmeMd(null)
@@ -487,6 +537,14 @@ export function ModelsPage({
     setReadmeMissing(false)
     setDetailError(null)
   }
+
+  useEffect(() => {
+    if (detailKind !== 'local-family' || !detailName) return
+    const tags = models.filter((m) => localBaseName(m.name) === detailName)
+    if (tags.length === 0) closeDetail()
+    else setFamilyTags(tags)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeDetail stable enough
+  }, [models, detailKind, detailName])
 
   const handleDelete = async (name: string): Promise<void> => {
     if (!window.confirm(`Delete local model "${name}"? This cannot be undone.`)) return
@@ -555,10 +613,9 @@ export function ModelsPage({
       : null
 
   const tabIds = [
-    'installed',
+    'ollama',
     ...(openaiEnabled ? ['openai'] : []),
-    ...(azureOpenaiEnabled ? ['azure'] : []),
-    'library'
+    ...(azureOpenaiEnabled ? ['azure'] : [])
   ] as ModelsTab[]
 
   const filteredOpenAi = useMemo(() => {
@@ -572,7 +629,7 @@ export function ModelsPage({
         <div>
           <h2 className="text-lg font-semibold text-[#f0f4f8]">Models</h2>
           <p className="text-xs text-[#8b9aab]">
-            Ollama local models, OpenAI/Azure catalogs, and the Ollama library
+            Ollama library and local models; OpenAI and Azure catalogs in other tabs
           </p>
         </div>
         <div className="titlebar-no-drag flex gap-1 rounded-lg border border-[#2a3a4d] bg-[#121820] p-0.5">
@@ -587,7 +644,13 @@ export function ModelsPage({
                   : 'text-[#8b9aab] hover:text-[#e7ecf1]'
               }`}
             >
-              {id === 'openai' ? 'OpenAI' : id === 'azure' ? 'Azure OpenAI' : id}
+              {id === 'ollama'
+                ? 'Ollama'
+                : id === 'openai'
+                  ? 'OpenAI'
+                  : id === 'azure'
+                    ? 'Azure OpenAI'
+                    : id}
             </button>
           ))}
         </div>
@@ -777,7 +840,65 @@ export function ModelsPage({
                 )}
               </div>
             </div>
-          ) : tab === 'installed' ? (
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-1 rounded-lg border border-[#2a3a4d] bg-[#121820] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setOllamaInstalledOnly(false)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                    !ollamaInstalledOnly
+                      ? 'bg-[#1a3050] text-[#9ec5f0]'
+                      : 'text-[#8b9aab] hover:text-[#e7ecf1]'
+                  }`}
+                >
+                  All models
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOllamaInstalledOnly(true)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                    ollamaInstalledOnly
+                      ? 'bg-[#1a3050] text-[#9ec5f0]'
+                      : 'text-[#8b9aab] hover:text-[#e7ecf1]'
+                  }`}
+                >
+                  Installed
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {LIBRARY_FILTERS.map((f) => (
+                  <button
+                    key={f.label}
+                    type="button"
+                    onClick={() => setOllamaCap(f.id)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] ${
+                      ollamaCap === f.id
+                        ? 'bg-[#1a3050] text-[#9ec5f0]'
+                        : 'bg-[#1a2430] text-[#8b9aab] hover:text-[#e7ecf1]'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+                {OLLAMA_INSTALLED_EXTRA_FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setOllamaCap(f.id)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] ${
+                      ollamaCap === f.id
+                        ? 'bg-[#1a3050] text-[#9ec5f0]'
+                        : 'bg-[#1a2430] text-[#8b9aab] hover:text-[#e7ecf1]'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {ollamaInstalledOnly ? (
             <div className="space-y-4">
               {!ollamaOk && (
                 <p className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">
@@ -788,7 +909,7 @@ export function ModelsPage({
                 <input
                   value={installedQuery}
                   onChange={(e) => setInstalledQuery(e.target.value)}
-                  placeholder="Filter installed models…"
+                  placeholder="Filter installed families…"
                   className="min-w-[12rem] flex-1 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2 text-sm text-[#e7ecf1] placeholder:text-[#6b7a8c] focus:border-[#2d6cb5] focus:outline-none"
                 />
                 <select
@@ -810,86 +931,49 @@ export function ModelsPage({
                   Refresh
                 </button>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {[null, 'tools', 'vision', 'image', 'thinking', 'embedding'].map((cap) => (
-                  <button
-                    key={cap ?? 'all'}
-                    type="button"
-                    onClick={() => setInstalledCap(cap)}
-                    className={`rounded-full px-2.5 py-1 text-[11px] ${
-                      installedCap === cap
-                        ? 'bg-[#1a3050] text-[#9ec5f0]'
-                        : 'bg-[#1a2430] text-[#8b9aab] hover:text-[#e7ecf1]'
-                    }`}
-                  >
-                    {cap ?? 'All'}
-                  </button>
-                ))}
-              </div>
-
-              {installedSlice.length === 0 ? (
+              {familySlice.length === 0 ? (
                 <p className="py-10 text-center text-sm text-[#6b7a8c]">
-                  No installed models match.
+                  No installed families match. Switch to All models to browse the library.
                 </p>
               ) : (
                 <ul className="space-y-2">
-                  {installedSlice.map((m) => (
-                    <li key={m.name}>
-                      <div className="flex w-full items-start justify-between gap-3 rounded-xl border border-[#2a3a4d] bg-[#121820] px-4 py-3 hover:border-[#3a4a5d] hover:bg-[#161d27]">
+                  {familySlice.map((family) => {
+                    const activeTag = family.tags.some((t) => t.name === selectedModel)
+                    const totalSize = family.tags.reduce((sum, t) => sum + (t.size || 0), 0)
+                    return (
+                      <li key={family.base}>
                         <button
                           type="button"
-                          onClick={() => void openLocalDetail(m.name)}
-                          className="min-w-0 flex-1 text-left"
+                          onClick={() => void openLocalFamilyDetail(family.base)}
+                          className="flex w-full items-start justify-between gap-3 rounded-xl border border-[#2a3a4d] bg-[#121820] px-4 py-3 text-left hover:border-[#3a4a5d] hover:bg-[#161d27]"
                         >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="truncate font-medium text-[#f0f4f8]">
-                              {m.name}
-                            </span>
-                            {m.name === selectedModel && (
-                              <span className="rounded bg-[#1a3050] px-1.5 py-0.5 text-[10px] uppercase text-[#9ec5f0]">
-                                Active
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="truncate font-medium text-[#f0f4f8]">
+                                {family.base}
                               </span>
-                            )}
-                          </div>
-                          <p className="mt-1 text-xs text-[#8b9aab]">
-                            {formatBytes(m.size)} · {formatDate(m.modifiedAt)}
-                            {m.family ? ` · ${m.family}` : ''}
-                          </p>
-                          {m.tags.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {m.tags.slice(0, 6).map((t) => (
-                                <span
-                                  key={t}
-                                  className="rounded bg-[#1a2430] px-1.5 py-0.5 text-[10px] text-[#9aa8b8]"
-                                >
-                                  {t}
+                              {activeTag && (
+                                <span className="rounded bg-[#1a3050] px-1.5 py-0.5 text-[10px] uppercase text-[#9ec5f0]">
+                                  Active
                                 </span>
-                              ))}
+                              )}
+                              <span className="rounded bg-[#1a2430] px-1.5 py-0.5 text-[10px] text-[#9aa8b8]">
+                                {family.tags.length} tag{family.tags.length === 1 ? '' : 's'}
+                              </span>
                             </div>
-                          )}
+                            <p className="mt-1 text-xs text-[#8b9aab]">
+                              {formatBytes(totalSize)} total ·{' '}
+                              {family.tags
+                                .map((t) => t.name.split(':')[1] ?? 'latest')
+                                .slice(0, 4)
+                                .join(', ')}
+                              {family.tags.length > 4 ? '…' : ''}
+                            </p>
+                          </div>
                         </button>
-                        <div className="flex shrink-0 items-start gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onUseInChat(m.name)}
-                            className="rounded-md bg-[#2d6cb5] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[#3a7cc9]"
-                          >
-                            Use in chat
-                          </button>
-                          <button
-                            type="button"
-                            title="Delete model"
-                            aria-label={`Delete ${m.name}`}
-                            disabled={busyDelete === m.name}
-                            onClick={() => void handleDelete(m.name)}
-                            className="flex h-7 w-7 items-center justify-center rounded-md border border-rose-900/40 text-rose-300 hover:bg-rose-950/40 disabled:opacity-50"
-                          >
-                            <TrashIcon />
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
 
@@ -917,7 +1001,7 @@ export function ModelsPage({
                 </div>
               )}
             </div>
-          ) : (
+              ) : (
             <div className="space-y-4">
               <form
                 className="flex flex-wrap gap-2"
@@ -951,25 +1035,6 @@ export function ModelsPage({
                   Search
                 </button>
               </form>
-
-              <div className="flex flex-wrap gap-1.5">
-                {LIBRARY_FILTERS.map((f) => (
-                  <button
-                    key={f.label}
-                    type="button"
-                    onClick={() => {
-                      setLibraryCap(f.id)
-                    }}
-                    className={`rounded-full px-2.5 py-1 text-[11px] ${
-                      libraryCap === f.id
-                        ? 'bg-[#1a3050] text-[#9ec5f0]'
-                        : 'bg-[#1a2430] text-[#8b9aab] hover:text-[#e7ecf1]'
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
 
               {libraryError && (
                 <p className="rounded-lg border border-rose-900/40 bg-rose-950/20 px-3 py-2 text-xs text-rose-200">
@@ -1087,6 +1152,8 @@ export function ModelsPage({
                 ) : null}
               </div>
             </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -1098,7 +1165,7 @@ export function ModelsPage({
                   {detailName}
                 </h3>
                 <p className="text-[10px] uppercase tracking-wider text-[#6b7a8c]">
-                  {detailKind === 'local' ? 'Installed' : 'Library'}
+                  Ollama
                 </p>
               </div>
               <button
@@ -1219,6 +1286,70 @@ export function ModelsPage({
                       <TrashIcon />
                       Delete
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {detailKind === 'local-family' && detailName && (
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="mb-2 text-[10px] uppercase tracking-wider text-[#6b7a8c]">
+                      Local tags
+                    </h4>
+                    <ul className="space-y-1.5">
+                      {familyTags.map((tag) => (
+                        <li
+                          key={tag.name}
+                          className="flex items-center justify-between gap-2 rounded-lg bg-[#0f1419] px-2.5 py-2"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void openLocalDetail(tag.name)}
+                            className="min-w-0 flex-1 text-left"
+                          >
+                            <span className="truncate text-xs text-[#e7ecf1]">{tag.name}</span>
+                            <p className="mt-0.5 text-[10px] text-[#6b7a8c]">
+                              {formatBytes(tag.size)} · {formatDate(tag.modifiedAt)}
+                            </p>
+                          </button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => onUseInChat(tag.name)}
+                              className="rounded-md bg-[#2d6cb5] px-2 py-1 text-[10px] font-medium text-white hover:bg-[#3a7cc9]"
+                            >
+                              Use
+                            </button>
+                            <button
+                              type="button"
+                              title="Delete model"
+                              aria-label={`Delete ${tag.name}`}
+                              disabled={busyDelete === tag.name}
+                              onClick={() => void handleDelete(tag.name)}
+                              className="flex h-7 w-7 items-center justify-center rounded-md border border-rose-900/40 text-rose-300 hover:bg-rose-950/40 disabled:opacity-50"
+                            >
+                              <TrashIcon />
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="mb-2 text-[10px] uppercase tracking-wider text-[#6b7a8c]">
+                      README
+                    </h4>
+                    {readmeLoading ? (
+                      <p className="text-xs text-[#6b7a8c]">Loading README…</p>
+                    ) : readmeMd ? (
+                      <div className="rounded-lg bg-[#0f1419] px-3 py-2 text-[12px] leading-relaxed text-[#c5d0dc] [&_.markdown-body]:text-[#c5d0dc] [&_.markdown-body_h1]:text-sm [&_.markdown-body_h2]:text-sm [&_.markdown-body_h3]:text-[13px]">
+                        <MarkdownContent content={readmeMd} allowHtml />
+                      </div>
+                    ) : readmeMissing ? (
+                      <p className="text-xs text-[#6b7a8c]">
+                        No README found on the Ollama library for this model.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               )}
