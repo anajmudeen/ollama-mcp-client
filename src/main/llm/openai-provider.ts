@@ -47,7 +47,8 @@ export const openaiLlmProvider: LlmProvider = {
       promptEvalCount: result.promptEvalCount,
       evalCount: result.evalCount,
       evalDurationNs: undefined,
-      usage: result.usage
+      usage: result.usage,
+      reasoningEffortSent: result.reasoningEffortSent
     }
   },
 

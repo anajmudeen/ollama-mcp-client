@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { ReasoningEffort } from '../../../shared/reasoning-effort'
 import type { TokenUsageBreakdown } from '../../../shared/types'
 import { formatTokenCount } from '../../../shared/contextUsage'
 import { contextUsageColor } from '../lib/contextUsage'
@@ -20,6 +21,7 @@ interface MessageMetaProps {
   contextLimit?: number
   tokenUsage?: TokenUsageBreakdown
   multiCallTurn?: boolean
+  reasoningEffort?: ReasoningEffort
   align?: 'left' | 'right'
 }
 
@@ -75,6 +77,7 @@ export function MessageMeta({
   contextLimit,
   tokenUsage,
   multiCallTurn,
+  reasoningEffort,
   align = 'left'
 }: MessageMetaProps): React.JSX.Element | null {
   const time = formatMessageTime(createdAt)
@@ -102,7 +105,16 @@ export function MessageMeta({
     ? Math.max(0, (contextUsed / contextLimit) * 100)
     : 0
   const barPct = Math.min(100, pct)
-  if (!time && !duration && !segmentLabel && !elapsed && !speed && !modelLabel && !hasContext)
+  if (
+    !time &&
+    !duration &&
+    !segmentLabel &&
+    !elapsed &&
+    !speed &&
+    !modelLabel &&
+    !reasoningEffort &&
+    !hasContext
+  )
     return null
 
   const parts: ReactNode[] = []
@@ -160,6 +172,13 @@ export function MessageMeta({
         className="text-[#8b9aab]"
       >
         {speed}
+      </span>
+    )
+  }
+  if (reasoningEffort) {
+    push(
+      <span key="reasoning-effort" title="Reasoning effort" className="text-[#8b9aab]">
+        {reasoningEffort}
       </span>
     )
   }

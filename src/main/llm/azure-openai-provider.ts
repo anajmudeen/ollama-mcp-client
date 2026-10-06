@@ -53,7 +53,8 @@ export const azureOpenaiLlmProvider: LlmProvider = {
       toolCalls: result.toolCalls,
       promptEvalCount: result.promptEvalCount,
       evalCount: result.evalCount,
-      usage: result.usage
+      usage: result.usage,
+      reasoningEffortSent: result.reasoningEffortSent
     }
   },
 

@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import type { ReasoningEffort } from '../shared/reasoning-effort'
 import type {
   ChatEvent,
   ChatMessage,
@@ -510,6 +511,7 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
   let turnUsage = emptyTokenUsage(effective)
   let modelCallCount = 0
+  let lastReasoningEffort: ReasoningEffort | undefined
 
   const completeAssistantTurn = async (
     finalContent: string,
@@ -537,7 +539,8 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
       contextLimit: contextLimit ?? undefined,
       tokensPerSec,
       tokenUsage: hasTokenUsageData(turnUsage) ? turnUsage : undefined,
-      multiCallTurn: modelCallCount > 1
+      multiCallTurn: modelCallCount > 1,
+      reasoningEffort: lastReasoningEffort
     })
     try {
       const compacted = await applyCompact({
@@ -700,6 +703,9 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
       modelCallCount += 1
       turnUsage = mergeLlmStreamUsage(turnUsage, effective, streamResult)
+      if (streamResult.reasoningEffortSent !== undefined) {
+        lastReasoningEffort = streamResult.reasoningEffortSent
+      }
       const { content, toolCalls, promptEvalCount, evalCount, evalDurationNs } = streamResult
 
       if (abort.signal.aborted || activeTurnId !== turnId) {
@@ -994,6 +1000,9 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
     modelCallCount += 1
     turnUsage = mergeLlmStreamUsage(turnUsage, effective, wrapStreamResult)
+    if (wrapStreamResult.reasoningEffortSent !== undefined) {
+      lastReasoningEffort = wrapStreamResult.reasoningEffortSent
+    }
     const {
       content: wrapReply,
       promptEvalCount: wrapPromptEval,

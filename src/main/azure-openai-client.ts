@@ -9,7 +9,10 @@ import {
   type OpenAiUsageDetails
 } from './openai-client'
 import { getReasoningEffort } from './config-store'
-import { resolveReasoningEffortForRequest } from '../shared/reasoning-effort'
+import {
+  resolveReasoningEffortForRequest,
+  type ReasoningEffort
+} from '../shared/reasoning-effort'
 
 export interface AzureOpenaiRequestOptions {
   endpoint: string
@@ -89,7 +92,10 @@ interface AzureChatOptions extends AzureOpenaiRequestOptions {
   onChunk?: (chunk: OllamaChatChunk) => void
 }
 
-function buildChatBody(options: AzureChatOptions, stream: boolean): Record<string, unknown> {
+function buildChatBody(
+  options: AzureChatOptions,
+  stream: boolean
+): { body: Record<string, unknown>; reasoningEffortSent?: ReasoningEffort } {
   const body: Record<string, unknown> = {
     messages: ollamaMessagesToOpenAi(options.messages),
     stream
@@ -104,7 +110,7 @@ function buildChatBody(options: AzureChatOptions, stream: boolean): Record<strin
     preference: getReasoningEffort()
   })
   if (effort !== undefined) body.reasoning_effort = effort
-  return body
+  return { body, reasoningEffortSent: effort }
 }
 
 export async function azureOpenAiChatOnce(options: AzureChatOptions): Promise<string> {
@@ -113,7 +119,7 @@ export async function azureOpenAiChatOnce(options: AzureChatOptions): Promise<st
     {
       method: 'POST',
       headers: azureHeaders(options.apiKey),
-      body: JSON.stringify(buildChatBody(options, false)),
+      body: JSON.stringify(buildChatBody(options, false).body),
       signal: options.signal
     }
   )
@@ -130,12 +136,13 @@ export async function azureOpenAiChatOnce(options: AzureChatOptions): Promise<st
 export async function azureOpenAiChatStream(
   options: AzureChatOptions
 ): Promise<OpenAiStreamResult> {
+  const { body, reasoningEffortSent } = buildChatBody(options, true)
   const res = await fetch(
     buildAzureChatUrl(options.endpoint, options.deployment, options.apiVersion),
     {
       method: 'POST',
       headers: azureHeaders(options.apiKey),
-      body: JSON.stringify(buildChatBody(options, true)),
+      body: JSON.stringify(body),
       signal: options.signal
     }
   )
@@ -243,5 +250,12 @@ export async function azureOpenAiChatStream(
         }
       })()
     }))
-  return { content, toolCalls, promptEvalCount, evalCount, usage }
+  return {
+    content,
+    toolCalls,
+    promptEvalCount,
+    evalCount,
+    usage,
+    reasoningEffortSent
+  }
 }

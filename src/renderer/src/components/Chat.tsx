@@ -764,6 +764,7 @@ export function Chat({
                     contextLimit={m.streaming ? undefined : m.contextLimit}
                     tokenUsage={m.streaming ? undefined : m.tokenUsage}
                     multiCallTurn={m.streaming ? undefined : m.multiCallTurn}
+                    reasoningEffort={m.streaming ? undefined : m.reasoningEffort}
                     align="left"
                   />
                 </div>

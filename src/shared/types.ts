@@ -352,6 +352,8 @@ export type ChatEvent =
       tokenUsage?: TokenUsageBreakdown
       /** True when usage sums more than one model call in the turn. */
       multiCallTurn?: boolean
+      /** Last chatStream in the turn: reasoning_effort sent on the API, if any. */
+      reasoningEffort?: ReasoningEffort
     }
   | {
       type: 'assistant_images'
@@ -463,6 +465,8 @@ export type UiMessage =
       imageModel?: string
       tokenUsage?: TokenUsageBreakdown
       multiCallTurn?: boolean
+      /** Last chatStream in the turn: reasoning_effort sent on the API, if any. */
+      reasoningEffort?: ReasoningEffort
     }
   | {
       kind: 'thinking'

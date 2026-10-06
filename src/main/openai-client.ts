@@ -5,7 +5,10 @@ import {
 } from '../shared/openai-models'
 import type { OllamaChatChunk, OllamaChatMessage, OllamaTool } from './ollama'
 import { getOpenaiApiKey, getReasoningEffort } from './config-store'
-import { resolveReasoningEffortForRequest } from '../shared/reasoning-effort'
+import {
+  resolveReasoningEffortForRequest,
+  type ReasoningEffort
+} from '../shared/reasoning-effort'
 
 export { openAiModelUsesReasoningEffort }
 
@@ -121,6 +124,7 @@ export interface OpenAiStreamResult {
   promptEvalCount?: number
   evalCount?: number
   usage?: OpenAiUsageDetails
+  reasoningEffortSent?: ReasoningEffort
 }
 
 export function formatOpenAiError(text: string, status: number): string {
@@ -395,5 +399,12 @@ export async function openAiChatStream(options: {
       arguments: normalizeToolArgs(tc.arguments)
     }))
 
-  return { content, toolCalls, promptEvalCount, evalCount, usage }
+  return {
+    content,
+    toolCalls,
+    promptEvalCount,
+    evalCount,
+    usage,
+    reasoningEffortSent: effort
+  }
 }

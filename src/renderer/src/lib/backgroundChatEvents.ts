@@ -99,7 +99,8 @@ export function applyBackgroundChatEvent(
         contextLimit: event.contextLimit ?? last.contextLimit,
         tokensPerSec: event.tokensPerSec ?? last.tokensPerSec,
         tokenUsage: event.tokenUsage ?? last.tokenUsage,
-        multiCallTurn: event.multiCallTurn ?? last.multiCallTurn
+        multiCallTurn: event.multiCallTurn ?? last.multiCallTurn,
+        reasoningEffort: event.reasoningEffort ?? last.reasoningEffort
       }
     } else if (event.content) {
       next.push({
@@ -114,7 +115,8 @@ export function applyBackgroundChatEvent(
         contextLimit: event.contextLimit,
         tokensPerSec: event.tokensPerSec,
         tokenUsage: event.tokenUsage,
-        multiCallTurn: event.multiCallTurn
+        multiCallTurn: event.multiCallTurn,
+        reasoningEffort: event.reasoningEffort
       })
     }
     messages = next
