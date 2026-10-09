@@ -12,6 +12,7 @@ import type {
   OllamaModelDetails,
   PullProgressEvent
 } from '../../../shared/types'
+import { OLLAMA_OFFLINE_USER_MESSAGE } from '../../../shared/ollama-offline-message'
 import { MarkdownContent } from './MarkdownContent'
 import {
   familyMatchesCapability,
@@ -567,7 +568,7 @@ export function ModelsPage({
   }
 
   const handlePull = async (name: string): Promise<void> => {
-    if (pulling) return
+    if (!ollamaOk || pulling) return
     if (isCloudModelRef(name)) {
       setActionError(formatPullError('file does not exist', name))
       return
@@ -586,7 +587,7 @@ export function ModelsPage({
 
   /** List Download: resolve a concrete local tag before pulling. */
   const handleDownloadFromList = async (modelName: string): Promise<void> => {
-    if (pulling) return
+    if (!ollamaOk || pulling) return
     setActionError(null)
     setPulling(modelName)
     setPullProgress({ model: modelName, status: 'resolving tag…' })
@@ -849,6 +850,14 @@ export function ModelsPage({
             </div>
           ) : (
             <div className="space-y-4">
+              {!ollamaOk && (
+                <p className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">
+                  <span className="block">{OLLAMA_OFFLINE_USER_MESSAGE}</span>
+                  <span className="mt-1 block text-amber-200/80">
+                    Pull and download are disabled until Ollama is running.
+                  </span>
+                </p>
+              )}
               <div className="flex flex-wrap gap-1 rounded-lg border border-[#2a3a4d] bg-[#121820] p-0.5">
                 <button
                   type="button"
@@ -907,11 +916,6 @@ export function ModelsPage({
 
               {ollamaInstalledOnly ? (
             <div className="space-y-4">
-              {!ollamaOk && (
-                <p className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-200">
-                  Ollama is offline. Installed models cannot be refreshed until it reconnects.
-                </p>
-              )}
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   value={installedQuery}
@@ -1130,8 +1134,12 @@ export function ModelsPage({
                           ) : (
                             <button
                               type="button"
-                              disabled={Boolean(pulling)}
-                              title="Download smallest local tag (or :latest)"
+                              disabled={Boolean(pulling) || !ollamaOk}
+                              title={
+                                !ollamaOk
+                                  ? OLLAMA_OFFLINE_USER_MESSAGE
+                                  : 'Download smallest local tag (or :latest)'
+                              }
                               onClick={() => void handleDownloadFromList(m.name)}
                               className="h-fit shrink-0 rounded-md bg-[#2d6cb5] px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-[#3a7cc9] disabled:opacity-50"
                             >
@@ -1460,7 +1468,8 @@ export function ModelsPage({
                             ) : (
                               <button
                                 type="button"
-                                disabled={Boolean(pulling) || installed}
+                                disabled={Boolean(pulling) || installed || !ollamaOk}
+                                title={!ollamaOk ? OLLAMA_OFFLINE_USER_MESSAGE : undefined}
                                 onClick={() => void handlePull(tag.name)}
                                 className="shrink-0 rounded-md border border-[#2a3a4d] px-2 py-1 text-[10px] text-[#9ec5f0] hover:bg-[#1a2430] disabled:opacity-40"
                               >

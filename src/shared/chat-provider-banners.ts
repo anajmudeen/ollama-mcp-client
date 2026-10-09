@@ -1,3 +1,4 @@
+import { OLLAMA_OFFLINE_USER_MESSAGE } from './ollama-offline-message'
 import type { LlmProvider } from './types'
 
 export interface ChatProviderBannerInput {
@@ -39,9 +40,7 @@ export function chatProviderReadinessBanners(
   }
 
   if (effectiveProvider === 'ollama' && !ollamaOk) {
-    banners.push(
-      'Ollama is offline — check Settings or switch to OpenAI.'
-    )
+    banners.push(OLLAMA_OFFLINE_USER_MESSAGE)
   }
 
   return banners
