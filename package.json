@@ -18,6 +18,7 @@
     "test:reasoning-effort-meta": "node --test scripts/test-reasoning-effort-stream-meta.mjs",
     "test:ollama-model-families": "node --test scripts/test-ollama-model-families.mjs",
     "test:ollama-offline-message": "node --test scripts/test-ollama-offline-message.mjs",
+    "test:azure-deployment-reasoning": "node --test scripts/test-azure-deployment-reasoning.mjs",
     "patch:electron": "node scripts/patch-electron-app.mjs"
   },
   "dependencies": {

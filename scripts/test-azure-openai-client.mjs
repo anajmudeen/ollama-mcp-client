@@ -10,6 +10,9 @@ const server = await createServer({
 const client = await server.ssrLoadModule(
   new URL('../src/main/azure-openai-client.ts', import.meta.url).pathname
 )
+const store = await server.ssrLoadModule(
+  new URL('../src/main/config-store.ts', import.meta.url).pathname
+)
 after(() => server.close())
 
 test('normalizes endpoint and encodes Azure URL components', () => {
@@ -96,6 +99,15 @@ test('sends Azure chat requests with api-key and no model field', async () => {
     )
   }
   try {
+    for (const d of store.getAzureOpenaiDeployments()) {
+      store.removeAzureOpenaiDeployment(d.name)
+    }
+    store.addAzureOpenaiDeployment({
+      name: 'gpt-5/deploy',
+      model: 'gpt-5',
+      reasoningEffortEnabled: true,
+      enabled: true
+    })
     const chunks = []
     const result = await client.azureOpenAiChatStream({
       endpoint: 'https://example.openai.azure.com/',

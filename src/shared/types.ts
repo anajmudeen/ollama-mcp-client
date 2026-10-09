@@ -98,6 +98,11 @@ export interface AzureOpenaiModelEntry {
 export interface AzureOpenaiDeploymentEntry {
   name: string
   enabled: boolean
+  /** Base model id (e.g. gpt-5, o3-mini) for capability heuristics; not the Azure deployment name. */
+  model: string
+  /** User toggle; default from model heuristic on add. */
+  reasoningEffortEnabled: boolean
+  /** @deprecated Stripped on read; legacy catalog merge */
   matchedCatalogMetadata?: AzureOpenaiModelEntry
 }
 

@@ -70,8 +70,17 @@ test('shouldShowReasoningEffortControl', () => {
   assert.equal(
     mod.shouldShowReasoningEffortControl({
       provider: 'azure-openai',
-      model: 'o3-mini'
+      model: 'my-deploy',
+      azureDeployment: { model: 'o3-mini', reasoningEffortEnabled: true }
     }),
     true
+  )
+  assert.equal(
+    mod.shouldShowReasoningEffortControl({
+      provider: 'azure-openai',
+      model: 'my-deploy',
+      azureDeployment: { model: 'o3-mini', reasoningEffortEnabled: false }
+    }),
+    false
   )
 })

@@ -12,6 +12,7 @@ import type {
   OllamaModelDetails,
   PullProgressEvent
 } from '../../../shared/types'
+import { defaultReasoningEffortEnabledForModel } from '../../../shared/azure-deployment'
 import { OLLAMA_OFFLINE_USER_MESSAGE } from '../../../shared/ollama-offline-message'
 import { MarkdownContent } from './MarkdownContent'
 import {
@@ -48,7 +49,13 @@ interface ModelsPageProps {
   onRefreshOpenAi: () => Promise<void>
   onToggleOpenAiModel: (id: string, enabled: boolean) => Promise<void>
   onRefreshAzure: () => Promise<void>
-  onAddAzureDeployment: (name: string) => Promise<void>
+  onAddAzureDeployment: (
+    deployment: Omit<AzureOpenaiDeploymentEntry, 'enabled'> & { enabled?: boolean }
+  ) => Promise<void>
+  onUpdateAzureDeployment: (
+    name: string,
+    patch: Partial<Omit<AzureOpenaiDeploymentEntry, 'name'>>
+  ) => Promise<void>
   onRemoveAzureDeployment: (name: string) => Promise<void>
   onToggleAzureDeployment: (name: string, enabled: boolean) => Promise<void>
   onUseInChat: (model: string) => void
@@ -216,6 +223,7 @@ export function ModelsPage({
   onToggleOpenAiModel,
   onRefreshAzure,
   onAddAzureDeployment,
+  onUpdateAzureDeployment,
   onRemoveAzureDeployment,
   onToggleAzureDeployment,
   onUseInChat
@@ -224,6 +232,10 @@ export function ModelsPage({
   const [ollamaInstalledOnly, setOllamaInstalledOnly] = useState(false)
   const [openaiQuery, setOpenaiQuery] = useState('')
   const [azureDeploymentDraft, setAzureDeploymentDraft] = useState('')
+  const [azureModelDraft, setAzureModelDraft] = useState('')
+  const [azureReasoningDraft, setAzureReasoningDraft] = useState(false)
+  const [azureReasoningDraftTouched, setAzureReasoningDraftTouched] = useState(false)
+  const [azureModelEdits, setAzureModelEdits] = useState<Record<string, string>>({})
   const [installedQuery, setInstalledQuery] = useState('')
   const [ollamaCap, setOllamaCap] = useState<LibraryCapability | string | null>(null)
   const [installedSort, setInstalledSort] = useState<InstalledSort>('name')
@@ -277,6 +289,11 @@ export function ModelsPage({
       }
     })
   }, [onRefreshModels])
+
+  useEffect(() => {
+    if (azureReasoningDraftTouched) return
+    setAzureReasoningDraft(defaultReasoningEffortEnabledForModel(azureModelDraft.trim()))
+  }, [azureModelDraft, azureReasoningDraftTouched])
 
   const sortLibraryModels = useCallback(
     (list: LibraryModelSummary[]): LibraryModelSummary[] => {
@@ -544,6 +561,11 @@ export function ModelsPage({
     setDetailError(null)
   }
 
+  const selectTab = (id: ModelsTab): void => {
+    if (id !== 'ollama') closeDetail()
+    setTab(id)
+  }
+
   useEffect(() => {
     if (detailKind !== 'local-family' || !detailName) return
     const tags = models.filter((m) => localBaseName(m.name) === detailName)
@@ -645,7 +667,7 @@ export function ModelsPage({
             <button
               key={id}
               type="button"
-              onClick={() => setTab(id)}
+              onClick={() => selectTab(id)}
               className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize ${
                 tab === id
                   ? 'bg-[#1a3050] text-[#9ec5f0]'
@@ -773,7 +795,8 @@ export function ModelsPage({
                   <div>
                     <h3 className="text-sm font-semibold text-[#f0f4f8]">Deployments</h3>
                     <p className="text-xs text-[#6b7a8c]">
-                      Add the deployment names configured in Azure. Only enabled deployments appear in chat.
+                      Add Azure deployment names plus the underlying model id (e.g. gpt-5) for
+                      capabilities such as reasoning effort. Only enabled deployments appear in chat.
                     </p>
                   </div>
                   <button
@@ -785,29 +808,62 @@ export function ModelsPage({
                   </button>
                 </div>
                 <form
-                  className="mb-3 flex gap-2"
+                  className="mb-3 space-y-2"
                   onSubmit={(event) => {
                     event.preventDefault()
                     const name = azureDeploymentDraft.trim()
-                    if (!name) return
+                    const model = azureModelDraft.trim()
+                    if (!name || !model) {
+                      setActionError('Deployment name and model name are required.')
+                      return
+                    }
                     if (azureOpenaiDeployments.some((deployment) => deployment.name === name)) {
                       setActionError(`Deployment "${name}" already exists.`)
                       return
                     }
                     setActionError(null)
                     setAzureDeploymentDraft('')
-                    void onAddAzureDeployment(name)
+                    setAzureModelDraft('')
+                    setAzureReasoningDraft(false)
+                    setAzureReasoningDraftTouched(false)
+                    void onAddAzureDeployment({
+                      name,
+                      model,
+                      reasoningEffortEnabled: azureReasoningDraft
+                    })
                   }}
                 >
-                  <input
-                    value={azureDeploymentDraft}
-                    onChange={(event) => setAzureDeploymentDraft(event.target.value)}
-                    placeholder="Deployment name"
-                    className="min-w-0 flex-1 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2 text-sm text-[#e7ecf1] placeholder:text-[#6b7a8c] focus:border-[#2d6cb5] focus:outline-none"
-                  />
-                  <button type="submit" className="rounded-lg bg-[#2d6cb5] px-3 py-2 text-xs font-medium text-white hover:bg-[#3a7cc9]">
-                    Add deployment
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      value={azureDeploymentDraft}
+                      onChange={(event) => setAzureDeploymentDraft(event.target.value)}
+                      placeholder="Deployment name"
+                      className="min-w-[10rem] flex-1 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2 text-sm text-[#e7ecf1] placeholder:text-[#6b7a8c] focus:border-[#2d6cb5] focus:outline-none"
+                    />
+                    <input
+                      value={azureModelDraft}
+                      onChange={(event) => setAzureModelDraft(event.target.value)}
+                      placeholder="Model name (e.g. gpt-5)"
+                      className="min-w-[10rem] flex-1 rounded-lg border border-[#2a3a4d] bg-[#0f1419] px-3 py-2 text-sm text-[#e7ecf1] placeholder:text-[#6b7a8c] focus:border-[#2d6cb5] focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-[#2d6cb5] px-3 py-2 text-xs font-medium text-white hover:bg-[#3a7cc9]"
+                    >
+                      Add deployment
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-2 text-[11px] text-[#c5d0dc]">
+                    <input
+                      type="checkbox"
+                      checked={azureReasoningDraft}
+                      onChange={(event) => {
+                        setAzureReasoningDraftTouched(true)
+                        setAzureReasoningDraft(event.target.checked)
+                      }}
+                    />
+                    Supports reasoning effort
+                  </label>
                 </form>
                 {azureOpenaiDeployments.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-[#2a3a4d] px-3 py-4 text-xs text-[#6b7a8c]">
@@ -815,35 +871,89 @@ export function ModelsPage({
                   </p>
                 ) : (
                   <ul className="space-y-2">
-                    {azureOpenaiDeployments.map((deployment) => (
-                      <li key={deployment.name} className="flex items-start justify-between gap-3 rounded-lg border border-[#2a3a4d] bg-[#121820] px-3 py-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm text-[#e7ecf1]">{deployment.name}</p>
-                          {deployment.name === selectedAzureOpenaiModel && (
-                            <p className="text-[11px] text-[#6eb5ff]">Selected in chat</p>
-                          )}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <label className="flex items-center gap-1.5 text-[11px] text-[#c5d0dc]">
+                    {azureOpenaiDeployments.map((deployment) => {
+                      const modelDraft =
+                        azureModelEdits[deployment.name] ?? deployment.model ?? ''
+                      return (
+                        <li
+                          key={deployment.name}
+                          className="flex flex-col gap-2 rounded-lg border border-[#2a3a4d] bg-[#121820] px-3 py-2 sm:flex-row sm:items-start sm:justify-between"
+                        >
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <p className="truncate text-sm font-medium text-[#e7ecf1]">
+                              {deployment.name}
+                            </p>
+                            {deployment.name === selectedAzureOpenaiModel && (
+                              <p className="text-[11px] text-[#6eb5ff]">Selected in chat</p>
+                            )}
                             <input
-                              type="checkbox"
-                              checked={deployment.enabled}
+                              value={modelDraft}
                               onChange={(event) =>
-                                void onToggleAzureDeployment(deployment.name, event.target.checked)
+                                setAzureModelEdits((prev) => ({
+                                  ...prev,
+                                  [deployment.name]: event.target.value
+                                }))
                               }
+                              onBlur={() => {
+                                const trimmed = modelDraft.trim()
+                                if (trimmed === (deployment.model ?? '').trim()) {
+                                  setAzureModelEdits((prev) => {
+                                    const next = { ...prev }
+                                    delete next[deployment.name]
+                                    return next
+                                  })
+                                  return
+                                }
+                                void onUpdateAzureDeployment(deployment.name, {
+                                  model: trimmed
+                                })
+                                setAzureModelEdits((prev) => {
+                                  const next = { ...prev }
+                                  delete next[deployment.name]
+                                  return next
+                                })
+                              }}
+                              placeholder="Model name"
+                              className="w-full max-w-md rounded border border-[#2a3a4d] bg-[#0f1419] px-2 py-1 text-xs text-[#e7ecf1] placeholder:text-[#6b7a8c] focus:border-[#2d6cb5] focus:outline-none"
                             />
-                            Enabled
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => void onRemoveAzureDeployment(deployment.name)}
-                            className="rounded border border-rose-900/40 px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-950/30"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </li>
-                    ))}
+                          </div>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            <label className="flex items-center gap-1.5 text-[11px] text-[#c5d0dc]">
+                              <input
+                                type="checkbox"
+                                checked={deployment.reasoningEffortEnabled}
+                                onChange={(event) =>
+                                  void onUpdateAzureDeployment(deployment.name, {
+                                    reasoningEffortEnabled: event.target.checked
+                                  })
+                                }
+                              />
+                              Reasoning
+                            </label>
+                            <label className="flex items-center gap-1.5 text-[11px] text-[#c5d0dc]">
+                              <input
+                                type="checkbox"
+                                checked={deployment.enabled}
+                                onChange={(event) =>
+                                  void onToggleAzureDeployment(
+                                    deployment.name,
+                                    event.target.checked
+                                  )
+                                }
+                              />
+                              Enabled
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => void onRemoveAzureDeployment(deployment.name)}
+                              className="rounded border border-rose-900/40 px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-950/30"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
               </div>
@@ -1180,7 +1290,7 @@ export function ModelsPage({
           )}
         </div>
 
-        {detailKind && (
+        {tab === 'ollama' && detailKind && (
           <aside className="flex w-[min(100%,28rem)] shrink-0 flex-col border-l border-[#243041] bg-[#121820]">
             <div className="flex items-start justify-between gap-2 border-b border-[#243041] px-4 py-3">
               <div className="min-w-0">

@@ -8,7 +8,8 @@ import {
   type OpenAiStreamResult,
   type OpenAiUsageDetails
 } from './openai-client'
-import { getReasoningEffort } from './config-store'
+import { supportsAzureDeploymentReasoning } from '../shared/azure-deployment'
+import { getAzureOpenaiDeployments, getReasoningEffort } from './config-store'
 import {
   resolveReasoningEffortForRequest,
   type ReasoningEffort
@@ -104,13 +105,22 @@ function buildChatBody(
   if (options.tools?.length) {
     body.tools = ollamaToolsToOpenAi(options.tools)
   }
-  const effort = resolveReasoningEffortForRequest({
-    model: options.deployment,
-    hasTools: Boolean(options.tools?.length),
-    preference: getReasoningEffort()
-  })
-  if (effort !== undefined) body.reasoning_effort = effort
-  return { body, reasoningEffortSent: effort }
+  const deploymentEntry = getAzureOpenaiDeployments().find(
+    (entry) => entry.name === options.deployment
+  )
+  let reasoningEffortSent: ReasoningEffort | undefined
+  if (deploymentEntry && supportsAzureDeploymentReasoning(deploymentEntry)) {
+    const effort = resolveReasoningEffortForRequest({
+      model: deploymentEntry.model,
+      hasTools: Boolean(options.tools?.length),
+      preference: getReasoningEffort()
+    })
+    if (effort !== undefined) {
+      body.reasoning_effort = effort
+      reasoningEffortSent = effort
+    }
+  }
+  return { body, reasoningEffortSent }
 }
 
 export async function azureOpenAiChatOnce(options: AzureChatOptions): Promise<string> {

@@ -1633,9 +1633,26 @@ export default function App(): React.JSX.Element {
     await refreshEffectiveProvider(requestId)
   }
 
-  const handleAddAzureDeployment = async (name: string): Promise<void> => {
+  const handleAddAzureDeployment = async (
+    deployment: Omit<AzureOpenaiDeploymentEntry, 'enabled'> & { enabled?: boolean }
+  ): Promise<void> => {
     const requestId = beginProviderOperation()
-    await window.api.azureOpenai.addDeployment(name)
+    await window.api.azureOpenai.addDeployment({
+      name: deployment.name,
+      model: deployment.model,
+      reasoningEffortEnabled: deployment.reasoningEffortEnabled,
+      enabled: deployment.enabled ?? false
+    })
+    if (requestId !== modelRefreshRequestRef.current) return
+    await refreshAzureConfig(requestId)
+  }
+
+  const handleUpdateAzureDeployment = async (
+    name: string,
+    patch: Partial<Omit<AzureOpenaiDeploymentEntry, 'name'>>
+  ): Promise<void> => {
+    const requestId = beginProviderOperation()
+    await window.api.azureOpenai.updateDeployment(name, patch)
     if (requestId !== modelRefreshRequestRef.current) return
     await refreshAzureConfig(requestId)
   }
@@ -1770,6 +1787,7 @@ export default function App(): React.JSX.Element {
             onToggleOpenAiModel={(id, enabled) => handleToggleOpenAiModel(id, enabled)}
             onRefreshAzure={handleRefreshAzure}
             onAddAzureDeployment={handleAddAzureDeployment}
+            onUpdateAzureDeployment={handleUpdateAzureDeployment}
             onRemoveAzureDeployment={handleRemoveAzureDeployment}
             onToggleAzureDeployment={handleToggleAzureDeployment}
             onUseInChat={(m) => void handleUseOllamaModelInChat(m)}
@@ -1880,6 +1898,7 @@ export default function App(): React.JSX.Element {
           imageGenSupported={imageGenSupported}
           models={models}
           selectedModel={selectedModel}
+          azureOpenaiDeployments={azureOpenaiDeployments}
           reasoningEffort={reasoningEffort}
           onSetReasoningEffort={(v) => void handleSetReasoningEffort(v)}
           tools={tools}

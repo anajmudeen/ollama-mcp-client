@@ -5,6 +5,7 @@ import {
   normalizeImageGallery,
   sortImageGalleryItems
 } from '../shared/image-gallery'
+import { defaultReasoningEffortEnabledForModel } from '../shared/azure-deployment'
 import { isOpenAiImageGenModel } from '../shared/openai-models'
 import type {
   AppConfig,
@@ -435,20 +436,35 @@ export function getAzureOpenaiDeployments(): AzureOpenaiDeploymentEntry[] {
 function normalizeAzureDeployment(
   deployment: AzureOpenaiDeploymentEntry
 ): AzureOpenaiDeploymentEntry {
+  const model = (deployment.model ?? '').trim()
   return {
     name: deployment.name.trim(),
-    enabled: Boolean(deployment.enabled)
+    enabled: Boolean(deployment.enabled),
+    model,
+    reasoningEffortEnabled: Boolean(deployment.reasoningEffortEnabled)
   }
 }
 
 export function addAzureOpenaiDeployment(
   deployment: AzureOpenaiDeploymentEntry | string
 ): AzureOpenaiDeploymentEntry[] {
-  const next = normalizeAzureDeployment(
+  const raw =
     typeof deployment === 'string'
-      ? { name: deployment, enabled: false }
+      ? {
+          name: deployment,
+          enabled: false,
+          model: '',
+          reasoningEffortEnabled: false
+        }
       : deployment
-  )
+  const next = normalizeAzureDeployment({
+    name: raw.name,
+    enabled: raw.enabled ?? false,
+    model: raw.model ?? '',
+    reasoningEffortEnabled:
+      raw.reasoningEffortEnabled ??
+      defaultReasoningEffortEnabledForModel(raw.model ?? '')
+  })
   if (!next.name) throw new Error('Deployment name is required')
   const deployments = getAzureOpenaiDeployments()
   const index = deployments.findIndex((entry) => entry.name === next.name)

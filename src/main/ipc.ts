@@ -355,8 +355,11 @@ export function registerIpc(ipcMain: IpcMain): void {
   ipcMain.handle('azureOpenai:getStatus', () => getAzureOpenaiStatus())
   ipcMain.handle('azureOpenai:addDeployment', (
     _e,
-    deployment: string
-  ) => addAzureOpenaiDeployment(deployment.trim()))
+    deployment: AzureOpenaiDeploymentEntry | string
+  ) =>
+    addAzureOpenaiDeployment(
+      typeof deployment === 'string' ? deployment.trim() : deployment
+    ))
   ipcMain.handle('azureOpenai:updateDeployment', (
     _e,
     name: string,

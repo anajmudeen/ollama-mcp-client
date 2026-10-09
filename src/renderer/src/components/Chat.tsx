@@ -1,5 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { AgentSkill, LlmProvider, McpToolInfo, OllamaModel, UiMessage } from '../../../shared/types'
+import type {
+  AgentSkill,
+  AzureOpenaiDeploymentEntry,
+  LlmProvider,
+  McpToolInfo,
+  OllamaModel,
+  UiMessage
+} from '../../../shared/types'
 import {
   shouldShowReasoningEffortControl,
   type ReasoningEffort
@@ -53,6 +60,7 @@ interface ChatProps {
   imageGenSupported?: boolean
   models: OllamaModel[]
   selectedModel: string | null
+  azureOpenaiDeployments: AzureOpenaiDeploymentEntry[]
   reasoningEffort: ReasoningEffort
   onSetReasoningEffort: (value: ReasoningEffort) => void
   tools: McpToolInfo[]
@@ -86,6 +94,7 @@ export function Chat({
   imageGenSupported = true,
   models,
   selectedModel,
+  azureOpenaiDeployments,
   reasoningEffort,
   onSetReasoningEffort,
   tools,
@@ -129,9 +138,18 @@ export function Chat({
   const reasoningEffortLabel =
     REASONING_EFFORT_OPTIONS.find((o) => o.value === reasoningEffort)?.label ?? 'Low'
 
+  const selectedAzureDeployment = useMemo(() => {
+    if (effectiveProvider !== 'azure-openai' || !selectedModel) return null
+    return (
+      azureOpenaiDeployments.find((deployment) => deployment.name === selectedModel) ??
+      null
+    )
+  }, [azureOpenaiDeployments, effectiveProvider, selectedModel])
+
   const showReasoningEffortControl = shouldShowReasoningEffortControl({
     provider: effectiveProvider,
-    model: selectedModel
+    model: selectedModel,
+    azureDeployment: selectedAzureDeployment
   })
 
   const clearProgrammaticScroll = (): void => {

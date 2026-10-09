@@ -26,12 +26,16 @@ test('deployments read/write strip matchedCatalogMetadata', () => {
   store.addAzureOpenaiDeployment({
     name: 'my-gpt4o',
     enabled: true,
+    model: 'gpt-4o',
+    reasoningEffortEnabled: false,
     matchedCatalogMetadata: { id: 'gpt-4o', capabilities: ['vision'] }
   })
   const listed = store.getAzureOpenaiDeployments()
   assert.equal(listed.length, 1)
   assert.equal(listed[0].name, 'my-gpt4o')
   assert.equal(listed[0].enabled, true)
+  assert.equal(listed[0].model, 'gpt-4o')
+  assert.equal(listed[0].reasoningEffortEnabled, false)
   assert.equal('matchedCatalogMetadata' in listed[0], false)
 })
 

@@ -1,5 +1,6 @@
+import { supportsAzureDeploymentReasoning } from './azure-deployment'
 import { openAiModelUsesReasoningEffort } from './openai-models'
-import type { LlmProvider } from './types'
+import type { AzureOpenaiDeploymentEntry, LlmProvider } from './types'
 
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high'
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'low'
@@ -23,9 +24,18 @@ export function resolveReasoningEffortForRequest(options: {
 
 export function shouldShowReasoningEffortControl(options: {
   provider: LlmProvider
+  /** Chat model id: OpenAI model id or Azure deployment name. */
   model: string | null
+  azureDeployment?: Pick<
+    AzureOpenaiDeploymentEntry,
+    'model' | 'reasoningEffortEnabled'
+  > | null
 }): boolean {
   if (options.provider === 'ollama') return false
   if (!options.model?.trim()) return false
+  if (options.provider === 'azure-openai') {
+    if (!options.azureDeployment) return false
+    return supportsAzureDeploymentReasoning(options.azureDeployment)
+  }
   return openAiModelUsesReasoningEffort(options.model)
 }
