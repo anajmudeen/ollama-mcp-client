@@ -63,9 +63,12 @@ export function ImageGeneration({
       if (token !== loadToken.current) return
       const available = modelsResult.value.models
       setModels(available)
-      if (!modelsResult.value.ok) {
+      if (!modelsResult.value.ok && available.length === 0) {
         setModelLoadFailed(true)
-        errors.push(`Unable to load image models: ${modelsResult.value.error}`)
+        const detail = modelsResult.value.error
+        errors.push(
+          detail ? `Ollama is unreachable: ${detail}` : 'Ollama is unreachable.'
+        )
       }
       setSelectedModel((current) => {
         if (

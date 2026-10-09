@@ -15,6 +15,7 @@ import {
 import {
   getAzureOpenaiDeployments,
   getMaxToolIterations,
+  getReasoningEffort,
   getSelectedModelForProvider,
   setSelectedModelForProvider
 } from './config-store'
@@ -416,7 +417,12 @@ export async function runAgentTurn(payload: ChatSendPayload): Promise<void> {
 
   const skillTool = loadSkillTool()
   const baseTools = [...(skillTool ? [skillTool] : []), ...toolsFromMcp()]
-  const offerImageTool = await shouldOfferAgentImageTools(effective, turnModel)
+  // Image tools are always sent in the tools[] schema; that forces reasoning_effort
+  // to "none" on OpenAI/Azure reasoning models. Skip them when the user asked for
+  // low/medium/high so chat effort matches the picker (MCP/skills still force none).
+  const offerImageTool =
+    getReasoningEffort() === 'none' &&
+    (await shouldOfferAgentImageTools(effective, turnModel))
   const tools = offerImageTool
     ? buildAgentImageTools(baseTools)
     : baseTools
