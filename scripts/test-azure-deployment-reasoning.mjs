@@ -46,4 +46,11 @@ test('supportsAzureDeploymentReasoning requires model, checkbox, and heuristic',
     }),
     false
   )
+  assert.equal(
+    azureMod.supportsAzureDeploymentReasoning({
+      model: undefined,
+      reasoningEffortEnabled: true
+    }),
+    false
+  )
 })
